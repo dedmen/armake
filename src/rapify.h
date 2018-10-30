@@ -45,7 +45,7 @@ struct definition {
     struct definition *next;
 };
 
-struct class {
+struct class_ {
     char *name;
     char *parent;
     bool is_delete;
@@ -68,20 +68,19 @@ struct expression {
     struct expression *next;
 };
 
-
-struct class *parse_file(FILE *f, struct lineref *lineref);
+struct class_ *parse_file(FILE *f, struct lineref *lineref);
 
 struct definitions *new_definitions();
 
 struct definitions *add_definition(struct definitions *head, int type, void *content);
 
-struct class *new_class(char *name, char *parent, struct definitions *content, bool is_delete);
+struct class_ *new_class(char *name, char *parent, struct definitions *content, bool is_delete);
 
 struct variable *new_variable(int type, char *name, struct expression *expression);
 
 struct expression *new_expression(int type, void *value);
 
-struct expression *add_expression(struct expression *head, struct expression *new);
+struct expression *add_expression(struct expression *head, struct expression *new_);
 
 void free_expression(struct expression *expr);
 
@@ -89,12 +88,12 @@ void free_variable(struct variable *var);
 
 void free_definition(struct definition *definition);
 
-void free_class(struct class *class);
+void free_class(struct class_ *class_);
 
 void rapify_expression(struct expression *expr, FILE *f_target);
 
 void rapify_variable(struct variable *var, FILE *f_target);
 
-void rapify_class(struct class *class, FILE *f_target);
+void rapify_class(struct class_ *class_, FILE *f_target);
 
 int rapify_file(char *source, char *target);

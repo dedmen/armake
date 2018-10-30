@@ -52,13 +52,12 @@ struct point {
     uint32_t point_flags;
 };
 
-char *current_target;
-
+extern char *current_target;
 
 #ifdef _WIN32
 char *strndup(const char *s, size_t n);
 
-char *strchrnul(const char *s, int c);
+char *strchrnul(char *s, int c);
 #else
 int stricmp(char *a, char *b);
 #endif

@@ -25,7 +25,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
-#include <unistd.h>
+#include <filesystem>
+//#include <unistd.h>
 #include <math.h>
 
 #ifdef _WIN32
@@ -314,7 +315,7 @@ int paa2img(char *source, char *target) {
     imgdatalen = width * height;
     if (paatype == DXT1)
         imgdatalen /= 2;
-    imgdata = safe_malloc(imgdatalen);
+    imgdata = (unsigned char*)safe_malloc(imgdatalen);
 
     if (compression == COMP_LZO) {
         out_len = imgdatalen;
@@ -341,7 +342,7 @@ int paa2img(char *source, char *target) {
 
     free(compresseddata);
 
-    outputdata = safe_malloc(width * height * 4);
+    outputdata = (unsigned char*)safe_malloc(width * height * 4);
 
     switch (paatype) {
         case DXT1:
@@ -408,7 +409,7 @@ int cmd_paa2img() {
         return 128;
 
     // check if target already exists
-    if (access(args.positionals[2], F_OK) != -1 && !args.force) {
+    if (std::filesystem::exists(args.positionals[2]) && !args.force) {
         errorf("File %s already exists and --force was not set.\n", args.positionals[2]);
         return 1;
     }

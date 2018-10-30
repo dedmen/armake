@@ -144,7 +144,8 @@ int read_args(int argc, char *argv[]) {
         }
 
         if (strcmp("-v", argv[i]) == 0 || strcmp("--version", argv[i]) == 0) {
-            puts(VERSION);
+           // puts(VERSION);
+            puts("123 c++");
             return -1;
         }
 
@@ -177,7 +178,7 @@ int read_args(int argc, char *argv[]) {
                     strcmp(multi_options[j].long_name, argv[i]) == 0) {
                 if (++i == argc)
                     return 1;
-                append(multi_options[j].value, multi_options[j].length, argv[i]);
+                append((char***)multi_options[j].value, multi_options[j].length, argv[i]);
                 break;
             }
         }

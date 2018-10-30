@@ -17,7 +17,7 @@
  */
 
 
-#include <unistd.h>
+//#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -34,20 +34,22 @@
 #include <fcntl.h>
 #include <fnmatch.h>
 #include <dirent.h>
-#include <unistd.h>
+//#include <unistd.h>
 #endif
 
 #include "filesystem.h"
 #include "utils.h"
+#include <string>
+#include <filesystem>
 
 
 #ifdef _WIN32
-ssize_t getdelim(char **buf, size_t *bufsiz, int delimiter, FILE *fp) {
+size_t getdelim(char **buf, size_t *bufsiz, int delimiter, FILE *fp) {
     char *ptr, *eptr;
 
     if (*buf == NULL || *bufsiz == 0) {
         *bufsiz = BUFSIZ;
-        if ((*buf = malloc(*bufsiz)) == NULL)
+        if ((*buf = (char*)malloc(*bufsiz)) == NULL)
             return -1;
     }
 
@@ -55,7 +57,7 @@ ssize_t getdelim(char **buf, size_t *bufsiz, int delimiter, FILE *fp) {
         int c = fgetc(fp);
         if (c == -1) {
             if (feof(fp)) {
-                ssize_t diff = (ssize_t)(ptr - *buf);
+                size_t diff = (size_t)(ptr - *buf);
                 if (diff != 0) {
                     *ptr = '\0';
                     return diff;
@@ -71,8 +73,8 @@ ssize_t getdelim(char **buf, size_t *bufsiz, int delimiter, FILE *fp) {
         if (ptr + 2 >= eptr) {
             char *nbuf;
             size_t nbufsiz = *bufsiz * 2;
-            ssize_t d = ptr - *buf;
-            if ((nbuf = realloc(*buf, nbufsiz)) == NULL)
+            size_t d = ptr - *buf;
+            if ((nbuf = (char*)realloc(*buf, nbufsiz)) == NULL)
                 return -1;
             *buf = nbuf;
             *bufsiz = nbufsiz;
@@ -82,7 +84,7 @@ ssize_t getdelim(char **buf, size_t *bufsiz, int delimiter, FILE *fp) {
     }
 }
 
-ssize_t getline(char **buf, size_t *bufsiz, FILE *fp) {
+size_t getline(char **buf, size_t *bufsiz, FILE *fp) {
     return getdelim(buf, bufsiz, '\n', fp);
 }
 #endif
@@ -131,7 +133,7 @@ int create_folder(char *path) {
 }
 
 
-int create_folders(char *path) {
+int create_folders(const char *path) {
     /*
      * Recursively create all folders for the given path. Returns -1 on
      * failure and 0 on success.
@@ -192,7 +194,8 @@ int create_temp_folder(char *addon, char *temp_folder, size_t bufsize) {
     // find a free one
     for (i = 0; i < 1024; i++) {
         snprintf(temp_folder, bufsize, "%s_%s_%i%c", temp, addon_sanitized, i, PATHSEP);
-        if (access(temp_folder, F_OK) == -1)
+        if ((int)(std::filesystem::status(temp_folder).permissions() & std::filesystem::perms::all))
+        //if (access(temp_folder, F_OK) == -1)
             break;
     }
 
@@ -244,7 +247,7 @@ int remove_folder(char *folder) {
 }
 
 
-int copy_file(char *source, char *target) {
+int copy_file(char *source, const char *target) {
     /*
      * Copy the file from the source to the target. Overwrites if the target
      * already exists.
@@ -252,17 +255,18 @@ int copy_file(char *source, char *target) {
      */
 
     // Create the containing folder
-    char containing[strlen(target) + 1];
+    //char containing[strlen(target) + 1];
     int lastsep = 0;
     int i;
     for (i = 0; i < strlen(target); i++) {
         if (target[i] == PATHSEP)
             lastsep = i;
     }
-    strcpy(containing, target);
-    containing[lastsep] = 0;
+    std::string containing = std::string(target, target + lastsep);
+    //strcpy(containing, target);
+    //containing[lastsep] = 0;
 
-    if (create_folders(containing))
+    if (create_folders(containing.c_str()))
         return -1;
 
 #ifdef _WIN32
@@ -457,12 +461,13 @@ int copy_callback(char *source_root, char *source, char *target_root) {
     if (strstr(source, source_root) != source)
         return -1;
 
-    char target[strlen(source) + strlen(target_root) + 1]; // assume worst case
-    target[0] = 0;
-    strcat(target, target_root);
-    strcat(target, source + strlen(source_root));
+    std::string target = std::string(target_root) + std::string(source + strlen(source_root));
+    //char target[strlen(source) + strlen(target_root) + 1]; // assume worst case
+    //target[0] = 0;
+    //strcat(target, target_root);
+    //strcat(target, source + strlen(source_root));
 
-    return copy_file(source, target);
+    return copy_file(source, target.c_str());
 }
 
 

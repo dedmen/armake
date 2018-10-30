@@ -21,7 +21,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
-#include <unistd.h>
+//#include <unistd.h>
 #include <math.h>
 
 #include "filesystem.h"
@@ -29,9 +29,10 @@
 #include "utils.h"
 #include "derapify.h"
 #include "model_config.h"
+#include <filesystem>
 
 
-int read_animations(FILE *f, char *config_path, struct skeleton *skeleton) {
+int read_animations(FILE *f, char *config_path, struct skeleton_ *skeleton) {
     /*
      * Reads the animation subclasses of the given config path into the struct
      * array.
@@ -293,7 +294,7 @@ int sort_bones(struct bone *src, struct bone *tgt, int tgt_index, char *parent) 
 }
 
 
-int read_model_config(char *path, struct skeleton *skeleton) {
+int read_model_config(char *path, struct skeleton_ *skeleton) {
     /*
      * Reads the model config information for the given model path. If no
      * model config is found, -1 is returned. 0 is returned on success
@@ -324,7 +325,7 @@ int read_model_config(char *path, struct skeleton *skeleton) {
     strcpy(rapified_path, model_config_path);
     strcat(rapified_path, ".armake.bin"); // it is assumed that this doesn't exist
 
-    if (access(model_config_path, F_OK) == -1)
+    if (!std::filesystem::exists(model_config_path))
         return -1;
 
     // Rapify file

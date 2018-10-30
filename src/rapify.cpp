@@ -21,7 +21,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
-#include <unistd.h>
+////#include <unistd.h>
 #include <time.h>
 
 #ifdef _WIN32
@@ -33,7 +33,7 @@
 #include "utils.h"
 #include "preprocess.h"
 #include "rapify.h"
-#include "rapify.tab.h"
+//#include "rapify.tab.h"
 
 
 struct definitions *new_definitions() {
@@ -73,10 +73,10 @@ struct definitions *add_definition(struct definitions *head, int type, void *con
 }
 
 
-struct class *new_class(char *name, char *parent, struct definitions *content, bool is_delete) {
-    struct class *result;
+struct class_ *new_class(char *name, char *parent, struct definitions *content, bool is_delete) {
+    struct class_ *result;
 
-    result = (struct class *)safe_malloc(sizeof(struct class));
+    result = (struct class_ *)safe_malloc(sizeof(struct class_));
     result->name = name;
     result->parent = parent;
     result->is_delete = is_delete;
@@ -121,13 +121,13 @@ struct expression *new_expression(int type, void *value) {
 }
 
 
-struct expression *add_expression(struct expression *head, struct expression *new) {
+struct expression *add_expression(struct expression *head, struct expression *new_) {
     struct expression *tmp;
 
     tmp = head;
     while (tmp != NULL) {
         if (tmp->next == NULL) {
-            tmp->next = new;
+            tmp->next = new_;
             break;
         }
 
@@ -162,22 +162,22 @@ void free_definition(struct definition *definition) {
     if (definition->type == TYPE_VAR)
         free_variable((struct variable *)definition->content);
     else
-        free_class((struct class *)definition->content);
+        free_class((struct class_ *)definition->content);
 
     free(definition);
 }
 
 
-void free_class(struct class *class) {
-    free(class->name);
-    free(class->parent);
+void free_class(struct class_ *class_) {
+    free(class_->name);
+    free(class_->parent);
 
-    if (class->content != NULL && class->content != (struct definitions *)-1) {
-        free_definition(class->content->head);
-        free(class->content);
+    if (class_->content != NULL && class_->content != (struct definitions *)-1) {
+        free_definition(class_->content->head);
+        free(class_->content);
     }
 
-    free(class);
+    free(class_);
 }
 
 
@@ -229,24 +229,24 @@ void rapify_variable(struct variable *var, FILE *f_target) {
 }
 
 
-void rapify_class(struct class *class, FILE *f_target) {
+void rapify_class(struct class_ *class__, FILE *f_target) {
     struct definition *tmp;
     uint32_t fp_temp;
     uint32_t num_entries = 0;
 
-    if (class->content == NULL) {
+    if (class__->content == NULL) {
         // extern or delete class
-        fputc((char)(class->is_delete ? 4 : 3), f_target);
-        fwrite(class->name, strlen(class->name) + 1, 1, f_target);
+        fputc((char)(class__->is_delete ? 4 : 3), f_target);
+        fwrite(class__->name, strlen(class__->name) + 1, 1, f_target);
         return;
     }
 
-    if (class->parent)
-        fwrite(class->parent, strlen(class->parent) + 1, 1, f_target);
+    if (class__->parent)
+        fwrite(class__->parent, strlen(class__->parent) + 1, 1, f_target);
     else
         fputc(0, f_target);
 
-    tmp = class->content->head;
+    tmp = class__->content->head;
     while (tmp != NULL) {
         num_entries++;
         tmp = tmp->next;
@@ -254,34 +254,34 @@ void rapify_class(struct class *class, FILE *f_target) {
 
     write_compressed_int(num_entries, f_target);
 
-    tmp = class->content->head;
+    tmp = class__->content->head;
     while (tmp != NULL) {
         if (tmp->type == TYPE_VAR) {
             rapify_variable((struct variable *)tmp->content, f_target);
         } else {
-            if (((struct class *)(tmp->content))->content != NULL) {
+            if (((struct class_ *)(tmp->content))->content != NULL) {
                 fputc(0, f_target);
-                fwrite(((struct class *)(tmp->content))->name,
-                    strlen(((struct class *)(tmp->content))->name) + 1, 1, f_target);
-                ((struct class *)(tmp->content))->offset_location = ftell(f_target);
+                fwrite(((struct class_ *)(tmp->content))->name,
+                    strlen(((struct class_ *)(tmp->content))->name) + 1, 1, f_target);
+                ((struct class_ *)(tmp->content))->offset_location = ftell(f_target);
                 fwrite("\0\0\0\0", 4, 1, f_target);
             } else {
-                rapify_class(tmp->content, f_target);
+                rapify_class((class_*)tmp->content, f_target);
             }
         }
 
         tmp = tmp->next;
     }
 
-    tmp = class->content->head;
+    tmp = class__->content->head;
     while (tmp != NULL) {
-        if (tmp->type == TYPE_CLASS && ((struct class *)(tmp->content))->content != NULL) {
+        if (tmp->type == TYPE_CLASS && ((struct class_ *)(tmp->content))->content != NULL) {
             fp_temp = ftell(f_target);
-            fseek(f_target, ((struct class *)(tmp->content))->offset_location, SEEK_SET);
+            fseek(f_target, ((struct class_ *)(tmp->content))->offset_location, SEEK_SET);
             fwrite(&fp_temp, sizeof(uint32_t), 1, f_target);
             fseek(f_target, 0, SEEK_END);
 
-            rapify_class(tmp->content, f_target);
+            rapify_class((class_*)tmp->content, f_target);
         }
 
         tmp = tmp->next;
@@ -422,7 +422,7 @@ int rapify_file(char *source, char *target) {
 #endif
 
     fseek(f_temp, 0, SEEK_SET);
-    struct class *result;
+    struct class_ *result;
     result = parse_file(f_temp, lineref);
 
     if (result == NULL) {

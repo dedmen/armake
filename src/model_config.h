@@ -73,7 +73,7 @@ struct animation {
     float unhide_value;
 };
 
-struct skeleton {
+struct skeleton_ {
     char name[512];
     uint32_t num_bones;
     struct bone bones[MAXBONES];
@@ -91,4 +91,4 @@ struct skeleton {
 };
 
 
-int read_model_config(char *path, struct skeleton *skeleton);
+int read_model_config(char *path, struct skeleton_ *skeleton);

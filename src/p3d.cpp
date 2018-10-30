@@ -24,7 +24,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
-#include <unistd.h>
+//#include <unistd.h>
 #include <math.h>
 
 #ifdef _WIN32
@@ -477,8 +477,8 @@ void build_model_info(struct mlod_lod *mlod_lods, uint32_t num_lods, struct mode
     model_info->prefer_shadow_volume = false; //@todo
     model_info->shadow_offset = 1.0f; //@todo
 
-    model_info->skeleton = (struct skeleton *)safe_malloc(sizeof(struct skeleton));
-    memset(model_info->skeleton, 0, sizeof(struct skeleton));
+    model_info->skeleton = (struct skeleton_ *)safe_malloc(sizeof(struct skeleton_));
+    memset(model_info->skeleton, 0, sizeof(struct skeleton_));
 
     model_info->map_type = 22; //@todo
     model_info->n_floats = 0;
@@ -1185,7 +1185,7 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
 }
 
 
-void write_skeleton(FILE *f_target, struct skeleton *skeleton) {
+void write_skeleton(FILE *f_target, struct skeleton_ *skeleton) {
     int i;
 
     fwrite(skeleton->name, strlen(skeleton->name) + 1, 1, f_target);

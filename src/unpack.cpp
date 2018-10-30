@@ -22,7 +22,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-#include <unistd.h>
+#include <filesystem>
+//#include <unistd.h>
 
 #include "args.h"
 #include "filesystem.h"
@@ -202,7 +203,7 @@ int cmd_unpack() {
     strcpy(full_path, args.positionals[2]);
     strcat(full_path, PATHSEP_STR);
     strcat(full_path, "$PBOPREFIX$");
-    if (access(full_path, F_OK) != -1 && !args.force) {
+    if (std::filesystem::exists(full_path) && !args.force) {
         errorf("File %s already exists and --force was not set.\n", full_path);
         fclose(f_source);
         free(headers);
@@ -329,7 +330,7 @@ int cmd_unpack() {
         }
 
         // open target file
-        if (access(full_path, F_OK) != -1 && !args.force) {
+        if (std::filesystem::exists(full_path) && !args.force) {
             errorf("File %s already exists and --force was not set.\n", full_path);
             fclose(f_source);
             return 7;

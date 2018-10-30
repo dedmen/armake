@@ -31,16 +31,16 @@
 
 
 #ifdef _WIN32
-ssize_t getdelim(char **buf, size_t *bufsiz, int delimiter, FILE *fp);
+size_t getdelim(char **buf, size_t *bufsiz, int delimiter, FILE *fp);
 
-ssize_t getline(char **buf, size_t *bufsiz, FILE *fp);
+size_t getline(char **buf, size_t *bufsiz, FILE *fp);
 #endif
 
 int get_temp_name(char *target, char *suffix);
 
 int create_folder(char *path);
 
-int create_folders(char *path);
+int create_folders(const char *path);
 
 int create_temp_folder(char *addon, char *temp_folder, size_t bufsize);
 
@@ -48,7 +48,7 @@ int remove_file(char *path);
 
 int remove_folder(char *folder);
 
-int copy_file(char *source, char *target);
+int copy_file(char *source, const char *target);
 
 int traverse_directory(char *root, int (*callback)(char *, char *, char *),
     char *third_arg);

@@ -22,7 +22,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
-#include <unistd.h>
+#include <filesystem>
+//#include <unistd.h>
 #include <errno.h>
 
 #ifdef _WIN32
@@ -53,6 +54,8 @@ char *strchrnul(const char *s, int c) {
     return s + strlen(s);
 }
 #endif
+
+char include_stack[MAXINCLUDES][1024];
 
 struct constants *constants_init() {
     struct constants *c = (struct constants *)safe_malloc(sizeof(struct constants));
@@ -652,7 +655,7 @@ int find_file_helper(char *includepath, char *origin, char *includefolder, char 
             filename[i] = '/';
     }
 #endif
-    if (access(filename, F_OK) != -1) {
+    if (std::filesystem::exists(filename)) {
         strcpy(actualpath, filename);
         return 0;
     }

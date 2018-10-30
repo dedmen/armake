@@ -21,7 +21,7 @@
 %option nodebug
 
 %{
-#define YY_DECL int yylex(struct class **result, struct lineref *lineref)
+#define YY_DECL int yylex(struct class_ **result, struct lineref *lineref)
 
 #include <stdio.h>
 #include <stdbool.h>

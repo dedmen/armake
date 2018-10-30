@@ -286,7 +286,7 @@ struct model_info {
     bool prefer_shadow_volume;
     float shadow_offset;
     bool animated;
-    struct skeleton *skeleton;
+    struct skeleton_ *skeleton;
     char map_type;
     uint32_t n_floats;
     float mass;

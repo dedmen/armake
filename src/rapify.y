@@ -29,17 +29,17 @@
 #define YYDEBUG 0
 #define YYERROR_VERBOSE 1
 
-extern int yylex(struct class **result, struct lineref *lineref);
+extern int yylex(struct class_ **result, struct lineref *lineref);
 extern int yyparse();
 extern FILE* yyin;
 extern int yylineno;
 
-void yyerror(struct class **result, struct lineref *lineref, const char* s);
+void yyerror(struct class_ **result, struct lineref *lineref, const char* s);
 %}
 
 %union {
     struct definitions* definitions_value;
-    struct class *class_value;
+    struct class_ *class_value;
     struct variable *variable_value;
     struct expression *expression_value;
     int32_t int_value;
@@ -57,24 +57,24 @@ void yyerror(struct class **result, struct lineref *lineref, const char* s);
 %token T_LBRACKET T_RBRACKET
 
 %type<definitions_value> definitions
-%type<class_value> class
+%type<class_value> class_
 %type<variable_value> variable
 %type<expression_value> expression expressions
 
 %start start
 
-%param {struct class **result} {struct lineref *lineref}
+%param {struct class_ **result} {struct lineref *lineref}
 %locations
 
 %%
 start: definitions { *result = new_class(NULL, NULL, $1, false); }
 
 definitions:  /* empty */ { $$ = new_definitions(); }
-            | definitions class { $$ = add_definition($1, TYPE_CLASS, $2); }
+            | definitions class_ { $$ = add_definition($1, TYPE_CLASS, $2); }
             | definitions variable { $$ = add_definition($1, TYPE_VAR, $2); }
 ;
 
-class:        T_CLASS T_NAME T_LBRACE definitions T_RBRACE T_SEMICOLON { $$ = new_class($2, NULL, $4, false); }
+class_:        T_CLASS T_NAME T_LBRACE definitions T_RBRACE T_SEMICOLON { $$ = new_class($2, NULL, $4, false); }
             | T_CLASS T_NAME T_COLON T_NAME T_LBRACE definitions T_RBRACE T_SEMICOLON { $$ = new_class($2, $4, $6, false); }
             | T_CLASS T_NAME T_SEMICOLON { $$ = new_class($2, NULL, NULL, false); }
             | T_CLASS T_NAME T_COLON T_NAME T_SEMICOLON { $$ = new_class($2, $4, 0, false); }
@@ -99,8 +99,8 @@ expressions:  expression { $$ = $1; }
 ;
 %%
 
-struct class *parse_file(FILE *f, struct lineref *lineref) {
-    struct class *result;
+struct class_ *parse_file(FILE *f, struct lineref *lineref) {
+    struct class_ *result;
 
     yylineno = 0;
     yyin = f;
@@ -118,7 +118,7 @@ struct class *parse_file(FILE *f, struct lineref *lineref) {
     return result;
 }
 
-void yyerror(struct class **result, struct lineref *lineref,  const char* s) {
+void yyerror(struct class_ **result, struct lineref *lineref,  const char* s) {
     int line = 0;
     char *buffer = NULL;
     size_t buffsize;

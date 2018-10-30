@@ -22,7 +22,7 @@
 #include <stdbool.h>
 
 
-struct arguments {
+inline struct arguments {
     int num_positionals;
     char **positionals;
     bool help;

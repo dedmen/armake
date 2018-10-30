@@ -25,7 +25,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
-#include <unistd.h>
+#include <filesystem>
+//#include <unistd.h>
 #include <math.h>
 
 #ifdef _WIN32
@@ -376,7 +377,7 @@ int cmd_img2paa() {
         return 128;
 
     // check if target already exists
-    if (access(args.positionals[2], F_OK) != -1 && !args.force) {
+    if (std::filesystem::exists(args.positionals[2]) && !args.force) {
         errorf("File %s already exists and --force was not set.\n", args.positionals[2]);
         return 1;
     }

@@ -21,13 +21,16 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
-#include <unistd.h>
+#include <filesystem>
+//#include <unistd.h>
 
 #ifdef _WIN32
 #include <windows.h>
 #endif
-
+extern "C" {
 #include "sha1.h"
+}
+
 #include "args.h"
 #include "binarize.h"
 #include "filesystem.h"
@@ -236,7 +239,7 @@ int cmd_build() {
 
     // check if target already exists
     FILE *f_target;
-    if (access(args.positionals[2], F_OK) != -1 && !args.force) {
+    if (std::filesystem::exists(args.positionals[2]) && !args.force) {
         errorf("File %s already exists and --force was not set.\n", args.positionals[2]);
         return 1;
     }
@@ -339,7 +342,7 @@ int cmd_build() {
     strcpy(notestpath, prefixpath);
     strcpy(nobinpath + strlen(nobinpath) - 11, "$NOBIN$");
     strcpy(notestpath + strlen(notestpath) - 11, "$NOBIN-NOTEST$");
-    if (!args.packonly && access(nobinpath, F_OK) == -1 && access(notestpath, F_OK) == -1) {
+    if (!args.packonly && std::filesystem::exists(nobinpath) && std::filesystem::exists(notestpath)) {
         if (traverse_directory(tempfolder, binarize_callback, "")) {
             current_target = args.positionals[1];
             errorf("Failed to binarize some files.\n");
@@ -353,7 +356,7 @@ int cmd_build() {
         strcat(configpath, "?config.cpp");
         configpath[strlen(tempfolder)] = PATHSEP;
 
-        if (access(configpath, F_OK) != -1) {
+        if (std::filesystem::exists(configpath)) {
 #ifdef _WIN32
             if (!DeleteFile(configpath)) {
 #else
@@ -486,7 +489,7 @@ int cmd_build() {
         }
 
         // check if target already exists
-        if (access(path_signature, F_OK) != -1 && !args.force) {
+        if (std::filesystem::exists(path_signature) && !args.force) {
             errorf("File %s already exists and --force was not set.\n", path_signature);
             return 2;
         }

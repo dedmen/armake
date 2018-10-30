@@ -22,13 +22,14 @@
 #include <stdint.h>
 #include <stdarg.h>
 #include <string.h>
-#include <unistd.h>
+//#include <unistd.h>
 #include <math.h>
 
 #include "args.h"
 #include "filesystem.h"
 #include "utils.h"
-
+#include <vector>
+char *current_target;
 
 #ifdef _WIN32
 
@@ -39,7 +40,7 @@ char *strndup(const char *s, size_t n) {
     return result;
 }
 
-char *strchrnul(const char *s, int c) {
+char *strchrnul(char *s, int c) {
     char *result = strchr(s, c);
     if (result != NULL)
         return result;
@@ -301,7 +302,7 @@ void reverse_endianness(void *ptr, size_t buffsize) {
     int i;
 
     buffer = (char *)ptr;
-    temp = safe_malloc(buffsize);
+    temp = (char*)safe_malloc(buffsize);
 
     for (i = 0; i < buffsize; i++) {
         temp[(buffsize - 1) - i] = buffer[i];
@@ -373,12 +374,13 @@ void trim_leading(char *string, size_t buffsize) {
      * Trims leading tabs and spaces on the string.
      */
 
-    char tmp[buffsize];
-    char *ptr = tmp;
-    strncpy(tmp, string, buffsize);
+    std::vector<char> tmp;
+    tmp.resize(buffsize);
+    char *ptr = tmp.data();
+    strncpy(tmp.data(), string, buffsize);
     while (*ptr == ' ' || *ptr == '\t')
         ptr++;
-    strncpy(string, ptr, buffsize - (ptr - tmp));
+    strncpy(string, ptr, buffsize - (ptr - tmp.data()));
 }
 
 
@@ -416,7 +418,7 @@ void replace_string(char *string, size_t buffsize, char *search, char *replace, 
     int i;
     bool quote;
 
-    tmp = safe_malloc(buffsize);
+    tmp = (char*)safe_malloc(buffsize);
     strncpy(tmp, string, buffsize);
 
     ptr_old = string;
@@ -550,7 +552,7 @@ void escape_string(char *buffer, size_t buffsize) {
     char *ptr;
     char tmp_array[3];
 
-    tmp = safe_malloc(buffsize * 2);
+    tmp = (char*)safe_malloc(buffsize * 2);
     tmp[0] = 0;
     tmp_array[2] = 0;
 
@@ -583,7 +585,7 @@ void unescape_string(char *buffer, size_t buffsize) {
     char current;
     char quote;
 
-    tmp = safe_malloc(buffsize);
+    tmp = (char*)safe_malloc(buffsize);
     tmp[0] = 0;
     tmp_array[1] = 0;
 
