@@ -108,7 +108,7 @@ int attempt_bis_binarize(char *source, char *target) {
     char *dependencies[MAXTEXTURES];
     char *root;
     FILE *f_source;
-    struct mlod_lod *mlod_lods;
+    std::vector<mlod_lod> mlod_lods;
 
     current_target = source;
 
@@ -146,7 +146,7 @@ int attempt_bis_binarize(char *source, char *target) {
 
         fseek(f_source, 8, SEEK_SET);
         fread(&num_lods, 4, 1, f_source);
-        mlod_lods = (struct mlod_lod *)safe_malloc(sizeof(struct mlod_lod) * num_lods);
+        mlod_lods.resize(num_lods);
         num_lods = read_lods(f_source, mlod_lods, num_lods);
         fflush(stdout);
         if (num_lods < 0) {
@@ -184,20 +184,7 @@ int attempt_bis_binarize(char *source, char *target) {
                     }
                 }
             }
-
-            free(mlod_lods[i].points);
-            free(mlod_lods[i].faces);
-            free(mlod_lods[i].mass);
-            free(mlod_lods[i].sharp_edges);
-
-            for (j = 0; j < mlod_lods[i].num_selections; j++) {
-                free(mlod_lods[i].selections[j].points);
-                free(mlod_lods[i].selections[j].faces);
-            }
-
-            free(mlod_lods[i].selections);
         }
-        free(mlod_lods);
     }
 
     // Create a temporary folder to isolate the target file and copy it there

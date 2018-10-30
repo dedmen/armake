@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <algorithm>
 //#include <unistd.h>
 #include <math.h>
 
@@ -41,7 +42,7 @@
 #include "p3d.h"
 
 
-int read_lods(FILE *f_source, struct mlod_lod *mlod_lods, uint32_t num_lods) {
+int read_lods(FILE *f_source, std::vector<mlod_lod> &mlod_lods, uint32_t num_lods) {
     /*
      * Reads all LODs (starting at the current position of f_source) into
      * the given LODs array.
@@ -82,13 +83,13 @@ int read_lods(FILE *f_source, struct mlod_lod *mlod_lods, uint32_t num_lods) {
 
         if (empty) {
             mlod_lods[i].num_points = 1;
-            mlod_lods[i].points = (struct point *)safe_malloc(sizeof(struct point));
+            mlod_lods[i].points.resize(1);
             mlod_lods[i].points[0].x = 0.0f;
             mlod_lods[i].points[0].y = 0.0f;
             mlod_lods[i].points[0].z = 0.0f;
             mlod_lods[i].points[0].point_flags = 0;
         } else {
-            mlod_lods[i].points = (struct point *)safe_malloc(sizeof(struct point) * mlod_lods[i].num_points);
+            mlod_lods[i].points.resize(mlod_lods[i].num_points);
             for (j = 0; j < mlod_lods[i].num_points; j++)
                 fread(&mlod_lods[i].points[j], sizeof(struct point), 1, f_source);
         }
@@ -97,7 +98,7 @@ int read_lods(FILE *f_source, struct mlod_lod *mlod_lods, uint32_t num_lods) {
         for (j = 0; j < mlod_lods[i].num_facenormals; j++)
             fread(&mlod_lods[i].facenormals[j], sizeof(vector3), 1, f_source);
 
-        mlod_lods[i].faces = (struct mlod_face *)safe_malloc(sizeof(struct mlod_face) * mlod_lods[i].num_faces);
+        mlod_lods[i].faces.resize(mlod_lods[i].num_faces);
         for (j = 0; j < mlod_lods[i].num_faces; j++) {
             fread(&mlod_lods[i].faces[j], 72, 1, f_source);
 
@@ -118,10 +119,7 @@ int read_lods(FILE *f_source, struct mlod_lod *mlod_lods, uint32_t num_lods) {
         if (strncmp(buffer, "TAGG", 4) != 0)
             return -2;
 
-        mlod_lods[i].mass = 0;
         mlod_lods[i].num_sharp_edges = 0;
-        mlod_lods[i].sharp_edges = 0;
-        mlod_lods[i].selections = 0;
 
         for (j = 0; j < MAXPROPERTIES; j++) {
             mlod_lods[i].properties[j].name[0] = 0;
@@ -151,7 +149,7 @@ int read_lods(FILE *f_source, struct mlod_lod *mlod_lods, uint32_t num_lods) {
                 break;
         }
 
-        mlod_lods[i].selections = (struct mlod_selection *)safe_malloc(sizeof(struct mlod_selection) * mlod_lods[i].num_selections);
+        mlod_lods[i].selections.resize(mlod_lods[i].num_selections);
         for (j = 0; j < mlod_lods[i].num_selections; j++)
             mlod_lods[i].selections[j].name[0] = 0;
 
@@ -176,31 +174,31 @@ int read_lods(FILE *f_source, struct mlod_lod *mlod_lods, uint32_t num_lods) {
                 strcpy(mlod_lods[i].selections[j].name, buffer);
 
                 if (empty) {
-                    mlod_lods[i].selections[j].points = (uint8_t *)safe_malloc(1);
+                    mlod_lods[i].selections[j].points.resize(1);
                     mlod_lods[i].selections[j].points[0] = 0;
                 } else {
-                    mlod_lods[i].selections[j].points = (uint8_t *)safe_malloc(mlod_lods[i].num_points);
-                    fread(mlod_lods[i].selections[j].points, mlod_lods[i].num_points, 1, f_source);
+                    mlod_lods[i].selections[j].points.resize(mlod_lods[i].num_points);
+                    fread(mlod_lods[i].selections[j].points.data(), mlod_lods[i].num_points, 1, f_source);
                 }
 
-                mlod_lods[i].selections[j].faces = (uint8_t *)safe_malloc(mlod_lods[i].num_faces);
-                fread(mlod_lods[i].selections[j].faces, mlod_lods[i].num_faces, 1, f_source);
+                mlod_lods[i].selections[j].faces.resize(mlod_lods[i].num_faces);
+                fread(mlod_lods[i].selections[j].faces.data(), mlod_lods[i].num_faces, 1, f_source);
             }
 
             if (strcmp(buffer, "#Mass#") == 0) {
                 if (empty) {
-                    mlod_lods[i].mass = (float *)safe_malloc(sizeof(float));
+                    mlod_lods[i].mass.resize(1);
                     mlod_lods[i].mass[0] = 0.0f;
                 } else {
-                    mlod_lods[i].mass = (float *)safe_malloc(sizeof(float) * mlod_lods[i].num_points);
-                    fread(mlod_lods[i].mass, sizeof(float) * mlod_lods[i].num_points, 1, f_source);
+                    mlod_lods[i].mass.resize(mlod_lods[i].num_points);
+                    fread(mlod_lods[i].mass.data(), sizeof(float) * mlod_lods[i].num_points, 1, f_source);
                 }
             }
 
             if (strcmp(buffer, "#SharpEdges#") == 0) {
                 mlod_lods[i].num_sharp_edges = tagg_len / (2 * sizeof(uint32_t));
-                mlod_lods[i].sharp_edges = (uint32_t *)safe_malloc(tagg_len);
-                fread(mlod_lods[i].sharp_edges, tagg_len, 1, f_source);
+                mlod_lods[i].sharp_edges.resize(mlod_lods[i].num_sharp_edges);
+                fread(mlod_lods[i].sharp_edges.data(), tagg_len, 1, f_source);
             }
 
             if (strcmp(buffer, "#Property#") == 0) {
@@ -223,19 +221,8 @@ int read_lods(FILE *f_source, struct mlod_lod *mlod_lods, uint32_t num_lods) {
 
         fread(&mlod_lods[i].resolution, 4, 1, f_source);
 
+        //#TODO remove useless cleanup loop
         if (mlod_lods[i].resolution >= LOD_EDIT_START && mlod_lods[i].resolution < LOD_EDIT_END) {
-            free(mlod_lods[i].points);
-            free(mlod_lods[i].faces);
-            free(mlod_lods[i].mass);
-            free(mlod_lods[i].sharp_edges);
-
-            for (j = 0; j < mlod_lods[i].num_selections; j++) {
-                free(mlod_lods[i].selections[j].points);
-                free(mlod_lods[i].selections[j].faces);
-            }
-
-            free(mlod_lods[i].selections);
-
             i--;
             num_lods--;
         }
@@ -245,7 +232,7 @@ int read_lods(FILE *f_source, struct mlod_lod *mlod_lods, uint32_t num_lods) {
 }
 
 
-void get_bounding_box(struct mlod_lod *mlod_lods, uint32_t num_lods,
+void get_bounding_box(std::vector<mlod_lod> &mlod_lods, uint32_t num_lods,
         vector3 &bbox_min, vector3 &bbox_max, bool visual_only, bool geometry_only) {
     /*
      * Calculate the bounding box for the given LODs and stores it
@@ -316,7 +303,7 @@ float get_sphere(struct mlod_lod *mlod_lod, vector center) {
 }
 
 
-void get_mass_data(struct mlod_lod *mlod_lods, uint32_t num_lods, struct model_info *model_info) {
+void get_mass_data(std::vector<mlod_lod> &mlod_lods, uint32_t num_lods, struct model_info *model_info) {
     int i;
     float mass;
     vector sum;
@@ -382,7 +369,7 @@ void get_mass_data(struct mlod_lod *mlod_lods, uint32_t num_lods, struct model_i
 }
 
 
-void build_model_info(struct mlod_lod *mlod_lods, uint32_t num_lods, struct model_info *model_info) {
+void build_model_info(std::vector<mlod_lod> &mlod_lods, uint32_t num_lods, struct model_info *model_info) {
     int i;
     int j;
     float sphere;
@@ -623,19 +610,14 @@ int flags_to_pass(uint32_t flags) {
 }
 
 
-#ifdef _WIN32
-int compare_face_lookup(void *faces_ptr, const void *a, const void *b) {
-#else
-int compare_face_lookup(const void *a, const void *b, void *faces_ptr) {
-#endif
-    struct mlod_face *faces;
+int compare_face_lookup(std::vector<mlod_face> &faces, uint32_t a, uint32_t b) {
+
     uint32_t a_index;
     uint32_t b_index;
     int compare;
 
-    faces = (struct mlod_face *)faces_ptr;
-    a_index = *((uint32_t *)a);
-    b_index = *((uint32_t *)b);
+    a_index = a;
+    b_index = b;
 
     compare = faces[a_index].material_index - faces[b_index].material_index;
     if (compare != 0)
@@ -872,11 +854,7 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
 
     // Sort faces
     if (mlod_lod->num_faces > 1) {
-#ifdef _WIN32
-        qsort_s(odol_lod->face_lookup, odol_lod->num_faces, sizeof(uint32_t), compare_face_lookup, (void *)mlod_lod->faces);
-#else
-        qsort_r(odol_lod->face_lookup, odol_lod->num_faces, sizeof(uint32_t), compare_face_lookup, (void *)mlod_lod->faces);
-#endif
+        std::sort(mlod_lod->faces.begin(), mlod_lod->faces.end());
     }
 
     // Write face vertices
@@ -953,11 +931,7 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
     if (odol_lod->num_faces > 0) {
         odol_lod->num_sections = 1;
         for (i = 1; i < odol_lod->num_faces; i++) {
-#ifdef _WIN32
-            if (compare_face_lookup((void *)mlod_lod->faces, &odol_lod->face_lookup[i], &odol_lod->face_lookup[i - 1])) {
-#else
-            if (compare_face_lookup(&odol_lod->face_lookup[i], &odol_lod->face_lookup[i - 1], (void *)mlod_lod->faces)) {
-#endif
+            if (compare_face_lookup(mlod_lod->faces, odol_lod->face_lookup[i], odol_lod->face_lookup[i - 1])) {
                 odol_lod->num_sections++;
                 continue;
             }
@@ -985,11 +959,7 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
             odol_lod->sections[k].unknown_long = 0;
 
             for (j = i; j < odol_lod->num_faces; j++) {
-#ifdef _WIN32
-                if (compare_face_lookup((void *)mlod_lod->faces, &odol_lod->face_lookup[j], &odol_lod->face_lookup[i]))
-#else
-                if (compare_face_lookup(&odol_lod->face_lookup[j], &odol_lod->face_lookup[i], (void *)mlod_lod->faces))
-#endif
+                if (compare_face_lookup(mlod_lod->faces, odol_lod->face_lookup[j], odol_lod->face_lookup[i]))
                     break;
 
                 odol_lod->sections[k].face_end++;
@@ -1516,7 +1486,7 @@ void write_odol_lod(FILE *f_target, struct odol_lod *odol_lod) {
 }
 
 
-void calculate_axis(struct animation *anim, uint32_t num_lods, struct mlod_lod *mlod_lods) {
+void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_lod> &mlod_lods) {
     /*
      * Gets the absolute axis position and direction for the given rotation
      * or translation animations.
@@ -1589,7 +1559,7 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, struct mlod_lod *
 }
 
 
-void write_animations(FILE *f_target, uint32_t num_lods, struct mlod_lod *mlod_lods,
+void write_animations(FILE *f_target, uint32_t num_lods, std::vector<mlod_lod> &mlod_lods,
         struct model_info *model_info) {
     int i;
     int j;
@@ -1729,7 +1699,7 @@ int mlod2odol(char *source, char *target) {
     long fp_temp;
     uint32_t version;
     uint32_t num_lods;
-    struct mlod_lod *mlod_lods;
+    std::vector<mlod_lod> mlod_lods;
     struct model_info model_info;
     struct odol_lod odol_lod;
 
@@ -1779,11 +1749,10 @@ int mlod2odol(char *source, char *target) {
 
     fseek(f_source, 8, SEEK_SET);
     fread(&num_lods, 4, 1, f_source);
-    mlod_lods = (struct mlod_lod *)safe_malloc(sizeof(struct mlod_lod) * num_lods);
+    mlod_lods.resize(num_lods);
     num_lods = read_lods(f_source, mlod_lods, num_lods);
     if (num_lods < 0) {
         errorf("Failed to read LODs.\n");
-        free(mlod_lods);
         fclose(f_temp);
         fclose(f_source);
 #ifdef _WIN32
@@ -1921,21 +1890,6 @@ int mlod2odol(char *source, char *target) {
 #ifdef _WIN32
     DeleteFile(temp_name);
 #endif
-
-    for (i = 0; i < num_lods; i++) {
-        free(mlod_lods[i].points);
-        free(mlod_lods[i].faces);
-        free(mlod_lods[i].mass);
-        free(mlod_lods[i].sharp_edges);
-
-        for (j = 0; j < mlod_lods[i].num_selections; j++) {
-            free(mlod_lods[i].selections[j].points);
-            free(mlod_lods[i].selections[j].faces);
-        }
-
-        free(mlod_lods[i].selections);
-    }
-    free(mlod_lods);
 
     free(model_info.lod_resolutions);
     free(model_info.skeleton);

@@ -111,12 +111,29 @@ struct mlod_face {
     char material_name[512];
     int material_index;
     char section_names[512];
+    bool operator<(const mlod_face& other) {
+        uint32_t compare;
+        compare = material_index - other.material_index;
+        if (compare != 0)
+            return compare < 0;
+
+        compare = face_flags - other.face_flags;
+        if (compare != 0)
+            return compare < 0;
+
+        compare = texture_index - other.texture_index;
+        if (compare != 0)
+            return compare < 0;
+
+        return strcmp(section_names, other.section_names) < 0;
+
+    }
 };
 
 struct mlod_selection {
     char name[512];
-    uint8_t *points;
-    uint8_t *faces;
+    std::vector<uint8_t> points;
+    std::vector<uint8_t> faces;
 };
 
 struct mlod_lod {
@@ -124,15 +141,15 @@ struct mlod_lod {
     uint32_t num_facenormals;
     uint32_t num_faces;
     uint32_t num_sharp_edges;
-    struct point *points;
+    std::vector<point> points;
     std::vector<vector3> facenormals;
-    struct mlod_face *faces;
-    float *mass;
-    uint32_t *sharp_edges;
+    std::vector<mlod_face> faces;
+    std::vector<float> mass;
+    std::vector<uint32_t> sharp_edges;
     struct property properties[MAXPROPERTIES];
     float resolution;
     uint32_t num_selections;
-    struct mlod_selection *selections;
+    std::vector<mlod_selection> selections;
 };
 
 struct odol_face {
@@ -303,6 +320,6 @@ struct model_info {
     uint32_t always_0;
 };
 
-int read_lods(FILE *f_source, struct mlod_lod *mlod_lods, uint32_t num_lods);
+int read_lods(FILE *f_source, std::vector<mlod_lod> &mlod_lods, uint32_t num_lods);
 
 int mlod2odol(char *source, char *target);
