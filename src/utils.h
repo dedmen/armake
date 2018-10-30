@@ -21,6 +21,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "vector.h"
 
 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
@@ -50,6 +51,9 @@ struct point {
     float y;
     float z;
     uint32_t point_flags;
+    vector3 getPosition() {
+        return { x,y,z };
+    }
 };
 
 extern char *current_target;

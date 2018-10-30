@@ -93,9 +93,9 @@ int read_lods(FILE *f_source, struct mlod_lod *mlod_lods, uint32_t num_lods) {
                 fread(&mlod_lods[i].points[j], sizeof(struct point), 1, f_source);
         }
 
-        mlod_lods[i].facenormals = (struct triplet *)safe_malloc(sizeof(struct triplet) * mlod_lods[i].num_facenormals);
+        mlod_lods[i].facenormals.resize(mlod_lods[i].num_facenormals);
         for (j = 0; j < mlod_lods[i].num_facenormals; j++)
-            fread(&mlod_lods[i].facenormals[j], sizeof(struct triplet), 1, f_source);
+            fread(&mlod_lods[i].facenormals[j], sizeof(vector3), 1, f_source);
 
         mlod_lods[i].faces = (struct mlod_face *)safe_malloc(sizeof(struct mlod_face) * mlod_lods[i].num_faces);
         for (j = 0; j < mlod_lods[i].num_faces; j++) {
@@ -225,7 +225,6 @@ int read_lods(FILE *f_source, struct mlod_lod *mlod_lods, uint32_t num_lods) {
 
         if (mlod_lods[i].resolution >= LOD_EDIT_START && mlod_lods[i].resolution < LOD_EDIT_END) {
             free(mlod_lods[i].points);
-            free(mlod_lods[i].facenormals);
             free(mlod_lods[i].faces);
             free(mlod_lods[i].mass);
             free(mlod_lods[i].sharp_edges);
@@ -247,7 +246,7 @@ int read_lods(FILE *f_source, struct mlod_lod *mlod_lods, uint32_t num_lods) {
 
 
 void get_bounding_box(struct mlod_lod *mlod_lods, uint32_t num_lods,
-        struct triplet *bbox_min, struct triplet *bbox_max, bool visual_only, bool geometry_only) {
+        vector3 &bbox_min, vector3 &bbox_max, bool visual_only, bool geometry_only) {
     /*
      * Calculate the bounding box for the given LODs and stores it
      * in the given triplets.
@@ -259,9 +258,6 @@ void get_bounding_box(struct mlod_lod *mlod_lods, uint32_t num_lods,
     float z;
     int i;
     int j;
-
-    memset(bbox_min, 0, sizeof(struct triplet));
-    memset(bbox_max, 0, sizeof(struct triplet));
 
     first = true;
 
@@ -277,20 +273,20 @@ void get_bounding_box(struct mlod_lod *mlod_lods, uint32_t num_lods,
             y = mlod_lods[i].points[j].y;
             z = mlod_lods[i].points[j].z;
 
-            if (first || x < bbox_min->x)
-                bbox_min->x = x;
-            if (first || x > bbox_max->x)
-                bbox_max->x = x;
+            if (first || x < bbox_min.x)
+                bbox_min.x = x;
+            if (first || x > bbox_max.x)
+                bbox_max.x = x;
 
-            if (first || y < bbox_min->y)
-                bbox_min->y = y;
-            if (first || y > bbox_max->y)
-                bbox_max->y = y;
+            if (first || y < bbox_min.y)
+                bbox_min.y = y;
+            if (first || y > bbox_max.y)
+                bbox_max.y = y;
 
-            if (first || z < bbox_min->z)
-                bbox_min->z = z;
-            if (first || z > bbox_max->z)
-                bbox_max->z = z;
+            if (first || z < bbox_min.z)
+                bbox_min.z = z;
+            if (first || z > bbox_max.z)
+                bbox_max.z = z;
 
             first = false;
         }
@@ -311,7 +307,7 @@ float get_sphere(struct mlod_lod *mlod_lod, vector center) {
     sphere = 0;
     for (i = 0; i < mlod_lod->num_points; i++) {
         point = *((vector*)&mlod_lod->points[i].x);
-        dist = vector_length(vector_sub(point, center));
+        dist = (point - center).magnitude();
         if (dist > sphere)
             sphere = dist;
     }
@@ -358,15 +354,15 @@ void get_mass_data(struct mlod_lod *mlod_lods, uint32_t num_lods, struct model_i
     for (i = 0; i < mass_lod->num_points; i++) {
         pos = *((vector *)&mass_lod->points[i].x);
         mass += mass_lod->mass[i];
-        sum = vector_add(sum, vector_mult_scalar(mass_lod->mass[i], pos));
+        sum += pos * mass_lod->mass[i];
     }
 
-    model_info->centre_of_mass = (mass > 0) ? vector_mult_scalar(1 / mass, sum) : empty_vector;
+    model_info->centre_of_mass = (mass > 0) ? sum* (1 / mass) : empty_vector;
 
     inertia = empty_matrix;
     for (i = 0; i < mass_lod->num_points; i++) {
         pos = *((vector *)&mass_lod->points[i].x);
-        r_tilda = vector_tilda(vector_sub(pos, model_info->centre_of_mass));
+        r_tilda = vector_tilda(pos - model_info->centre_of_mass);
         inertia = matrix_sub(inertia, matrix_mult_scalar(mass_lod->mass[i], matrix_mult(r_tilda, r_tilda)));
     }
 
@@ -390,8 +386,8 @@ void build_model_info(struct mlod_lod *mlod_lods, uint32_t num_lods, struct mode
     int i;
     int j;
     float sphere;
-    struct triplet bbox_total_min;
-    struct triplet bbox_total_max;
+    vector bbox_total_min;
+    vector bbox_total_max;
 
     model_info->lod_resolutions = (float *)safe_malloc(sizeof(float) * num_lods);
 
@@ -419,29 +415,29 @@ void build_model_info(struct mlod_lod *mlod_lods, uint32_t num_lods, struct mode
     }
 
     // Bounding box & center
-    get_bounding_box(mlod_lods, num_lods, &bbox_total_min, &bbox_total_max, false, false);
+    get_bounding_box(mlod_lods, num_lods, bbox_total_min, bbox_total_max, false, false);
 
-    model_info->bounding_center = vector_mult_scalar(0.5f, vector_add(bbox_total_min, bbox_total_max));
+    model_info->bounding_center = (bbox_total_min + bbox_total_max) * 0.5f;
 
     if (!model_info->autocenter)
         model_info->bounding_center = empty_vector;
 
-    model_info->bbox_min = vector_sub(bbox_total_min, model_info->bounding_center);
-    model_info->bbox_max = vector_sub(bbox_total_max, model_info->bounding_center);
+    model_info->bbox_min = bbox_total_min - model_info->bounding_center;
+    model_info->bbox_max = bbox_total_max - model_info->bounding_center;
 
     model_info->lod_density_coef = 1.0f; // @todo
     model_info->draw_importance = 1.0f; // @todo
 
     // Visual bounding box
-    get_bounding_box(mlod_lods, num_lods, &model_info->bbox_visual_min, &model_info->bbox_visual_max, true, false);
+    get_bounding_box(mlod_lods, num_lods, model_info->bbox_visual_min, model_info->bbox_visual_max, true, false);
 
-    model_info->bbox_visual_min = vector_sub(model_info->bbox_visual_min, model_info->bounding_center);
-    model_info->bbox_visual_max = vector_sub(model_info->bbox_visual_max, model_info->bounding_center);
+    model_info->bbox_visual_min = model_info->bbox_visual_min - model_info->bounding_center;
+    model_info->bbox_visual_max = model_info->bbox_visual_max - model_info->bounding_center;
 
     // Geometry center
-    get_bounding_box(mlod_lods, num_lods, &bbox_total_min, &bbox_total_max, false, true);
+    get_bounding_box(mlod_lods, num_lods, bbox_total_min, bbox_total_max, false, true);
 
-    model_info->geometry_center = vector_sub(vector_mult_scalar(0.5, vector_add(bbox_total_min, bbox_total_max)), model_info->bounding_center);
+    model_info->geometry_center = (bbox_total_min + bbox_total_max) * 0.5f - model_info->bounding_center;
 
     // Centre of mass, inverse inertia, mass and inverse mass
     get_mass_data(mlod_lods, num_lods, model_info);
@@ -532,7 +528,7 @@ void build_model_info(struct mlod_lod *mlod_lods, uint32_t num_lods, struct mode
 
 
 uint32_t add_point(struct odol_lod *odol_lod, struct mlod_lod *mlod_lod, struct model_info *model_info,
-        uint32_t point_index_mlod, struct triplet *normal, struct uv_pair *uv_coords) {
+        uint32_t point_index_mlod, vector3 normal, struct uv_pair *uv_coords) {
     uint32_t i;
     uint32_t j;
     uint32_t weight_index;
@@ -544,9 +540,9 @@ uint32_t add_point(struct odol_lod *odol_lod, struct mlod_lod *mlod_lod, struct 
 
         // normals and uvs don't matter for non-visual lods
         if (mlod_lod->resolution < LOD_GEOMETRY) {
-            if (!float_equal(odol_lod->normals[i].x, normal->x, 0.0001) ||
-                    !float_equal(odol_lod->normals[i].y, normal->y, 0.0001) ||
-                    !float_equal(odol_lod->normals[i].z, normal->z, 0.0001))
+            if (!float_equal(odol_lod->normals[i].x, normal.x, 0.0001) ||
+                    !float_equal(odol_lod->normals[i].y, normal.y, 0.0001) ||
+                    !float_equal(odol_lod->normals[i].z, normal.z, 0.0001))
                 continue;
 
             if (!float_equal(odol_lod->uv_coords[i].u, uv_coords->u, 0.0001) ||
@@ -558,8 +554,8 @@ uint32_t add_point(struct odol_lod *odol_lod, struct mlod_lod *mlod_lod, struct 
     }
 
     // Add vertex
-    memcpy(&odol_lod->points[odol_lod->num_points], &mlod_lod->points[point_index_mlod], sizeof(struct triplet));
-    memcpy(&odol_lod->normals[odol_lod->num_points], normal, sizeof(struct triplet));
+    odol_lod->points[odol_lod->num_points] = mlod_lod->points[point_index_mlod].getPosition();
+    odol_lod->normals[odol_lod->num_points] = normal;
     memcpy(&odol_lod->uv_coords[odol_lod->num_points], uv_coords, sizeof(struct uv_pair));
 
     if (odol_lod->vertexboneref != 0 && model_info->skeleton->num_bones > 0) {
@@ -682,7 +678,7 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
     char *temp;
     bool *tileU;
     bool *tileV;
-    struct triplet normal;
+    vector3 normal;
     struct uv_pair uv_coords;
 
     // Set sub skeleton references
@@ -721,7 +717,7 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
             odol_lod->max_pos.z = mlod_lod->points[i].z;
     }
 
-    odol_lod->autocenter_pos = vector_mult_scalar(0.5, vector_add(odol_lod->min_pos, odol_lod->max_pos));
+    odol_lod->autocenter_pos = (odol_lod->min_pos + odol_lod->max_pos) * 0.5f;
 
     odol_lod->sphere = get_sphere(mlod_lod, odol_lod->autocenter_pos);
 
@@ -803,8 +799,8 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
         odol_lod->point_to_vertex[i] = NOPOINT;
 
     odol_lod->uv_coords = (struct uv_pair *)safe_malloc(sizeof(struct uv_pair) * (odol_lod->num_faces * 4 + odol_lod->num_points_mlod));
-    odol_lod->points = (struct triplet *)safe_malloc(sizeof(struct triplet) * (odol_lod->num_faces * 4 + odol_lod->num_points_mlod));
-    odol_lod->normals = (struct triplet *)safe_malloc(sizeof(struct triplet) * (odol_lod->num_faces * 4 + odol_lod->num_points_mlod));
+    odol_lod->points.resize(odol_lod->num_faces * 4 + odol_lod->num_points_mlod);
+    odol_lod->normals.resize(odol_lod->num_faces * 4 + odol_lod->num_points_mlod);
 
     odol_lod->vertexboneref = 0;
     if (model_info->skeleton->num_bones > 0)
@@ -889,7 +885,7 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
     for (i = 0; i < mlod_lod->num_faces; i++) {
         odol_lod->faces[i].face_type = mlod_lod->faces[odol_lod->face_lookup[i]].face_type;
         for (j = 0; j < odol_lod->faces[i].face_type; j++) {
-            memcpy(&normal, &mlod_lod->facenormals[mlod_lod->faces[odol_lod->face_lookup[i]].table[j].normals_index], sizeof(struct triplet));
+            normal = mlod_lod->facenormals[mlod_lod->faces[odol_lod->face_lookup[i]].table[j].normals_index];
             uv_coords.u = mlod_lod->faces[odol_lod->face_lookup[i]].table[j].u;
             uv_coords.v = mlod_lod->faces[odol_lod->face_lookup[i]].table[j].v;
 
@@ -910,7 +906,7 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
                 k = j ^ (1 ^ (j >> 1));
 
             odol_lod->faces[i].table[k] = add_point(odol_lod, mlod_lod, model_info,
-                mlod_lod->faces[odol_lod->face_lookup[i]].table[j].points_index, &normal, &uv_coords);
+                mlod_lod->faces[odol_lod->face_lookup[i]].table[j].points_index, normal, &uv_coords);
         }
         face_end += (odol_lod->faces[i].face_type == 4) ? 20 : 16;
     }
@@ -928,7 +924,7 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
         uv_coords.v = 0.0f;
 
         odol_lod->point_to_vertex[i] = add_point(odol_lod, mlod_lod, model_info,
-            i, &normal, &uv_coords);
+            i, normal, &uv_coords);
     }
 
     // Normalize vertex bone ref
@@ -1146,23 +1142,23 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
             break;
         }
 
-        odol_lod->proxies[k].transform_y = vector_sub(
-            *((vector *)&mlod_lod->points[mlod_lod->faces[odol_lod->face_lookup[face]].table[1].points_index]),
+        odol_lod->proxies[k].transform_y = (
+            *((vector *)&mlod_lod->points[mlod_lod->faces[odol_lod->face_lookup[face]].table[1].points_index])
+            -
             *((vector *)&mlod_lod->points[mlod_lod->faces[odol_lod->face_lookup[face]].table[0].points_index]));
-        odol_lod->proxies[k].transform_y = vector_normalize(odol_lod->proxies[k].transform_y);
+        odol_lod->proxies[k].transform_y = odol_lod->proxies[k].transform_y.normalize();
 
-        odol_lod->proxies[k].transform_z = vector_sub(
-            *((vector *)&mlod_lod->points[mlod_lod->faces[odol_lod->face_lookup[face]].table[2].points_index]),
+        odol_lod->proxies[k].transform_z = (
+            *((vector *)&mlod_lod->points[mlod_lod->faces[odol_lod->face_lookup[face]].table[2].points_index])
+            -
             *((vector *)&mlod_lod->points[mlod_lod->faces[odol_lod->face_lookup[face]].table[0].points_index]));
-        odol_lod->proxies[k].transform_z = vector_normalize(odol_lod->proxies[k].transform_z);
+        odol_lod->proxies[k].transform_z = odol_lod->proxies[k].transform_z.normalize();
 
-        odol_lod->proxies[k].transform_x = vector_crossproduct(
-            odol_lod->proxies[k].transform_y,
-            odol_lod->proxies[k].transform_z);
+        odol_lod->proxies[k].transform_x =
+            odol_lod->proxies[k].transform_y.cross(odol_lod->proxies[k].transform_z);
 
-        memcpy(&odol_lod->proxies[k].transform_n,
-            &mlod_lod->points[mlod_lod->faces[odol_lod->face_lookup[face]].table[0].points_index],
-            sizeof(struct triplet));
+        odol_lod->proxies[k].transform_n =
+            mlod_lod->points[mlod_lod->faces[odol_lod->face_lookup[face]].table[0].points_index].getPosition();
 
         k++;
     }
@@ -1210,19 +1206,19 @@ void write_model_info(FILE *f_target, uint32_t num_lods, struct model_info *mode
     fwrite(&model_info->bounding_sphere,     sizeof(float), 1, f_target);
     fwrite(&model_info->geo_lod_sphere,      sizeof(float), 1, f_target);
     fwrite( model_info->point_flags,         sizeof(uint32_t) * 3, 1, f_target);
-    fwrite(&model_info->aiming_center,       sizeof(struct triplet), 1, f_target);
+    fwrite(&model_info->aiming_center,       sizeof(vector3), 1, f_target);
     fwrite(&model_info->map_icon_color,      sizeof(uint32_t), 1, f_target);
     fwrite(&model_info->map_selected_color,  sizeof(uint32_t), 1, f_target);
     fwrite(&model_info->view_density,        sizeof(float), 1, f_target);
-    fwrite(&model_info->bbox_min,            sizeof(struct triplet), 1, f_target);
-    fwrite(&model_info->bbox_max,            sizeof(struct triplet), 1, f_target);
+    fwrite(&model_info->bbox_min,            sizeof(vector3), 1, f_target);
+    fwrite(&model_info->bbox_max,            sizeof(vector3), 1, f_target);
     fwrite(&model_info->lod_density_coef,    sizeof(float), 1, f_target);
     fwrite(&model_info->draw_importance,     sizeof(float), 1, f_target);
-    fwrite(&model_info->bbox_visual_min,     sizeof(struct triplet), 1, f_target);
-    fwrite(&model_info->bbox_visual_max,     sizeof(struct triplet), 1, f_target);
-    fwrite(&model_info->bounding_center,     sizeof(struct triplet), 1, f_target);
-    fwrite(&model_info->geometry_center,     sizeof(struct triplet), 1, f_target);
-    fwrite(&model_info->centre_of_mass,      sizeof(struct triplet), 1, f_target);
+    fwrite(&model_info->bbox_visual_min,     sizeof(vector3), 1, f_target);
+    fwrite(&model_info->bbox_visual_max,     sizeof(vector3), 1, f_target);
+    fwrite(&model_info->bounding_center,     sizeof(vector3), 1, f_target);
+    fwrite(&model_info->geometry_center,     sizeof(vector3), 1, f_target);
+    fwrite(&model_info->centre_of_mass,      sizeof(vector3), 1, f_target);
     fwrite(&model_info->inv_inertia,         sizeof(matrix), 1, f_target);
     fwrite(&model_info->autocenter,          sizeof(bool), 1, f_target);
     fwrite(&model_info->lock_autocenter,     sizeof(bool), 1, f_target);
@@ -1364,10 +1360,10 @@ void write_odol_lod(FILE *f_target, struct odol_lod *odol_lod) {
     fwrite(&odol_lod->num_proxies, sizeof(uint32_t), 1, f_target);
     for (i = 0; i < odol_lod->num_proxies; i++) {
         fwrite( odol_lod->proxies[i].name, strlen(odol_lod->proxies[i].name) + 1, 1, f_target);
-        fwrite(&odol_lod->proxies[i].transform_x, sizeof(struct triplet), 1, f_target);
-        fwrite(&odol_lod->proxies[i].transform_y, sizeof(struct triplet), 1, f_target);
-        fwrite(&odol_lod->proxies[i].transform_z, sizeof(struct triplet), 1, f_target);
-        fwrite(&odol_lod->proxies[i].transform_n, sizeof(struct triplet), 1, f_target);
+        fwrite(&odol_lod->proxies[i].transform_x, sizeof(vector3), 1, f_target);
+        fwrite(&odol_lod->proxies[i].transform_y, sizeof(vector3), 1, f_target);
+        fwrite(&odol_lod->proxies[i].transform_z, sizeof(vector3), 1, f_target);
+        fwrite(&odol_lod->proxies[i].transform_n, sizeof(vector3), 1, f_target);
         fwrite(&odol_lod->proxies[i].proxy_id, sizeof(uint32_t), 1, f_target);
         fwrite(&odol_lod->proxies[i].selection_index, sizeof(uint32_t), 1, f_target);
         fwrite(&odol_lod->proxies[i].bone_index, sizeof(int32_t), 1, f_target);
@@ -1386,9 +1382,9 @@ void write_odol_lod(FILE *f_target, struct odol_lod *odol_lod) {
     fwrite(&odol_lod->num_points, sizeof(uint32_t), 1, f_target);
     fwrite(&odol_lod->face_area, sizeof(float), 1, f_target);
     fwrite( odol_lod->clip_flags, sizeof(uint32_t), 2, f_target);
-    fwrite(&odol_lod->min_pos, sizeof(struct triplet), 1, f_target);
-    fwrite(&odol_lod->max_pos, sizeof(struct triplet), 1, f_target);
-    fwrite(&odol_lod->autocenter_pos, sizeof(struct triplet), 1, f_target);
+    fwrite(&odol_lod->min_pos, sizeof(vector3), 1, f_target);
+    fwrite(&odol_lod->max_pos, sizeof(vector3), 1, f_target);
+    fwrite(&odol_lod->autocenter_pos, sizeof(vector3), 1, f_target);
     fwrite(&odol_lod->sphere, sizeof(float), 1, f_target);
 
     fwrite(&odol_lod->num_textures, sizeof(uint32_t), 1, f_target);
@@ -1469,7 +1465,7 @@ void write_odol_lod(FILE *f_target, struct odol_lod *odol_lod) {
     fwrite(&odol_lod->num_points, sizeof(uint32_t), 1, f_target);
     if (odol_lod->num_points > 0) {
         fputc(0, f_target);
-        fwrite( odol_lod->points, sizeof(struct triplet) * odol_lod->num_points, 1, f_target);
+        fwrite( odol_lod->points.data(), sizeof(vector3) * odol_lod->num_points, 1, f_target);
     }
 
     // normals
@@ -1550,7 +1546,7 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, struct mlod_lod *
             if (stricmp(mlod_lods[i].selections[j].name, anim->begin) == 0) {
                 for (k = 0; k < mlod_lods[i].num_points; k++) {
                     if (mlod_lods[i].selections[j].points[k] > 0) {
-                        memcpy(&anim->axis_pos, &mlod_lods[i].points[k], sizeof(struct triplet));
+                        anim->axis_pos = mlod_lods[i].points[k].getPosition();
                         break;
                     }
                 }
@@ -1558,7 +1554,7 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, struct mlod_lod *
             if (stricmp(mlod_lods[i].selections[j].name, anim->end) == 0) {
                 for (k = 0; k < mlod_lods[i].num_points; k++) {
                     if (mlod_lods[i].selections[j].points[k] > 0) {
-                        memcpy(&anim->axis_dir, &mlod_lods[i].points[k], sizeof(struct triplet));
+                        anim->axis_dir = mlod_lods[i].points[k].getPosition();
                         break;
                     }
                 }
@@ -1566,27 +1562,27 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, struct mlod_lod *
         } else if (stricmp(mlod_lods[i].selections[j].name, anim->axis) == 0) {
             for (k = 0; k < mlod_lods[i].num_points; k++) {
                 if (mlod_lods[i].selections[j].points[k] > 0) {
-                    memcpy(&anim->axis_pos, &mlod_lods[i].points[k], sizeof(struct triplet));
+                    anim->axis_pos = mlod_lods[i].points[k].getPosition();
                     break;
                 }
             }
             for (k = k + 1; k < mlod_lods[i].num_points; k++) {
                 if (mlod_lods[i].selections[j].points[k] > 0) {
-                    memcpy(&anim->axis_dir, &mlod_lods[i].points[k], sizeof(struct triplet));
+                    anim->axis_dir = mlod_lods[i].points[k].getPosition();
                     break;
                 }
             }
         }
     }
 
-    anim->axis_dir = vector_sub(anim->axis_dir, anim->axis_pos);
+    anim->axis_dir = anim->axis_dir - anim->axis_pos;
 
     if (anim->type >= TYPE_ROTATION_X && anim->type <= TYPE_ROTATION_Z) {
-        anim->axis_pos = vector_add(anim->axis_pos, vector_mult_scalar(0.5, anim->axis_dir));
+        anim->axis_pos = anim->axis_pos + anim->axis_dir*0.5;
         anim->axis_dir = empty_vector;
         anim->axis_dir.x = 1.0f;
     } else if (anim->type == TYPE_ROTATION) {
-        anim->axis_dir = vector_normalize(anim->axis_dir);
+        anim->axis_dir = anim->axis_dir.normalize();
     } else {
         anim->axis_pos = empty_vector;
     }
@@ -1635,8 +1631,8 @@ void write_animations(FILE *f_target, uint32_t num_lods, struct mlod_lod *mlod_l
                 fwrite(&anim->offset1, sizeof(float), 1, f_target);
                 break;
             case TYPE_DIRECT:
-                fwrite(&anim->axis_pos, sizeof(struct triplet), 1, f_target);
-                fwrite(&anim->axis_dir, sizeof(struct triplet), 1, f_target);
+                fwrite(&anim->axis_pos, sizeof(vector3), 1, f_target);
+                fwrite(&anim->axis_dir, sizeof(vector3), 1, f_target);
                 fwrite(&anim->angle, sizeof(float), 1, f_target);
                 fwrite(&anim->axis_offset, sizeof(float), 1, f_target);
                 break;
@@ -1702,10 +1698,10 @@ void write_animations(FILE *f_target, uint32_t num_lods, struct mlod_lod *mlod_l
             calculate_axis(anim, num_lods, mlod_lods);
 
             if (model_info->autocenter)
-                anim->axis_pos = vector_sub(anim->axis_pos, model_info->centre_of_mass);
+                anim->axis_pos = anim->axis_pos - model_info->centre_of_mass;
 
-            fwrite(&anim->axis_pos, sizeof(struct triplet), 1, f_target);
-            fwrite(&anim->axis_dir, sizeof(struct triplet), 1, f_target);
+            fwrite(&anim->axis_pos, sizeof(vector3), 1, f_target);
+            fwrite(&anim->axis_dir, sizeof(vector3), 1, f_target);
         }
     }
 }
@@ -1863,8 +1859,6 @@ int mlod2odol(char *source, char *target) {
         free(odol_lod.face_lookup);
         free(odol_lod.faces);
         free(odol_lod.uv_coords);
-        free(odol_lod.points);
-        free(odol_lod.normals);
         free(odol_lod.sections);
         free(odol_lod.vertexboneref);
 
@@ -1930,7 +1924,6 @@ int mlod2odol(char *source, char *target) {
 
     for (i = 0; i < num_lods; i++) {
         free(mlod_lods[i].points);
-        free(mlod_lods[i].facenormals);
         free(mlod_lods[i].faces);
         free(mlod_lods[i].mass);
         free(mlod_lods[i].sharp_edges);

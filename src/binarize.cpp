@@ -186,7 +186,6 @@ int attempt_bis_binarize(char *source, char *target) {
             }
 
             free(mlod_lods[i].points);
-            free(mlod_lods[i].facenormals);
             free(mlod_lods[i].faces);
             free(mlod_lods[i].mass);
             free(mlod_lods[i].sharp_edges);

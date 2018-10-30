@@ -65,8 +65,8 @@ struct animation {
     float angle1;
     float offset0;
     float offset1;
-    struct triplet axis_pos;
-    struct triplet axis_dir;
+    vector3 axis_pos;
+    vector3 axis_dir;
     float angle;
     float axis_offset;
     float hide_value;

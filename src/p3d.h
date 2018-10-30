@@ -82,6 +82,7 @@
 //#include "utils.h"
 #include "model_config.h"
 #include "matrix.h"
+#include <vector>
 
 
 struct uv_pair {
@@ -124,7 +125,7 @@ struct mlod_lod {
     uint32_t num_faces;
     uint32_t num_sharp_edges;
     struct point *points;
-    struct triplet *facenormals;
+    std::vector<vector3> facenormals;
     struct mlod_face *faces;
     float *mass;
     uint32_t *sharp_edges;
@@ -141,10 +142,10 @@ struct odol_face {
 
 struct odol_proxy {
     char name[512];
-    struct triplet transform_x;
-    struct triplet transform_y;
-    struct triplet transform_z;
-    struct triplet transform_n;
+    vector3 transform_x;
+    vector3 transform_y;
+    vector3 transform_z;
+    vector3 transform_n;
     uint32_t proxy_id;
     uint32_t selection_index;
     int32_t bone_index;
@@ -205,9 +206,9 @@ struct odol_lod {
     uint32_t num_points_mlod;
     float face_area;
     uint32_t clip_flags[2];
-    struct triplet min_pos;
-    struct triplet max_pos;
-    struct triplet autocenter_pos;
+    vector3 min_pos;
+    vector3 max_pos;
+    vector3 autocenter_pos;
     float sphere;
     uint32_t num_textures;
     char *textures;
@@ -234,8 +235,8 @@ struct odol_lod {
     bool vertexboneref_is_simple;
     struct uv_pair uv_scale[4];
     struct uv_pair *uv_coords;
-    struct triplet *points;
-    struct triplet *normals;
+    std::vector<vector3> points;
+    std::vector<vector3> normals;
     struct odol_vertexboneref *vertexboneref;
 };
 
@@ -262,19 +263,19 @@ struct model_info {
     float bounding_sphere;
     float geo_lod_sphere;
     uint32_t point_flags[3];
-    struct triplet aiming_center;
+    vector3 aiming_center;
     uint32_t map_icon_color;
     uint32_t map_selected_color;
     float view_density;
-    struct triplet bbox_min;
-    struct triplet bbox_max;
+    vector3 bbox_min;
+    vector3 bbox_max;
     float lod_density_coef;
     float draw_importance;
-    struct triplet bbox_visual_min;
-    struct triplet bbox_visual_max;
-    struct triplet bounding_center;
-    struct triplet geometry_center;
-    struct triplet centre_of_mass;
+    vector3 bbox_visual_min;
+    vector3 bbox_visual_max;
+    vector3 bounding_center;
+    vector3 geometry_center;
+    vector3 centre_of_mass;
     matrix inv_inertia;
     bool autocenter;
     bool lock_autocenter;
