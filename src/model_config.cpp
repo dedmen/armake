@@ -115,27 +115,27 @@ int read_animations(FILE *f, char *config_path, struct skeleton_ *skeleton) {
         lower_case(value);
 
         if (strcmp(value, "rotation") == 0) {
-            newAnimation.type = TYPE_ROTATION;
+            newAnimation.type = AnimationType::ROTATION;
         } else if (strcmp(value, "rotationx") == 0) {
-            newAnimation.type = TYPE_ROTATION_X;
+            newAnimation.type = AnimationType::ROTATION_X;
         } else if (strcmp(value, "rotationy") == 0) {
-            newAnimation.type = TYPE_ROTATION_Y;
+            newAnimation.type = AnimationType::ROTATION_Y;
         } else if (strcmp(value, "rotationz") == 0) {
-            newAnimation.type = TYPE_ROTATION_Z;
+            newAnimation.type = AnimationType::ROTATION_Z;
         } else if (strcmp(value, "translation") == 0) {
-            newAnimation.type = TYPE_TRANSLATION;
+            newAnimation.type = AnimationType::TRANSLATION;
         } else if (strcmp(value, "translationx") == 0) {
-            newAnimation.type = TYPE_TRANSLATION_X;
+            newAnimation.type = AnimationType::TRANSLATION_X;
         } else if (strcmp(value, "translationy") == 0) {
-            newAnimation.type = TYPE_TRANSLATION_Y;
+            newAnimation.type = AnimationType::TRANSLATION_Y;
         } else if (strcmp(value, "translationz") == 0) {
-            newAnimation.type = TYPE_TRANSLATION_Z;
+            newAnimation.type = AnimationType::TRANSLATION_Z;
         } else if (strcmp(value, "direct") == 0) {
-            newAnimation.type = TYPE_DIRECT;
+            newAnimation.type = AnimationType::DIRECT;
             lwarningf(current_target, -1, "Direct animations aren't supported yet.\n");
             continue;
         } else if (strcmp(value, "hide") == 0) {
-            newAnimation.type = TYPE_HIDE;
+            newAnimation.type = AnimationType::HIDE;
         } else {
             lwarningf(current_target, -1, "Unknown animation type: %s\n", value);
             continue;
@@ -153,7 +153,7 @@ int read_animations(FILE *f, char *config_path, struct skeleton_ *skeleton) {
         newAnimation.max_phase = 1.0f;
         newAnimation.junk = 953267991;
         newAnimation.always_0 = 0;
-        newAnimation.source_address = 0;
+        newAnimation.source_address = AnimationSourceAddress::clamp;
         newAnimation.angle0 = 0.0f;
         newAnimation.angle1 = 0.0f;
         newAnimation.offset0 = 0.0f;
@@ -236,11 +236,11 @@ int read_animations(FILE *f, char *config_path, struct skeleton_ *skeleton) {
             lower_case(value);
 
             if (strcmp(value, "clamp") == 0) {
-                newAnimation.source_address = SOURCE_CLAMP;
+                newAnimation.source_address = AnimationSourceAddress::clamp;
             } else if (strcmp(value, "mirror") == 0) {
-                newAnimation.source_address = SOURCE_MIRROR;
+                newAnimation.source_address = AnimationSourceAddress::mirror;
             } else if (strcmp(value, "loop") == 0) {
-                newAnimation.source_address = SOURCE_LOOP;
+                newAnimation.source_address = AnimationSourceAddress::loop;
             } else {
                 lwarningf(current_target, -1, "Unknown source address \"%s\" in \"%s\".\n", value, newAnimation.name.c_str());
                 continue;

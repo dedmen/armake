@@ -23,22 +23,6 @@
 #define MAXSECTIONS 1024
 #define MAXANIMS 1024
 
-#define TYPE_ROTATION      0
-#define TYPE_ROTATION_X    1
-#define TYPE_ROTATION_Y    2
-#define TYPE_ROTATION_Z    3
-#define TYPE_TRANSLATION   4
-#define TYPE_TRANSLATION_X 5
-#define TYPE_TRANSLATION_Y 6
-#define TYPE_TRANSLATION_Z 7
-#define TYPE_DIRECT        8
-#define TYPE_HIDE 	   9
-
-#define SOURCE_CLAMP  0
-#define SOURCE_LOOP   1
-#define SOURCE_MIRROR 2
-
-
 #include "vector.h"
 #include <string>
 #include <vector>
@@ -49,9 +33,28 @@ struct bone {
     std::string parent;
 };
 
+enum class AnimationType {
+    ROTATION,
+    ROTATION_X,
+    ROTATION_Y,
+    ROTATION_Z,
+    TRANSLATION,
+    TRANSLATION_X,
+    TRANSLATION_Y,
+    TRANSLATION_Z,
+    DIRECT,
+    HIDE,
+};
+
+enum class AnimationSourceAddress {
+    clamp,
+    loop,
+    mirror
+};
+
 struct animation {
     animation(std::string n): name(std::move(n)) {}
-    uint32_t type;
+    AnimationType type;
     std::string name;
     std::string selection;
     std::string source;
@@ -64,7 +67,7 @@ struct animation {
     float max_phase;
     uint32_t junk;
     uint32_t always_0; // this might be centerfirstvertex? @todo
-    uint32_t source_address;
+    AnimationSourceAddress source_address;
     float angle0;
     float angle1;
     float offset0;

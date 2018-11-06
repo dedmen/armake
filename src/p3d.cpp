@@ -1528,11 +1528,11 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_
 
     anim->axis_dir = anim->axis_dir - anim->axis_pos;
 
-    if (anim->type >= TYPE_ROTATION_X && anim->type <= TYPE_ROTATION_Z) {
+    if (anim->type == AnimationType::ROTATION_X || anim->type == AnimationType::ROTATION_Y || anim->type == AnimationType::ROTATION_Z) {
         anim->axis_pos = anim->axis_pos + anim->axis_dir*0.5;
         anim->axis_dir = empty_vector;
         anim->axis_dir.x = 1.0f;
-    } else if (anim->type == TYPE_ROTATION) {
+    } else if (anim->type == AnimationType::ROTATION) {
         anim->axis_dir = anim->axis_dir.normalize();
     } else {
         anim->axis_pos = empty_vector;
@@ -1567,27 +1567,27 @@ void write_animations(FILE *f_target, uint32_t num_lods, std::vector<mlod_lod> &
         fwrite(&anim->source_address, sizeof(uint32_t), 1, f_target);
 
         switch (anim->type) {
-            case TYPE_ROTATION:
-            case TYPE_ROTATION_X:
-            case TYPE_ROTATION_Y:
-            case TYPE_ROTATION_Z:
+            case AnimationType::ROTATION:
+            case AnimationType::ROTATION_X:
+            case AnimationType::ROTATION_Y:
+            case AnimationType::ROTATION_Z:
                 fwrite(&anim->angle0, sizeof(float), 1, f_target);
                 fwrite(&anim->angle1, sizeof(float), 1, f_target);
                 break;
-            case TYPE_TRANSLATION:
-            case TYPE_TRANSLATION_X:
-            case TYPE_TRANSLATION_Y:
-            case TYPE_TRANSLATION_Z:
+            case AnimationType::TRANSLATION:
+            case AnimationType::TRANSLATION_X:
+            case AnimationType::TRANSLATION_Y:
+            case AnimationType::TRANSLATION_Z:
                 fwrite(&anim->offset0, sizeof(float), 1, f_target);
                 fwrite(&anim->offset1, sizeof(float), 1, f_target);
                 break;
-            case TYPE_DIRECT:
+            case AnimationType::DIRECT:
                 fwrite(&anim->axis_pos, sizeof(vector3), 1, f_target);
                 fwrite(&anim->axis_dir, sizeof(vector3), 1, f_target);
                 fwrite(&anim->angle, sizeof(float), 1, f_target);
                 fwrite(&anim->axis_offset, sizeof(float), 1, f_target);
                 break;
-            case TYPE_HIDE:
+            case AnimationType::HIDE:
                 fwrite(&anim->hide_value, sizeof(float), 1, f_target);
                 fwrite(&anim->unhide_value, sizeof(float), 1, f_target);
                 break;
@@ -1643,7 +1643,7 @@ void write_animations(FILE *f_target, uint32_t num_lods, std::vector<mlod_lod> &
                 continue;
             }
 
-            if (anim->type >= 8)
+            if (anim->type == AnimationType::DIRECT || anim->type == AnimationType::HIDE)
                 continue;
 
             calculate_axis(anim, num_lods, mlod_lods);
