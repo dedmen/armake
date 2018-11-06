@@ -341,15 +341,6 @@ bool matches_glob(char *string, char *pattern) {
 }
 
 
-bool float_equal(float f1, float f2, float precision) {
-    /*
-     * Performs a fuzzy float comparison.
-     */
-
-    return fabs(1.0 - (f1 / f2)) < precision;
-}
-
-
 int fsign(float f) {
     return (0 < f) - (f < 0);
 }

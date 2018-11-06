@@ -22,6 +22,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "vector.h"
+#include <ratio>
 
 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
@@ -53,6 +54,42 @@ struct point {
     uint32_t point_flags;
     vector3 getPosition() {
         return { x,y,z };
+    }
+};
+
+inline bool float_equal(float f1, float f2, float precision) {
+    /*
+     * Performs a fuzzy float comparison.
+     */
+
+    return fabs(1.0 - (f1 / f2)) < precision;
+}
+
+template <class Ratio>
+class ComparableFloat {
+public:
+    float value;
+    static constexpr float precision = static_cast<float>(Ratio::num)/static_cast<float>(Ratio::den);
+
+    ComparableFloat() : value(0.f) {}
+    ComparableFloat(const float& other) : value(other) {}
+    ComparableFloat& operator=(float newVal) {
+        value = newVal;
+    }
+    operator float() const {
+        return value;
+    }
+    bool operator==(const float& other) const {
+        return float_equal(value, other, precision);
+    }
+    bool operator!=(const float& other) const {
+        return !(*this == other);
+    }
+    bool operator==(const ComparableFloat& other) const {
+        return *this == static_cast<float>(other);
+    }
+    bool operator!=(const ComparableFloat& other) const {
+        return !(*this == other);
     }
 };
 
@@ -91,8 +128,6 @@ int get_line_number(FILE *f_source);
 void reverse_endianness(void *ptr, size_t buffsize);
 
 bool matches_glob(char *string, char *pattern);
-
-bool float_equal(float f1, float f2, float precision);
 
 int fsign(float f);
 

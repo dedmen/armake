@@ -238,28 +238,16 @@ void get_bounding_box(std::vector<mlod_lod> &mlod_lods, uint32_t num_lods,
      * Calculate the bounding box for the given LODs and stores it
      * in the given triplets.
      */
+    bool first = true;
 
-    bool first;
-    float x;
-    float y;
-    float z;
-    int i;
-    int j;
-
-    first = true;
-
-    for (i = 0; i < num_lods; i++) {
-        if (mlod_lods[i].resolution > LOD_GRAPHICAL_END && visual_only)
+    for (auto& lod : mlod_lods) {
+        if (lod.resolution > LOD_GRAPHICAL_END && visual_only)
             continue;
 
-        if (!float_equal(mlod_lods[i].resolution, LOD_GEOMETRY, 0.01) && geometry_only)
+        if ((lod.resolution != LOD_GEOMETRY) && geometry_only)
             continue;
 
-        for (j = 0; j < mlod_lods[i].num_points; j++) {
-            x = mlod_lods[i].points[j].x;
-            y = mlod_lods[i].points[j].y;
-            z = mlod_lods[i].points[j].z;
-
+        for (auto& [x,y,z,flags] : lod.points) {
             if (first || x < bbox_min.x)
                 bbox_min.x = x;
             if (first || x > bbox_max.x)
@@ -286,20 +274,16 @@ float get_sphere(struct mlod_lod *mlod_lod, vector center) {
      * Calculate and return the bounding sphere for the given LOD.
      */
 
-    long i;
-    float sphere;
-    float dist;
-    vector point;
+    float sphere = 0.f;
 
-    sphere = 0;
-    for (i = 0; i < mlod_lod->num_points; i++) {
-        point = *((vector*)&mlod_lod->points[i].x);
-        dist = (point - center).magnitude();
+    for (auto i = 0u; i < mlod_lod->num_points; i++) {
+        auto& point = mlod_lod->points[i].getPosition();
+        auto dist = (point - center).magnitude_squared();
         if (dist > sphere)
             sphere = dist;
     }
 
-    return sphere;
+    return sqrt(sphere);
 }
 
 
@@ -314,14 +298,14 @@ void get_mass_data(std::vector<mlod_lod> &mlod_lods, uint32_t num_lods, struct m
 
     // mass is primarily stored in geometry
     for (i = 0; i < num_lods; i++) {
-        if (float_equal(mlod_lods[i].resolution, LOD_GEOMETRY, 0.01))
+        if (mlod_lods[i].resolution == LOD_GEOMETRY)
             break;
     }
 
     // alternatively use the PhysX LOD
     if (i >= num_lods || mlod_lods[i].num_points == 0) {
         for (i = 0; i < num_lods; i++) {
-            if (float_equal(mlod_lods[i].resolution, LOD_PHYSX, 0.01))
+            if (mlod_lods[i].resolution == LOD_PHYSX)
                 break;
         }
     }
@@ -444,7 +428,7 @@ void build_model_info(std::vector<mlod_lod> &mlod_lods, uint32_t num_lods, struc
 
         if (sphere > model_info->bounding_sphere)
             model_info->bounding_sphere = sphere;
-        if (float_equal(mlod_lods[i].resolution, LOD_GEOMETRY, 0.01))
+        if (mlod_lods[i].resolution == LOD_GEOMETRY)
             model_info->geo_lod_sphere = sphere;
     }
 
@@ -1505,7 +1489,7 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_
         return;
 
     for (i = 0; i < num_lods; i++) {
-        if (float_equal(mlod_lods[i].resolution, LOD_MEMORY, 0.01))
+        if (mlod_lods[i].resolution == LOD_MEMORY)
             break;
     }
     if (i == num_lods)

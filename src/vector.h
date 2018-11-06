@@ -71,10 +71,10 @@ public:
     constexpr vector3_base& operator -=(const vector3_base& v) noexcept { x -= v.x; y -= v.y; z -= v.z; return *this; }
 
     constexpr bool operator == (const vector3_base& r) const noexcept { return (x == r.x && y == r.y && z == r.z); }
-    constexpr bool operator >  (const vector3_base& r) const noexcept { if (*this == r) return false; return magnitude() > r.magnitude(); }
-    constexpr bool operator <  (const vector3_base& r) const noexcept { if (*this == r) return false; return magnitude() < r.magnitude(); }
-    constexpr bool operator >= (const vector3_base& r) const noexcept { if (*this == r) return true; return magnitude() > r.magnitude(); }
-    constexpr bool operator <= (const vector3_base& r) const noexcept { if (*this == r) return true; return magnitude() < r.magnitude(); }
+    constexpr bool operator >  (const vector3_base& r) const noexcept { if (*this == r) return false; return magnitude_squared() > r.magnitude_squared(); }
+    constexpr bool operator <  (const vector3_base& r) const noexcept { if (*this == r) return false; return magnitude_squared() < r.magnitude_squared(); }
+    constexpr bool operator >= (const vector3_base& r) const noexcept { if (*this == r) return true; return magnitude_squared() > r.magnitude_squared(); }
+    constexpr bool operator <= (const vector3_base& r) const noexcept { if (*this == r) return true; return magnitude_squared() < r.magnitude_squared(); }
 
     constexpr T magnitude() const noexcept { return std::sqrt(x * x + y * y + z * z); }
     constexpr T magnitude_squared() const noexcept { return x * x + y * y + z * z; }

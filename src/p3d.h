@@ -147,7 +147,7 @@ struct mlod_lod {
     std::vector<float> mass;
     std::vector<uint32_t> sharp_edges;
     struct property properties[MAXPROPERTIES];
-    float resolution;
+    ComparableFloat<std::centi> resolution;
     uint32_t num_selections;
     std::vector<mlod_selection> selections;
 };
