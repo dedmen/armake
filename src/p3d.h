@@ -92,8 +92,8 @@ struct uv_pair {
 };
 
 struct property {
-    char name[64];
-    char value[64];
+    std::string name;
+    std::string value;
 };
 
 struct pseudovertextable {
@@ -107,11 +107,11 @@ struct mlod_face {
     uint32_t face_type;
     struct pseudovertextable table[4];
     uint32_t face_flags;
-    char texture_name[512];
+    std::string texture_name;
     int texture_index;
-    char material_name[512];
+    std::string material_name;
     int material_index;
-    char section_names[512];
+    std::string section_names;
     bool operator<(const mlod_face& other) {
         uint32_t compare;
         compare = material_index - other.material_index;
@@ -126,13 +126,13 @@ struct mlod_face {
         if (compare != 0)
             return compare < 0;
 
-        return strcmp(section_names, other.section_names) < 0;
+        return section_names.compare(other.section_names) < 0;
 
     }
 };
 
 struct mlod_selection {
-    char name[512];
+    std::string name;
     std::vector<uint8_t> points;
     std::vector<uint8_t> faces;
 };
@@ -159,7 +159,7 @@ struct odol_face {
 };
 
 struct odol_proxy {
-    char name[512];
+    std::string name;
     vector3 transform_x;
     vector3 transform_y;
     vector3 transform_z;
@@ -192,7 +192,7 @@ struct odol_section {
 };
 
 struct odol_selection {
-    char name[512];
+    std::string name;
     uint32_t num_faces;
     std::vector<uint32_t> faces;
     uint32_t always_0;

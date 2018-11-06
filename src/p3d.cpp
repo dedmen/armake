@@ -51,7 +51,7 @@ int read_lods(FILE *f_source, std::vector<mlod_lod> &mlod_lods, uint32_t num_lod
      * failure.
      */
 
-    char buffer[256];
+    char buffer[512]; //texture_name needs 512
     int i;
     int j;
     int fp_tmp;
@@ -103,16 +103,16 @@ int read_lods(FILE *f_source, std::vector<mlod_lod> &mlod_lods, uint32_t num_lod
             fread(&mlod_lods[i].faces[j], 72, 1, f_source);
 
             fp_tmp = ftell(f_source);
-            fread(mlod_lods[i].faces[j].texture_name,
-                sizeof(mlod_lods[i].faces[j].texture_name), 1, f_source);
-            fseek(f_source, fp_tmp + strlen(mlod_lods[i].faces[j].texture_name) + 1, SEEK_SET);
+            fread(buffer, sizeof(buffer), 1, f_source);
+            mlod_lods[i].faces[j].texture_name = buffer;
+            fseek(f_source, fp_tmp + mlod_lods[i].faces[j].texture_name.length() + 1, SEEK_SET);
 
             fp_tmp = ftell(f_source);
-            fread(mlod_lods[i].faces[j].material_name,
-                sizeof(mlod_lods[i].faces[j].material_name), 1, f_source);
-            fseek(f_source, fp_tmp + strlen(mlod_lods[i].faces[j].material_name) + 1, SEEK_SET);
+            fread(buffer, sizeof(buffer), 1, f_source);
+            mlod_lods[i].faces[j].material_name = buffer;
+            fseek(f_source, fp_tmp + mlod_lods[i].faces[j].material_name.length() + 1, SEEK_SET);
 
-            strcpy(mlod_lods[i].faces[j].section_names, "");
+            mlod_lods[i].faces[j].section_names = "";
         }
 
         fread(buffer, 4, 1, f_source);
@@ -122,8 +122,8 @@ int read_lods(FILE *f_source, std::vector<mlod_lod> &mlod_lods, uint32_t num_lod
         mlod_lods[i].num_sharp_edges = 0;
 
         for (j = 0; j < MAXPROPERTIES; j++) {
-            mlod_lods[i].properties[j].name[0] = 0;
-            mlod_lods[i].properties[j].value[0] = 0;
+            mlod_lods[i].properties[j].name.clear();
+            mlod_lods[i].properties[j].value.clear();
         }
 
         fp_taggs = ftell(f_source);
@@ -151,7 +151,7 @@ int read_lods(FILE *f_source, std::vector<mlod_lod> &mlod_lods, uint32_t num_lod
 
         mlod_lods[i].selections.resize(mlod_lods[i].num_selections);
         for (j = 0; j < mlod_lods[i].num_selections; j++)
-            mlod_lods[i].selections[j].name[0] = 0;
+            mlod_lods[i].selections[j].name.clear();
 
         fseek(f_source, fp_taggs, SEEK_SET);
 
@@ -167,11 +167,11 @@ int read_lods(FILE *f_source, std::vector<mlod_lod> &mlod_lods, uint32_t num_lod
 
             if (buffer[0] != '#') {
                 for (j = 0; j < mlod_lods[i].num_selections; j++) {
-                    if (mlod_lods[i].selections[j].name[0] == 0)
+                    if (mlod_lods[i].selections[j].name.empty())
                         break;
                 }
 
-                strcpy(mlod_lods[i].selections[j].name, buffer);
+                mlod_lods[i].selections[j].name = buffer;
 
                 if (empty) {
                     mlod_lods[i].selections[j].points.resize(1);
@@ -203,14 +203,17 @@ int read_lods(FILE *f_source, std::vector<mlod_lod> &mlod_lods, uint32_t num_lod
 
             if (strcmp(buffer, "#Property#") == 0) {
                 for (j = 0; j < MAXPROPERTIES; j++) {
-                    if (mlod_lods[i].properties[j].name[0] == 0)
+                    if (mlod_lods[i].properties[j].name.empty())
                         break;
                 }
                 if (j == MAXPROPERTIES)
                     return -3;
 
-                fread(mlod_lods[i].properties[j].name, 64, 1, f_source);
-                fread(mlod_lods[i].properties[j].value, 64, 1, f_source);
+                char buffer[64];
+                fread(buffer, 64, 1, f_source);
+                mlod_lods[i].properties[j].name = buffer;
+                fread(buffer, 64, 1, f_source);
+                mlod_lods[i].properties[j].value = buffer;
             }
 
             fseek(f_source, fp_tmp, SEEK_SET);
@@ -376,9 +379,9 @@ void build_model_info(std::vector<mlod_lod> &mlod_lods, uint32_t num_lods, struc
 
     for (i = 0; i < num_lods; i++) {
         for (j = 0; j < MAXPROPERTIES; j++) {
-            if (strcmp(mlod_lods[i].properties[j].name, "autocenter") != 0)
+            if (mlod_lods[i].properties[j].name != "autocenter")
                 continue;
-            if (strcmp(mlod_lods[i].properties[j].value, "1") == 0) {
+            if (mlod_lods[i].properties[j].value == "1") {
                 model_info->autocenter = true;
                 break;
             }
@@ -534,7 +537,7 @@ uint32_t add_point(struct odol_lod *odol_lod, struct mlod_lod *mlod_lod, struct 
         for (i = model_info->skeleton->num_bones - 1; (int32_t)i >= 0; i--) {
             for (j = 0; j < mlod_lod->num_selections; j++) {
                 if (stricmp(model_info->skeleton->bones[i].name,
-                        mlod_lod->selections[j].name) == 0)
+                        mlod_lod->selections[j].name.c_str()) == 0)
                     break;
             }
 
@@ -614,15 +617,15 @@ int compare_face_lookup(std::vector<mlod_face> &faces, uint32_t a, uint32_t b) {
     if (compare != 0)
         return compare;
 
-    return strcmp(faces[a_index].section_names, faces[b_index].section_names);
+    return faces[a_index].section_names.compare(faces[b_index].section_names);
 }
 
 
 bool is_alpha(struct mlod_face *face) {
     // @todo check actual texture maybe?
-    if (strstr(face->texture_name, "_ca.paa") != NULL)
+    if (strstr(face->texture_name.c_str(), "_ca.paa") != NULL)
         return true;
-    if (strstr(face->texture_name, "ca)") != NULL)
+    if (strstr(face->texture_name.c_str(), "ca)") != NULL)
         return true;
     return false;
 }
@@ -692,7 +695,7 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
     size = 0;
     for (i = 0; i < mlod_lod->num_faces; i++) {
         for (j = 0; j < odol_lod->num_textures; j++) {
-            if (strcmp(mlod_lod->faces[i].texture_name, textures[j].c_str()) == 0)
+            if (mlod_lod->faces[i].texture_name == textures[j].c_str())
                 break;
         }
 
@@ -705,17 +708,17 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
 
         if (j >= odol_lod->num_textures) {
             textures.emplace_back(mlod_lod->faces[i].texture_name);
-            size += strlen(mlod_lod->faces[i].texture_name) + 1;
+            size += mlod_lod->faces[i].texture_name.length() + 1;
             odol_lod->num_textures++;
         }
 
         for (j = 0; j < MAXMATERIALS && j < odol_lod->materials.size() && odol_lod->materials[j].path[0] != 0; j++) {
-            if (strcmp(mlod_lod->faces[i].material_name, odol_lod->materials[j].path.c_str()) == 0)
+            if (mlod_lod->faces[i].material_name == odol_lod->materials[j].path)
                 break;
         }
         //#CHECK if material doesn't exist yet. j should be materials size+1
 
-        mlod_lod->faces[i].material_index = (strlen(mlod_lod->faces[i].material_name) > 0) ? j : -1;
+        mlod_lod->faces[i].material_index = (mlod_lod->faces[i].material_name.length() > 0) ? j : -1;
 
         if (j >= MAXMATERIALS) {
             lwarningf(current_target, -1, "Maximum amount of materials per LOD (%i) exceeded.", MAXMATERIALS);
@@ -771,7 +774,7 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
     tileU.resize(odol_lod->num_textures); tileV.resize(odol_lod->num_textures);
 
     for (i = 0; i < mlod_lod->num_faces; i++) {
-        if (strlen(mlod_lod->faces[i].texture_name) == 0)
+        if (mlod_lod->faces[i].texture_name.empty())
             continue;
         if (tileU[mlod_lod->faces[i].texture_index] && tileV[mlod_lod->faces[i].texture_index])
             continue;
@@ -785,7 +788,7 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
     for (i = 0; i < mlod_lod->num_faces; i++) {
         if (mlod_lod->faces[i].face_flags & (FLAG_NOCLAMP | FLAG_CLAMPU | FLAG_CLAMPV))
             continue;
-        if (strlen(mlod_lod->faces[i].texture_name) == 0) {
+        if (mlod_lod->faces[i].texture_name.empty()) {
             mlod_lod->faces[i].face_flags |= FLAG_NOCLAMP;
             continue;
         }
@@ -803,19 +806,19 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
 
     for (i = 0; i < mlod_lod->num_selections; i++) {
         for (j = 0; j < model_info->skeleton->num_sections; j++) {
-            if (strcmp(mlod_lod->selections[i].name, model_info->skeleton->sections[j]) == 0)
+            if (strcmp(mlod_lod->selections[i].name.c_str(), model_info->skeleton->sections[j]) == 0)
                 break;
         }
         if (j < model_info->skeleton->num_sections) {
             for (k = 0; k < mlod_lod->num_faces; k++) {
                 if (mlod_lod->selections[i].faces[k] > 0) {
-                    strcat(mlod_lod->faces[k].section_names, ":");
-                    strcat(mlod_lod->faces[k].section_names, mlod_lod->selections[i].name);
+                    mlod_lod->faces[k].section_names += ":";
+                    mlod_lod->faces[k].section_names += mlod_lod->selections[i].name;
                 }
             }
         }
 
-        if (strncmp(mlod_lod->selections[i].name, "proxy:", 6) != 0)
+        if (strncmp(mlod_lod->selections[i].name.c_str(), "proxy:", 6) != 0)
             continue;
 
         for (k = 0; k < mlod_lod->num_faces; k++) {
@@ -954,104 +957,106 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
     odol_lod->num_selections = mlod_lod->num_selections;
     odol_lod->selections.resize(odol_lod->num_selections);
     for (i = 0; i < odol_lod->num_selections; i++) {
-        strcpy(odol_lod->selections[i].name, mlod_lod->selections[i].name);
-        lower_case(odol_lod->selections[i].name);
+        auto& odolSection = odol_lod->selections[i];
+        auto& mlodSection = mlod_lod->selections[i];
+        odolSection.name = mlodSection.name;
+        std::transform(odolSection.name.begin(), odolSection.name.end(), odolSection.name.begin(), tolower);
 
         for (j = 0; j < model_info->skeleton->num_sections; j++) {
-            if (strcmp(model_info->skeleton->sections[j], mlod_lod->selections[i].name) == 0)
+            if (strcmp(model_info->skeleton->sections[j], mlodSection.name.c_str()) == 0)
                 break;
         }
-        odol_lod->selections[i].is_sectional = j < model_info->skeleton->num_sections;
+        odolSection.is_sectional = j < model_info->skeleton->num_sections;
 
-        if (odol_lod->selections[i].is_sectional) {
-            odol_lod->selections[i].num_faces = 0;
-            odol_lod->selections[i].faces.clear();
-            odol_lod->selections[i].always_0 = 0;
-            odol_lod->selections[i].num_vertices = 0;
-            odol_lod->selections[i].vertices.clear();
-            odol_lod->selections[i].num_vertex_weights = 0;
-            odol_lod->selections[i].vertex_weights.clear();
+        if (odolSection.is_sectional) {
+            odolSection.num_faces = 0;
+            odolSection.faces.clear();
+            odolSection.always_0 = 0;
+            odolSection.num_vertices = 0;
+            odolSection.vertices.clear();
+            odolSection.num_vertex_weights = 0;
+            odolSection.vertex_weights.clear();
 
-            odol_lod->selections[i].num_sections = 0;
+            odolSection.num_sections = 0;
             for (j = 0; j < odol_lod->num_sections; j++) {
-                if (mlod_lod->selections[i].faces[odol_lod->face_lookup[odol_lod->sections[j].face_start]] > 0)
-                    odol_lod->selections[i].num_sections++;
+                if (mlodSection.faces[odol_lod->face_lookup[odol_lod->sections[j].face_start]] > 0)
+                    odolSection.num_sections++;
             }
-            odol_lod->selections[i].sections.resize(odol_lod->selections[i].num_sections);
+            odolSection.sections.resize(odolSection.num_sections);
             k = 0;
             for (j = 0; j < odol_lod->num_sections; j++) {
-                if (mlod_lod->selections[i].faces[odol_lod->face_lookup[odol_lod->sections[j].face_start]] > 0) {
-                    odol_lod->selections[i].sections[k] = j;
+                if (mlodSection.faces[odol_lod->face_lookup[odol_lod->sections[j].face_start]] > 0) {
+                    odolSection.sections[k] = j;
                     k++;
                 }
             }
 
             continue;
         } else {
-            odol_lod->selections[i].num_sections = 0;
-            odol_lod->selections[i].sections.clear();
+            odolSection.num_sections = 0;
+            odolSection.sections.clear();
         }
 
-        odol_lod->selections[i].num_faces = 0;
+        odolSection.num_faces = 0;
         for (j = 0; j < odol_lod->num_faces; j++) {
-            if (mlod_lod->selections[i].faces[j] > 0)
-                odol_lod->selections[i].num_faces++;
+            if (mlodSection.faces[j] > 0)
+                odolSection.num_faces++;
         }
 
-        odol_lod->selections[i].faces.resize(odol_lod->selections[i].num_faces);
-        for (j = 0; j < odol_lod->selections[i].num_faces; j++)
-            odol_lod->selections[i].faces[j] = NOPOINT;
+        odolSection.faces.resize(odolSection.num_faces);
+        for (j = 0; j < odolSection.num_faces; j++)
+            odolSection.faces[j] = NOPOINT;
 
         for (j = 0; j < odol_lod->num_faces; j++) {
-            if (mlod_lod->selections[i].faces[j] == 0)
+            if (mlodSection.faces[j] == 0)
                 continue;
 
-            for (k = 0; k < odol_lod->selections[i].num_faces; k++) {
-                if (odol_lod->selections[i].faces[k] == NOPOINT)
+            for (k = 0; k < odolSection.num_faces; k++) {
+                if (odolSection.faces[k] == NOPOINT)
                     break;
             }
-            odol_lod->selections[i].faces[k] = odol_lod->face_lookup[j];
+            odolSection.faces[k] = odol_lod->face_lookup[j];
         }
 
-        odol_lod->selections[i].always_0 = 0;
+        odolSection.always_0 = 0;
 
-        odol_lod->selections[i].num_vertices = 0;
+        odolSection.num_vertices = 0;
         for (j = 0; j < odol_lod->num_points; j++) {
-            if (mlod_lod->selections[i].points[odol_lod->vertex_to_point[j]] > 0)
-                odol_lod->selections[i].num_vertices++;
+            if (mlodSection.points[odol_lod->vertex_to_point[j]] > 0)
+                odolSection.num_vertices++;
         }
 
-        odol_lod->selections[i].num_vertex_weights = odol_lod->selections[i].num_vertices;
+        odolSection.num_vertex_weights = odolSection.num_vertices;
 
-        odol_lod->selections[i].vertices.resize(odol_lod->selections[i].num_vertices);
-        for (j = 0; j < odol_lod->selections[i].num_vertices; j++)
-            odol_lod->selections[i].vertices[j] = NOPOINT;
+        odolSection.vertices.resize(odolSection.num_vertices);
+        for (j = 0; j < odolSection.num_vertices; j++)
+            odolSection.vertices[j] = NOPOINT;
 
-        odol_lod->selections[i].vertex_weights.resize(odol_lod->selections[i].num_vertex_weights);
+        odolSection.vertex_weights.resize(odolSection.num_vertex_weights);
 
         for (j = 0; j < odol_lod->num_points; j++) {
-            if (mlod_lod->selections[i].points[odol_lod->vertex_to_point[j]] == 0)
+            if (mlodSection.points[odol_lod->vertex_to_point[j]] == 0)
                 continue;
 
-            for (k = 0; k < odol_lod->selections[i].num_vertices; k++) {
-                if (odol_lod->selections[i].vertices[k] == NOPOINT)
+            for (k = 0; k < odolSection.num_vertices; k++) {
+                if (odolSection.vertices[k] == NOPOINT)
                     break;
             }
-            odol_lod->selections[i].vertices[k] = j;
-            odol_lod->selections[i].vertex_weights[k] = mlod_lod->selections[i].points[odol_lod->vertex_to_point[j]];
+            odolSection.vertices[k] = j;
+            odolSection.vertex_weights[k] = mlodSection.points[odol_lod->vertex_to_point[j]];
         }
     }
 
     // Proxies
     odol_lod->num_proxies = 0;
     for (i = 0; i < mlod_lod->num_selections; i++) {
-        if (strncmp(mlod_lod->selections[i].name, "proxy:", 6) == 0)
+        if (strncmp(mlod_lod->selections[i].name.c_str(), "proxy:", 6) == 0)
             odol_lod->num_proxies++;
     }
     odol_lod->proxies.resize(odol_lod->num_proxies);
     k = 0;
     for (i = 0; i < mlod_lod->num_selections; i++) {
-        if (strncmp(mlod_lod->selections[i].name, "proxy:", 6) != 0)
+        if (strncmp(mlod_lod->selections[i].name.c_str(), "proxy:", 6) != 0)
             continue;
 
         for (j = 0; j < odol_lod->num_faces; j++) {
@@ -1062,15 +1067,16 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
         }
 
         if (j >= mlod_lod->num_faces) {
-            lnwarningf(current_target, -1, "no-proxy-face", "No face found for proxy \"%s\".\n", mlod_lod->selections[i].name + 6);
+            lnwarningf(current_target, -1, "no-proxy-face", "No face found for proxy \"%s\".\n", mlod_lod->selections[i].name.c_str() + 6);
             odol_lod->num_proxies--;
             continue;
         }
 
-        strcpy(odol_lod->proxies[k].name, mlod_lod->selections[i].name + 6);
-        odol_lod->proxies[k].proxy_id = strtol(strrchr(odol_lod->proxies[k].name, '.') + 1, &ptr, 10);
-        *strrchr(odol_lod->proxies[k].name, '.') = 0;
-        lower_case(odol_lod->proxies[k].name);
+        odol_lod->proxies[k].name = mlod_lod->selections[i].name.substr(6);
+        odol_lod->proxies[k].proxy_id = strtol(strrchr(odol_lod->proxies[k].name.c_str(), '.') + 1, &ptr, 10);
+        auto newLength = strrchr(odol_lod->proxies[k].name.c_str(), '.') - odol_lod->proxies[k].name.data();
+        odol_lod->proxies[k].name.resize(newLength);
+        std::transform(odol_lod->proxies[k].name.begin(), odol_lod->proxies[k].name.end(), odol_lod->proxies[k].name.begin(), tolower);
 
         odol_lod->proxies[k].selection_index = i;
         odol_lod->proxies[k].bone_index = -1;
@@ -1111,7 +1117,7 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
     // Properties
     odol_lod->num_properties = 0;
     for (i = 0; i < MAXPROPERTIES; i++) {
-        if (mlod_lod->properties[i].name[0] != 0)
+        if (!mlod_lod->properties[i].name.empty())
             odol_lod->num_properties++;
     }
     memcpy(odol_lod->properties, mlod_lod->properties, MAXPROPERTIES * sizeof(struct property));
@@ -1224,7 +1230,7 @@ void write_odol_section(FILE *f_target, const odol_section& odol_section) {
 
 
 void write_odol_selection(FILE *f_target, const odol_selection& odol_selection) {
-    fwrite(odol_selection.name, strlen(odol_selection.name) + 1, 1, f_target);
+    fwrite(odol_selection.name.c_str(), odol_selection.name.length() + 1, 1, f_target);
 
     fwrite(&odol_selection.num_faces, sizeof(uint32_t), 1, f_target);
     if (odol_selection.num_faces > 0) {
@@ -1305,7 +1311,7 @@ void write_odol_lod(FILE *f_target, struct odol_lod *odol_lod) {
 
     fwrite(&odol_lod->num_proxies, sizeof(uint32_t), 1, f_target);
     for (i = 0; i < odol_lod->num_proxies; i++) {
-        fwrite( odol_lod->proxies[i].name, strlen(odol_lod->proxies[i].name) + 1, 1, f_target);
+        fwrite( odol_lod->proxies[i].name.c_str(), odol_lod->proxies[i].name.length() + 1, 1, f_target);
         fwrite(&odol_lod->proxies[i].transform_x, sizeof(vector3), 1, f_target);
         fwrite(&odol_lod->proxies[i].transform_y, sizeof(vector3), 1, f_target);
         fwrite(&odol_lod->proxies[i].transform_z, sizeof(vector3), 1, f_target);
@@ -1367,8 +1373,8 @@ void write_odol_lod(FILE *f_target, struct odol_lod *odol_lod) {
 
     fwrite(&odol_lod->num_properties, sizeof(uint32_t), 1, f_target);
     for (i = 0; i < odol_lod->num_properties; i++) {
-        fwrite(odol_lod->properties[i].name, strlen(odol_lod->properties[i].name) + 1, 1, f_target);
-        fwrite(odol_lod->properties[i].value, strlen(odol_lod->properties[i].value) + 1, 1, f_target);
+        fwrite(odol_lod->properties[i].name.c_str(), odol_lod->properties[i].name.length() + 1, 1, f_target);
+        fwrite(odol_lod->properties[i].value.c_str(), odol_lod->properties[i].value.length() + 1, 1, f_target);
     }
 
     fwrite(&odol_lod->num_frames, sizeof(uint32_t), 1, f_target);
@@ -1489,7 +1495,7 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_
 
     for (j = 0; j < mlod_lods[i].num_selections; j++) {
         if (anim->axis[0] == 0) {
-            if (stricmp(mlod_lods[i].selections[j].name, anim->begin) == 0) {
+            if (stricmp(mlod_lods[i].selections[j].name.c_str(), anim->begin) == 0) {
                 for (k = 0; k < mlod_lods[i].num_points; k++) {
                     if (mlod_lods[i].selections[j].points[k] > 0) {
                         anim->axis_pos = mlod_lods[i].points[k].getPosition();
@@ -1497,7 +1503,7 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_
                     }
                 }
             }
-            if (stricmp(mlod_lods[i].selections[j].name, anim->end) == 0) {
+            if (stricmp(mlod_lods[i].selections[j].name.c_str(), anim->end) == 0) {
                 for (k = 0; k < mlod_lods[i].num_points; k++) {
                     if (mlod_lods[i].selections[j].points[k] > 0) {
                         anim->axis_dir = mlod_lods[i].points[k].getPosition();
@@ -1505,7 +1511,7 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_
                     }
                 }
             }
-        } else if (stricmp(mlod_lods[i].selections[j].name, anim->axis) == 0) {
+        } else if (stricmp(mlod_lods[i].selections[j].name.c_str(), anim->axis) == 0) {
             for (k = 0; k < mlod_lods[i].num_points; k++) {
                 if (mlod_lods[i].selections[j].points[k] > 0) {
                     anim->axis_pos = mlod_lods[i].points[k].getPosition();

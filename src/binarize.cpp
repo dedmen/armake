@@ -159,28 +159,28 @@ int attempt_bis_binarize(char *source, char *target) {
         memset(dependencies, 0, sizeof(dependencies));
         for (i = 0; i < num_lods; i++) {
             for (j = 0; j < mlod_lods[i].num_faces; j++) {
-                if (strlen(mlod_lods[i].faces[j].texture_name) > 0 && mlod_lods[i].faces[j].texture_name[0] != '#') {
+                if (!mlod_lods[i].faces[j].texture_name.empty() && mlod_lods[i].faces[j].texture_name[0] != '#') {
                     for (k = 0; k < MAXTEXTURES; k++) {
                         if (dependencies[k] == 0)
                             break;
-                        if (stricmp(mlod_lods[i].faces[j].texture_name, dependencies[k]) == 0)
+                        if (stricmp(mlod_lods[i].faces[j].texture_name.c_str(), dependencies[k]) == 0)
                             break;
                     }
                     if (k < MAXTEXTURES && dependencies[k] == 0) {
                         dependencies[k] = (char *)safe_malloc(2048);
-                        strcpy(dependencies[k], mlod_lods[i].faces[j].texture_name);
+                        strcpy(dependencies[k], mlod_lods[i].faces[j].texture_name.c_str());
                     }
                 }
-                if (strlen(mlod_lods[i].faces[j].material_name) > 0 && mlod_lods[i].faces[j].material_name[0] != '#') {
+                if (!mlod_lods[i].faces[j].material_name.empty() && mlod_lods[i].faces[j].material_name[0] != '#') {
                     for (k = 0; k < MAXTEXTURES; k++) {
                         if (dependencies[k] == 0)
                             break;
-                        if (stricmp(mlod_lods[i].faces[j].material_name, dependencies[k]) == 0)
+                        if (stricmp(mlod_lods[i].faces[j].material_name.c_str(), dependencies[k]) == 0)
                             break;
                     }
                     if (k < MAXTEXTURES && dependencies[k] == 0) {
                         dependencies[k] = (char *)safe_malloc(2048);
-                        strcpy(dependencies[k], mlod_lods[i].faces[j].material_name);
+                        strcpy(dependencies[k], mlod_lods[i].faces[j].material_name.c_str());
                     }
                 }
             }
