@@ -59,7 +59,7 @@ bool is_garbage(struct header *header) {
 
 int cmd_inspect() {
     extern struct arguments args;
-    extern char *current_target;
+    extern const char *current_target;
     FILE *f_target;
     int num_files;
     long i;
@@ -165,7 +165,7 @@ int cmd_inspect() {
 
 int cmd_unpack() {
     extern struct arguments args;
-    extern char *current_target;
+    extern const char *current_target;
     FILE *f_source;
     FILE *f_target;
     int num_files;
@@ -364,7 +364,7 @@ int cmd_unpack() {
 
 int cmd_cat() {
     extern struct arguments args;
-    extern char *current_target;
+    extern const char *current_target;
     FILE *f_source;
     int num_files;
     int file_index;

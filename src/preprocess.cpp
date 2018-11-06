@@ -707,7 +707,7 @@ int preprocess(char *source, FILE *f_target, struct constants *constants, struct
      * Returns 0 on success, a positive integer on failure.
      */
 
-    extern char *current_target;
+    extern const char *current_target;
     extern char include_stack[MAXINCLUDES][1024];
     int file_index;
     int line = 0;

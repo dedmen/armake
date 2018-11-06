@@ -89,7 +89,7 @@ int attempt_bis_binarize(char *source, char *target) {
      * success and a positive integer on failure.
      */
 
-    extern char *current_target;
+    extern const char *current_target;
     SECURITY_ATTRIBUTES secattr = { sizeof(secattr) };
     STARTUPINFO info = { sizeof(info) };
     PROCESS_INFORMATION processInfo;

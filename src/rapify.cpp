@@ -296,7 +296,7 @@ int rapify_file(char *source, char *target) {
      * Returns 0 on success and a positive integer on failure.
      */
 
-    extern char *current_target;
+    extern const char *current_target;
     FILE *f_temp;
     FILE *f_target;
     int i;

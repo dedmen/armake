@@ -106,7 +106,6 @@ public:
     }
 };
 
-typedef vector3_base<float> vector;
 typedef vector3_base<float> vector3;
 
-static const vector empty_vector = {0, 0, 0};
+static const vector3 empty_vector = {0, 0, 0};

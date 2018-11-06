@@ -29,7 +29,7 @@
 #include "filesystem.h"
 #include "utils.h"
 #include <vector>
-char *current_target;
+const char *current_target;
 
 #ifdef _WIN32
 
@@ -127,7 +127,7 @@ void warningf(char *format, ...) {
 }
 
 
-void lwarningf(char *file, int line, char *format, ...) {
+void lwarningf(const char *file, int line, char *format, ...) {
     char buffer[4096];
     va_list argptr;
 
@@ -177,7 +177,7 @@ void nwarningf(char *name, char *format, ...) {
 }
 
 
-void lnwarningf(char *file, int line, char *name, char *format, ...) {
+void lnwarningf(const char *file, int line, char *name, char *format, ...) {
     char buffer[4096];
     va_list argptr;
 
@@ -214,7 +214,7 @@ void errorf(char *format, ...) {
 }
 
 
-void lerrorf(char *file, int line, char *format, ...) {
+void lerrorf(const char *file, int line, char *format, ...) {
     char buffer[4096];
     va_list argptr;
 

@@ -80,10 +80,19 @@ public:
         return value;
     }
     bool operator==(const float& other) const {
+        if (value == other) return true;
         return float_equal(value, other, precision);
     }
     bool operator!=(const float& other) const {
         return !(*this == other);
+    }
+    bool operator>=(const float& other) const {
+        if (value == other) return true;
+        return value > other;
+    }
+    bool operator<=(const float& other) const {
+        if (value == other) return true;
+        return value < other;
     }
     bool operator==(const ComparableFloat& other) const {
         return *this == static_cast<float>(other);
@@ -91,9 +100,16 @@ public:
     bool operator!=(const ComparableFloat& other) const {
         return !(*this == other);
     }
+    bool operator>=(const ComparableFloat& other) const {
+        return *this >= static_cast<float>(other);
+    }
+    bool operator<=(const ComparableFloat& other) const {
+        return !(*this <= static_cast<float>(other));
+    }
+
 };
 
-extern char *current_target;
+extern const char *current_target;
 
 #ifdef _WIN32
 char *strndup(const char *s, size_t n);
@@ -108,15 +124,15 @@ void infof(char *format, ...);
 void debugf(char *format, ...);
 
 void warningf(char *format, ...);
-void lwarningf(char *file, int line, char *format, ...);
+void lwarningf(const char *file, int line, char *format, ...);
 
 bool warning_muted(char *name);
 
 void nwarningf(char *name, char *format, ...);
-void lnwarningf(char *file, int line, char *name, char *format, ...);
+void lnwarningf(const char *file, int line, char *name, char *format, ...);
 
 void errorf(char *format, ...);
-void lerrorf(char *file, int line, char *format, ...);
+void lerrorf(const char *file, int line, char *format, ...);
 
 void *safe_malloc(size_t size);
 void *safe_realloc(void *ptr, size_t size);

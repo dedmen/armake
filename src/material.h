@@ -24,6 +24,7 @@
 
 
 #include "utils.h"
+#include <string>
 
 
 struct shader_ref {
@@ -51,7 +52,9 @@ struct stage_transform {
 };
 
 struct material {
-    char path[2048];
+    material();
+    material(std::string p) : path(std::move(p)) {}
+    std::string path;
     uint32_t type;
     struct color emissive;
     struct color ambient;

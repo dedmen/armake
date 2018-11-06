@@ -83,6 +83,7 @@
 #include "model_config.h"
 #include "matrix.h"
 #include <vector>
+#include <memory>
 
 
 struct uv_pair {
@@ -193,15 +194,15 @@ struct odol_section {
 struct odol_selection {
     char name[512];
     uint32_t num_faces;
-    uint32_t *faces;
+    std::vector<uint32_t> faces;
     uint32_t always_0;
     bool is_sectional;
     uint32_t num_sections;
-    uint32_t *sections;
+    std::vector<uint32_t> sections;
     uint32_t num_vertices;
-    uint32_t *vertices;
+    std::vector<uint32_t> vertices;
     uint32_t num_vertex_weights;
-    uint8_t *vertex_weights;
+    std::vector<uint8_t> vertex_weights;
 };
 
 struct odol_frame {
@@ -214,11 +215,11 @@ struct odol_vertexboneref {
 
 struct odol_lod {
     uint32_t num_proxies;
-    struct odol_proxy *proxies;
+    std::vector<odol_proxy> proxies;
     uint32_t num_bones_subskeleton;
-    uint32_t *subskeleton_to_skeleton;
+    std::vector<uint32_t> subskeleton_to_skeleton;
     uint32_t num_bones_skeleton;
-    struct odol_bonelink *skeleton_to_subskeleton;
+    std::vector<odol_bonelink> skeleton_to_subskeleton;
     uint32_t num_points;
     uint32_t num_points_mlod;
     float face_area;
@@ -230,18 +231,18 @@ struct odol_lod {
     uint32_t num_textures;
     char *textures;
     uint32_t num_materials;
-    struct material *materials;
-    uint32_t *point_to_vertex;
-    uint32_t *vertex_to_point;
-    uint32_t *face_lookup;
+    std::vector<struct material> materials;
+    std::vector<uint32_t> point_to_vertex;
+    std::vector<uint32_t> vertex_to_point;
+    std::vector<uint32_t> face_lookup;
     uint32_t num_faces;
     uint32_t face_allocation_size;
     uint16_t always_0;
-    struct odol_face *faces;
+    std::vector<struct odol_face> faces;
     uint32_t num_sections;
-    struct odol_section *sections;
+    std::vector<struct odol_section> sections;
     uint32_t num_selections;
-    struct odol_selection *selections;
+    std::vector<struct odol_selection> selections;
     uint32_t num_properties;
     struct property properties[MAXPROPERTIES];
     uint32_t num_frames;
@@ -251,10 +252,10 @@ struct odol_lod {
     uint32_t flags;
     bool vertexboneref_is_simple;
     struct uv_pair uv_scale[4];
-    struct uv_pair *uv_coords;
+    std::vector<struct uv_pair> uv_coords;
     std::vector<vector3> points;
     std::vector<vector3> normals;
-    struct odol_vertexboneref *vertexboneref;
+    std::vector<struct odol_vertexboneref> vertexboneref;
 };
 
 struct lod_indices {
@@ -275,7 +276,7 @@ struct lod_indices {
 };
 
 struct model_info {
-    float *lod_resolutions;
+    std::vector<float> lod_resolutions;
     uint32_t index;
     float bounding_sphere;
     float geo_lod_sphere;
@@ -304,7 +305,7 @@ struct model_info {
     bool prefer_shadow_volume;
     float shadow_offset;
     bool animated;
-    struct skeleton_ *skeleton;
+    std::unique_ptr<struct skeleton_> skeleton;
     char map_type;
     uint32_t n_floats;
     float mass;

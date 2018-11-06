@@ -225,7 +225,7 @@ int hash_file(char *path, unsigned char *hash) {
 
 
 int cmd_build() {
-    extern char *current_target;
+    extern const char *current_target;
     int i;
     int j;
     int k;

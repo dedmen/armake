@@ -837,7 +837,7 @@ int derapify_file(char *source, char *target) {
      * returned. 0 is returned on success and a positive integer on failure.
      */
 
-    extern char *current_target;
+    extern const char *current_target;
     FILE *f_source;
     FILE *f_target;
     char buffer[4096];

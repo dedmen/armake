@@ -33,7 +33,7 @@ static const matrix empty_matrix = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0
 static const matrix identity_matrix = { 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f };
 
 
-matrix vector_tilda(const vector v);
+matrix vector_tilda(const vector3 v);
 
 matrix matrix_sub(const matrix m1, const matrix m2);
 

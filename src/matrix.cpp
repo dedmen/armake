@@ -23,7 +23,7 @@
 #include "matrix.h"
 
 
-matrix vector_tilda(const vector v) {
+matrix vector_tilda(const vector3 v) {
     matrix r = empty_matrix;
 
     r.m01 = -v.z;

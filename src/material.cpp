@@ -97,7 +97,7 @@ int read_material(struct material *material) {
      * Returns 0 on success and a positive integer on failure.
      */
 
-    extern char *current_target;
+    extern const char *current_target;
     FILE *f;
     char actual_path[2048];
     char rapified_path[2048];
@@ -109,9 +109,9 @@ int read_material(struct material *material) {
 
     if (material->path[0] != '\\') {
         strcpy(temp, "\\");
-        strcat(temp, material->path);
+        strcat(temp, material->path.c_str());
     } else {
-        strcpy(temp, material->path);
+        strcpy(temp, material->path.c_str());
     }
 
     // Write default values
@@ -164,7 +164,7 @@ int read_material(struct material *material) {
         return 2;
     }
 
-    current_target = material->path;
+    current_target = material->path.c_str();
 
     // Open rapified file
     f = fopen(rapified_path, "rb");
