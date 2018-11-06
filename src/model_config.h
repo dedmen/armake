@@ -40,20 +40,24 @@
 
 
 #include "vector.h"
+#include <string>
+#include <vector>
 
 struct bone {
-    char name[512];
-    char parent[512];
+    bone(std::string n, std::string p) : name(std::move(n)), parent(std::move(p)) {}
+    std::string name;
+    std::string parent;
 };
 
 struct animation {
+    animation(std::string n): name(std::move(n)) {}
     uint32_t type;
-    char name[512];
-    char selection[512];
-    char source[512];
-    char axis[512];
-    char begin[512];
-    char end[512];
+    std::string name;
+    std::string selection;
+    std::string source;
+    std::string axis;
+    std::string begin;
+    std::string end;
     float min_value;
     float max_value;
     float min_phase;
@@ -73,14 +77,14 @@ struct animation {
     float unhide_value;
 };
 
-struct skeleton_ {
-    char name[512];
+struct skeleton_ { //using std::vector and std::string reduced the size of this from 4,3MB to 192B
+    std::string name;
     uint32_t num_bones;
-    struct bone bones[MAXBONES];
+    std::vector<struct bone> bones;
     uint32_t num_sections;
-    char sections[MAXSECTIONS][512];
+    std::vector<std::string> sections;
     uint32_t num_animations;
-    struct animation animations[MAXANIMS];
+    std::vector<animation> animations;
     bool is_discrete;
     float ht_min;
     float ht_max;

@@ -85,154 +85,147 @@ int read_animations(FILE *f, char *config_path, struct skeleton_ *skeleton) {
         return -1;
 
     // Now go through all the animations
-    char anim_names[MAXANIMS][512];
-    for (i = 0; i < MAXANIMS; i++)
-        anim_names[i][0] = 0;
+    std::vector<std::string> anim_names;
 
-    success = read_classes(f, config_path, (char *)anim_names, MAXANIMS, 512);
+    success = read_classes(f, config_path, anim_names, 512);
     if (success)
         return success;
+    //#TODO is it an error if we have more animations than MAXANIMS?
 
-    for (i = 0; i < MAXANIMS; i++) {
-        if (strlen(anim_names[i]) == 0)
-            break;
+    for (auto& animName : anim_names) {
+        //Check if a animation with same name already exists, if it does we want to overwrite.
+        auto found = std::find_if(skeleton->animations.begin(), skeleton->animations.end(), [&animName](const animation& anim) {
+            return anim.name == animName;
+        });
 
-        for (j = 0; j < MAXANIMS; j++) {
-            if (strlen(skeleton->animations[j].name) == 0)
-                break;
-            if (strcmp(skeleton->animations[j].name, anim_names[i]) == 0)
-                break;
-        }
-        if (j == MAXANIMS)
-            return 1;
+        auto newAnimation = (found == skeleton->animations.end()) ?
+            skeleton->animations.emplace_back(animName) //if we don't have one to overwrite, we add a new one.
+            :
+            *found; //Overwrite existing one
 
-        if (j == skeleton->num_animations) {
-            skeleton->num_animations++;
-        } else {
-            for (k = j; k < skeleton->num_animations - 1; k++) {
-                memcpy(&skeleton->animations[k], &skeleton->animations[k + 1], sizeof(struct animation));
-            }
-            j = skeleton->num_animations - 1;
-        }
-
-        strcpy(skeleton->animations[j].name, anim_names[i]);
+        newAnimation.name = animName;
 
         // Read anim type
-        sprintf(value_path, "%s >> %s >> type", config_path, anim_names[i]);
+        sprintf(value_path, "%s >> %s >> type", config_path, animName.c_str());
         if (read_string(f, value_path, value, sizeof(value))) {
-            lwarningf(current_target, -1, "Animation type for %s could not be found.\n", anim_names[i]);
+            lwarningf(current_target, -1, "Animation type for %s could not be found.\n", animName.c_str());
             continue;
         }
 
         lower_case(value);
 
         if (strcmp(value, "rotation") == 0) {
-            skeleton->animations[j].type = TYPE_ROTATION;
+            newAnimation.type = TYPE_ROTATION;
         } else if (strcmp(value, "rotationx") == 0) {
-            skeleton->animations[j].type = TYPE_ROTATION_X;
+            newAnimation.type = TYPE_ROTATION_X;
         } else if (strcmp(value, "rotationy") == 0) {
-            skeleton->animations[j].type = TYPE_ROTATION_Y;
+            newAnimation.type = TYPE_ROTATION_Y;
         } else if (strcmp(value, "rotationz") == 0) {
-            skeleton->animations[j].type = TYPE_ROTATION_Z;
+            newAnimation.type = TYPE_ROTATION_Z;
         } else if (strcmp(value, "translation") == 0) {
-            skeleton->animations[j].type = TYPE_TRANSLATION;
+            newAnimation.type = TYPE_TRANSLATION;
         } else if (strcmp(value, "translationx") == 0) {
-            skeleton->animations[j].type = TYPE_TRANSLATION_X;
+            newAnimation.type = TYPE_TRANSLATION_X;
         } else if (strcmp(value, "translationy") == 0) {
-            skeleton->animations[j].type = TYPE_TRANSLATION_Y;
+            newAnimation.type = TYPE_TRANSLATION_Y;
         } else if (strcmp(value, "translationz") == 0) {
-            skeleton->animations[j].type = TYPE_TRANSLATION_Z;
+            newAnimation.type = TYPE_TRANSLATION_Z;
         } else if (strcmp(value, "direct") == 0) {
-            skeleton->animations[j].type = TYPE_DIRECT;
+            newAnimation.type = TYPE_DIRECT;
             lwarningf(current_target, -1, "Direct animations aren't supported yet.\n");
             continue;
         } else if (strcmp(value, "hide") == 0) {
-            skeleton->animations[j].type = TYPE_HIDE;
+            newAnimation.type = TYPE_HIDE;
         } else {
             lwarningf(current_target, -1, "Unknown animation type: %s\n", value);
             continue;
         }
 
         // Read optional values
-        skeleton->animations[j].source[0] = 0;
-        skeleton->animations[j].selection[0] = 0;
-        skeleton->animations[j].axis[0] = 0;
-        skeleton->animations[j].begin[0] = 0;
-        skeleton->animations[j].end[0] = 0;
-        skeleton->animations[j].min_value = 0.0f;
-        skeleton->animations[j].max_value = 1.0f;
-        skeleton->animations[j].min_phase = 0.0f;
-        skeleton->animations[j].max_phase = 1.0f;
-        skeleton->animations[j].junk = 953267991;
-        skeleton->animations[j].always_0 = 0;
-        skeleton->animations[j].source_address = 0;
-        skeleton->animations[j].angle0 = 0.0f;
-        skeleton->animations[j].angle1 = 0.0f;
-        skeleton->animations[j].offset0 = 0.0f;
-        skeleton->animations[j].offset1 = 1.0f;
-        skeleton->animations[j].hide_value = 0.0f;
-        skeleton->animations[j].unhide_value = -1.0f;
+        newAnimation.source.clear();
+        newAnimation.selection.clear();
+        newAnimation.axis.clear();
+        newAnimation.begin.clear();
+        newAnimation.end.clear();
+        newAnimation.min_value = 0.0f;
+        newAnimation.max_value = 1.0f;
+        newAnimation.min_phase = 0.0f;
+        newAnimation.max_phase = 1.0f;
+        newAnimation.junk = 953267991;
+        newAnimation.always_0 = 0;
+        newAnimation.source_address = 0;
+        newAnimation.angle0 = 0.0f;
+        newAnimation.angle1 = 0.0f;
+        newAnimation.offset0 = 0.0f;
+        newAnimation.offset1 = 1.0f;
+        newAnimation.hide_value = 0.0f;
+        newAnimation.unhide_value = -1.0f;
 
 #define ERROR_READING(key) lwarningf(current_target, -1, "Error reading %s for %s.\n", key, anim_names[i]);
-
+        char buffer[512];
         sprintf(value_path, "%s >> %s >> source", config_path, anim_names[i]);
-        if (read_string(f, value_path, skeleton->animations[j].source, sizeof(skeleton->animations[j].source)) > 0)
+        if (read_string(f, value_path, buffer, sizeof(buffer)) > 0)
             ERROR_READING("source")
+        newAnimation.source = buffer;
 
         sprintf(value_path, "%s >> %s >> selection", config_path, anim_names[i]);
-        if (read_string(f, value_path, skeleton->animations[j].selection, sizeof(skeleton->animations[j].selection)) > 0)
+        if (read_string(f, value_path, buffer, sizeof(buffer)) > 0)
             ERROR_READING("selection")
+        newAnimation.selection = buffer;
 
         sprintf(value_path, "%s >> %s >> axis", config_path, anim_names[i]);
-        if (read_string(f, value_path, skeleton->animations[j].axis, sizeof(skeleton->animations[j].axis)) > 0)
+        if (read_string(f, value_path, buffer, sizeof(buffer)) > 0)
             ERROR_READING("axis")
+        newAnimation.axis = buffer;
 
         sprintf(value_path, "%s >> %s >> begin", config_path, anim_names[i]);
-        if (read_string(f, value_path, skeleton->animations[j].begin, sizeof(skeleton->animations[j].begin)) > 0)
+        if (read_string(f, value_path, buffer, sizeof(buffer)) > 0)
             ERROR_READING("begin")
+        newAnimation.begin = buffer;
 
         sprintf(value_path, "%s >> %s >> end", config_path, anim_names[i]);
-        if (read_string(f, value_path, skeleton->animations[j].end, sizeof(skeleton->animations[j].end)) > 0)
+        if (read_string(f, value_path, buffer, sizeof(buffer)) > 0)
             ERROR_READING("end")
+        newAnimation.end = buffer;
 
         sprintf(value_path, "%s >> %s >> minValue", config_path, anim_names[i]);
-        if (read_float(f, value_path, &skeleton->animations[j].min_value) > 0)
+        if (read_float(f, value_path, &newAnimation.min_value) > 0)
             ERROR_READING("minValue")
 
         sprintf(value_path, "%s >> %s >> maxValue", config_path, anim_names[i]);
-        if (read_float(f, value_path, &skeleton->animations[j].max_value) > 0)
+        if (read_float(f, value_path, &newAnimation.max_value) > 0)
             ERROR_READING("maxValue")
 
         sprintf(value_path, "%s >> %s >> minPhase", config_path, anim_names[i]);
-        if (read_float(f, value_path, &skeleton->animations[j].min_phase) > 0)
+        if (read_float(f, value_path, &newAnimation.min_phase) > 0)
             ERROR_READING("minPhase")
 
         sprintf(value_path, "%s >> %s >> maxPhase", config_path, anim_names[i]);
-        if (read_float(f, value_path, &skeleton->animations[j].max_phase) > 0)
+        if (read_float(f, value_path, &newAnimation.max_phase) > 0)
             ERROR_READING("maxPhase")
 
         sprintf(value_path, "%s >> %s >> angle0", config_path, anim_names[i]);
-        if (read_float(f, value_path, &skeleton->animations[j].angle0) > 0)
+        if (read_float(f, value_path, &newAnimation.angle0) > 0)
             ERROR_READING("angle0")
 
         sprintf(value_path, "%s >> %s >> angle1", config_path, anim_names[i]);
-        if (read_float(f, value_path, &skeleton->animations[j].angle1) > 0)
+        if (read_float(f, value_path, &newAnimation.angle1) > 0)
             ERROR_READING("angle1")
 
         sprintf(value_path, "%s >> %s >> offset0", config_path, anim_names[i]);
-        if (read_float(f, value_path, &skeleton->animations[j].offset0) > 0)
+        if (read_float(f, value_path, &newAnimation.offset0) > 0)
             ERROR_READING("offset0")
 
         sprintf(value_path, "%s >> %s >> offset1", config_path, anim_names[i]);
-        if (read_float(f, value_path, &skeleton->animations[j].offset1) > 0)
+        if (read_float(f, value_path, &newAnimation.offset1) > 0)
             ERROR_READING("offset1")
 
         sprintf(value_path, "%s >> %s >> hideValue", config_path, anim_names[i]);
-        if (read_float(f, value_path, &skeleton->animations[j].hide_value) > 0)
+        if (read_float(f, value_path, &newAnimation.hide_value) > 0)
             ERROR_READING("hideValue")
 
         sprintf(value_path, "%s >> %s >> unHideValue", config_path, anim_names[i]);
-        if (read_float(f, value_path, &skeleton->animations[j].unhide_value) > 0)
+        if (read_float(f, value_path, &newAnimation.unhide_value) > 0)
             ERROR_READING("unHideValue")
 
         sprintf(value_path, "%s >> %s >> sourceAddress", config_path, anim_names[i]);
@@ -243,13 +236,13 @@ int read_animations(FILE *f, char *config_path, struct skeleton_ *skeleton) {
             lower_case(value);
 
             if (strcmp(value, "clamp") == 0) {
-                skeleton->animations[j].source_address = SOURCE_CLAMP;
+                newAnimation.source_address = SOURCE_CLAMP;
             } else if (strcmp(value, "mirror") == 0) {
-                skeleton->animations[j].source_address = SOURCE_MIRROR;
+                newAnimation.source_address = SOURCE_MIRROR;
             } else if (strcmp(value, "loop") == 0) {
-                skeleton->animations[j].source_address = SOURCE_LOOP;
+                newAnimation.source_address = SOURCE_LOOP;
             } else {
-                lwarningf(current_target, -1, "Unknown source address \"%s\" in \"%s\".\n", value, skeleton->animations[j].name);
+                lwarningf(current_target, -1, "Unknown source address \"%s\" in \"%s\".\n", value, newAnimation.name.c_str());
                 continue;
             }
         }
@@ -259,38 +252,45 @@ int read_animations(FILE *f, char *config_path, struct skeleton_ *skeleton) {
 }
 
 
-int sort_bones(struct bone *src, struct bone *tgt, int tgt_index, char *parent) {
+void sort_bones(const std::vector<bone>& src, std::vector<bone>& tgt, const char *parent) {
     int i;
     int j;
-
-    for (i = 0; i < MAXBONES; i++) {
-        if (strlen(src[i].name) == 0)
+    //#TODO optimize this
+    /*
+    sorting based on parent
+    bone 1
+     - bone 2
+      - bone 3
+     - bone 4
+      - bone 5
+    bone 7
+      -bone 8
+    */
+    for (i = 0; i < src.size(); i++) {
+        if (src[i].name.empty())
             continue;
-        if (strcmp(src[i].parent, parent) != 0)
+        if (src[i].parent != parent)
             continue;
 
-        memcpy(&tgt[tgt_index++], &src[i], sizeof(struct bone));
-        tgt_index = sort_bones(src, tgt, tgt_index, src[i].name);
+        tgt.emplace_back(src[i]);
+        sort_bones(src, tgt, src[i].name.c_str());
     }
 
     if (strlen(parent) > 0)
-        return tgt_index;
+        return;
 
     // copy the remaining bones
-    for (i = 0; i < MAXBONES; i++) {
-        if (strlen(src[i].name) == 0)
+    for (i = 0; i < src.size(); i++) {
+        if (src[i].name.empty())
             break;
-        for (j = 0; j < MAXBONES; j++) {
-            if (strcmp(src[i].parent, tgt[j].name) == 0)
+        for (j = 0; j < src.size(); j++) {
+            if (src[i].parent == tgt[j].name)
                 break;
         }
-        if (j == MAXBONES) {
-            memcpy(&tgt[tgt_index], &src[i], sizeof(struct bone));
-            tgt_index++;
+        if (j == src.size()) {
+            tgt.emplace_back(src[i]);
         }
     }
-
-    return tgt_index;
 }
 
 
@@ -309,8 +309,8 @@ int read_model_config(char *path, struct skeleton_ *skeleton) {
     char rapified_path[2048];
     char config_path[2048];
     char model_name[512];
-    char bones[MAXBONES * 2][512] = {};
-    char buffer[512];
+    std::vector<std::string> bones;
+    char buffer[512]; //#TODO use one buffer for all string reads and then save them into std::string
     struct bone *bones_tmp;
 
     current_target = path;
@@ -369,15 +369,16 @@ int read_model_config(char *path, struct skeleton_ *skeleton) {
 
     // Read name
     sprintf(config_path, "CfgModels >> %s >> skeletonName", model_name);
-    success = read_string(f, config_path, skeleton->name, sizeof(skeleton->name));
+    success = read_string(f, config_path, buffer, sizeof(buffer));
     if (success > 0) {
         errorf("Failed to read skeleton name.\n");
         return success;
     }
+    skeleton->name = buffer;
 
     // Read bones
-    if (strlen(skeleton->name) > 0) {
-        sprintf(config_path, "CfgSkeletons >> %s >> skeletonInherit", skeleton->name);
+    if (!skeleton->name.empty()) {
+        sprintf(config_path, "CfgSkeletons >> %s >> skeletonInherit", skeleton->name.c_str());
         success = read_string(f, config_path, buffer, sizeof(buffer));
         if (success > 0) {
             errorf("Failed to read bones.\n");
@@ -385,58 +386,45 @@ int read_model_config(char *path, struct skeleton_ *skeleton) {
         }
 
         int32_t temp;
-        sprintf(config_path, "CfgSkeletons >> %s >> isDiscrete", skeleton->name);
+        sprintf(config_path, "CfgSkeletons >> %s >> isDiscrete", skeleton->name.c_str());
         success = read_int(f, config_path, &temp);
         if (success == 0)
             skeleton->is_discrete = (temp > 0);
         else
             skeleton->is_discrete = false;
 
-        i = 0;
         if (strlen(buffer) > 0) { // @todo: more than 1 parent
             sprintf(config_path, "CfgSkeletons >> %s >> skeletonBones", buffer);
-            success = read_string_array(f, config_path, (char *)bones, MAXBONES * 2, 512);
+            success = read_string_array(f, config_path,bones, 512);
             if (success > 0) {
                 errorf("Failed to read bones.\n");
                 return success;
             } else if (success == 0) {
-                for (i = 0; i < MAXBONES * 2; i += 2) {
-                    if (bones[i][0] == 0)
-                        break;
-                }
             }
         }
 
-        sprintf(config_path, "CfgSkeletons >> %s >> skeletonBones", skeleton->name);
-        success = read_string_array(f, config_path, (char *)bones + i * 512, MAXBONES * 2 - i, 512);
+        sprintf(config_path, "CfgSkeletons >> %s >> skeletonBones", skeleton->name.c_str());
+        success = read_string_array(f, config_path, bones, 512);
         if (success > 0) {
             errorf("Failed to read bones.\n");
             return success;
         }
 
-        for (i = 0; i < MAXBONES * 2; i += 2) {
-            if (bones[i][0] == 0)
-                break;
-            strcpy(skeleton->bones[i / 2].name, bones[i]);
-            strcpy(skeleton->bones[i / 2].parent, bones[i + 1]);
+        for (i = 0; i < bones.size(); i += 2) {
+            skeleton->bones.emplace_back(bones[i], bones[i + 1]);
             skeleton->num_bones++;
         }
+        bones.clear();
 
         // Sort bones by parent
-        bones_tmp = (struct bone *)safe_malloc(sizeof(struct bone) * MAXBONES);
-        memset(bones_tmp, 0, sizeof(struct bone) * MAXBONES);
-
-        sort_bones(skeleton->bones, bones_tmp, 0, "");
-        memcpy(skeleton->bones, bones_tmp, sizeof(struct bone) * MAXBONES);
-
-        free(bones_tmp);
+        std::vector<bone> sortedBones;
+        sort_bones(skeleton->bones, sortedBones, "");
+        skeleton->bones = sortedBones;
 
         // Convert to lower case
-        for (i = 0; i < MAXBONES; i++) {
-            if (strlen(skeleton->bones[i].name) == 0)
-                break;
-            lower_case(skeleton->bones[i].name);
-            lower_case(skeleton->bones[i].parent);
+        for (auto& bone : skeleton->bones) {
+            std::transform(bone.name.begin(), bone.name.end(), bone.name.begin(), tolower);
+            std::transform(bone.parent.begin(), bone.parent.end(), bone.parent.begin(), tolower);
         }
     }
 
@@ -448,30 +436,23 @@ int read_model_config(char *path, struct skeleton_ *skeleton) {
         return success;
     }
 
-    i = 0;
     if (strlen(buffer) > 0) {
         sprintf(config_path, "CfgModels >> %s >> sections", buffer);
-        success = read_string_array(f, config_path, (char *)skeleton->sections, MAXSECTIONS, 512);
+        success = read_string_array(f, config_path, skeleton->sections, 512);
         if (success > 0) {
             errorf("Failed to read sections.\n");
             return success;
-        } else if (success == 0) {
-            for (i = 0; i < MAXSECTIONS; i++) {
-                if (skeleton->sections[i][0] == 0)
-                    break;
-            }
         }
     }
 
     sprintf(config_path, "CfgModels >> %s >> sections", model_name);
-    success = read_string_array(f, config_path, (char *)skeleton->sections + i * 512, MAXSECTIONS - i, 512);
+    success = read_string_array(f, config_path, skeleton->sections, 512);
     if (success > 0) {
         errorf("Failed to read sections.\n");
         return success;
     }
 
-    for (i = 0; i < MAXSECTIONS && skeleton->sections[i][0] != 0; i++)
-        skeleton->num_sections++;
+    skeleton->num_sections = skeleton->sections.size();
 
     // Read animations
     skeleton->num_animations = 0;
@@ -482,7 +463,7 @@ int read_model_config(char *path, struct skeleton_ *skeleton) {
         return success;
     }
 
-    if (strlen(skeleton->name) == 0 && skeleton->num_animations > 0)
+    if (skeleton->name.empty() && skeleton->num_animations > 0)
         lwarningf(path, -1, "animated-without-skeleton", "Model doesn't have a skeleton but is animated.\n");
 
     // Read thermal stuff

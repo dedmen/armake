@@ -20,6 +20,8 @@
 
 
 #define RAD2DEG 0.017453293;
+#include <string>
+#include <vector>
 
 
 int seek_config_path(FILE *f, char *config_path);
@@ -38,9 +40,9 @@ int read_long_array(FILE *f, char *config_path, int32_t *array, int size);
 
 int read_float_array(FILE *f, char *config_path, float *array, int size);
 
-int read_string_array(FILE *f, char *config_path, char *buffer, int size, size_t buffsize);
+int read_string_array(FILE *f, char *config_path, std::vector<std::string> buffer, size_t buffsize);
 
-int read_classes(FILE *f, char *config_path, char *array, int size, size_t buffsize);
+int read_classes(FILE *f, char *config_path, std::vector<std::string> output, size_t buffsize);
 
 int derapify_file(char *source, char *target);
 

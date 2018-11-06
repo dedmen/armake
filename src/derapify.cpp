@@ -507,7 +507,7 @@ int read_float_array(FILE *f, char *config_path, float *array, int size) {
 }
 
 
-int read_string_array(FILE *f, char *config_path, char *buffer, int size, size_t buffsize) {
+int read_string_array(FILE *f, char *config_path, std::vector<std::string> output, size_t buffsize) {
     /*
      * Reads the given array from config. size should be the maximum number of
      * elements in the array, buffsize the length of the individual buffers.
@@ -515,47 +515,40 @@ int read_string_array(FILE *f, char *config_path, char *buffer, int size, size_t
      * Returns -1 if the value could not be found, 0 on success
      * and a positive integer on failure.
      */
+    std::vector<char> buffer;
+    buffer.resize(buffsize);
 
-    int i;
-    int success;
-    long fp;
-    uint8_t temp;
-    uint32_t num_entries;
-
-    success = seek_definition(f, config_path);
+    int success = seek_definition(f, config_path);
     if (success != 0)
         return success;
 
-    temp = fgetc(f);
+    uint8_t temp = fgetc(f);
     if (temp != 2)
         return 1;
 
     while (fgetc(f) != 0);
 
-    num_entries = read_compressed_int(f);
+    uint32_t num_entries = read_compressed_int(f);
 
-    for (i = 0; i < num_entries; i++) {
-        // Array is full
-        if (i == size)
-            return 2;
-
+    for (uint32_t i = 0; i < num_entries; i++) {
         temp = fgetc(f);
         if (temp != 0)
             return 3;
 
-        fp = ftell(f);
+        long fp = ftell(f);
 
-        if (fgets(buffer + i * buffsize, buffsize, f) == NULL)
+        if (fgets(buffer.data(), buffer.size(), f) == NULL)
             return 3;
-
-        fseek(f, fp + strlen(buffer + i * buffsize) + 1, SEEK_SET);
+        auto it = output.emplace_back(buffer.data());
+        
+        fseek(f, fp + it.length() + 1, SEEK_SET);
     }
 
     return 0;
 }
 
 
-int read_classes(FILE *f, char *config_path, char *array, int size, size_t buffsize) {
+int read_classes(FILE *f, char *config_path, std::vector<std::string> output, size_t buffsize) {
     /*
      * Reads all subclass names for the given config path into the given
      * array.
@@ -570,8 +563,9 @@ int read_classes(FILE *f, char *config_path, char *array, int size, size_t buffs
     uint8_t type;
     uint32_t num_entries;
     uint32_t fp;
-    char target[512];
-    char buffer[512];
+    //char target[512];
+    std::vector<char> buffer;
+    buffer.resize(buffsize);
 
     fseek(f, 16, SEEK_SET);
     success = seek_config_path(f, config_path);
@@ -588,50 +582,45 @@ int read_classes(FILE *f, char *config_path, char *array, int size, size_t buffs
         type = fgetc(f);
 
         if (type == 0) { // class
-            if (fgets(buffer, sizeof(buffer), f) == NULL)
+            if (fgets(buffer.data(), buffer.size(), f) == NULL)
                 return 1;
 
-            for (j = 0; j < size; j++) {
-                if (*(array + j * buffsize) == 0)
-                    break;
-            }
-            if (j == size)
-                return 2;
+            auto newElement = output.emplace_back(buffer.data());
 
-            strncpy(array + j * buffsize, buffer, buffsize);
-
-            fseek(f, fp + strlen(buffer) + 6, SEEK_SET);
+            fseek(f, fp + newElement.length() + 6, SEEK_SET);
         } else if (type == 1) { // value
             type = fgetc(f);
 
-            if (fgets(buffer, sizeof(buffer), f) == NULL)
+            if (fgets(buffer.data(), buffer.size(), f) == NULL)
                 return 1;
 
-            lower_case(buffer);
+            std::transform(buffer.begin(), buffer.end(), buffer.begin(), tolower);
 
-            if (strcmp(buffer, target) == 0) {
-                fseek(f, fp, SEEK_SET);
-                return 0;
-            }
+            //https://github.com/KoffeinFlummi/armake/pull/86#issuecomment-436292204
+            //if (strcmp(buffer.data(), target) == 0) {
+            //    fseek(f, fp, SEEK_SET);
+            //    return 0;
+            //}
 
-            fseek(f, fp + strlen(buffer) + 3, SEEK_SET);
+            fseek(f, fp + strlen(buffer.data()) + 3, SEEK_SET);
 
             if (type == 0 || type == 4)
                 while (fgetc(f) != 0);
             else
                 fseek(f, 4, SEEK_CUR);
         } else if (type == 2) { // array
-            if (fgets(buffer, sizeof(buffer), f) == NULL)
+            if (fgets(buffer.data(), buffer.size(), f) == NULL)
                 return 1;
 
-            lower_case(buffer);
+            std::transform(buffer.begin(), buffer.end(), buffer.begin(), tolower);
 
-            if (strcmp(buffer, target) == 0) {
-                fseek(f, fp, SEEK_SET);
-                return 0;
-            }
+            //https://github.com/KoffeinFlummi/armake/pull/86#issuecomment-436292204
+            //if (strcmp(buffer.data(), target) == 0) {
+            //    fseek(f, fp, SEEK_SET);
+            //    return 0;
+            //}
 
-            fseek(f, fp + strlen(buffer) + 2, SEEK_SET);
+            fseek(f, fp + strlen(buffer.data()) + 2, SEEK_SET);
 
             skip_array(f);
         } else { // extern & delete statements

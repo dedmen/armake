@@ -536,7 +536,7 @@ uint32_t add_point(struct odol_lod *odol_lod, struct mlod_lod *mlod_lod, struct 
 
         for (i = model_info->skeleton->num_bones - 1; (int32_t)i >= 0; i--) {
             for (j = 0; j < mlod_lod->num_selections; j++) {
-                if (stricmp(model_info->skeleton->bones[i].name,
+                if (stricmp(model_info->skeleton->bones[i].name.c_str(),
                         mlod_lod->selections[j].name.c_str()) == 0)
                     break;
             }
@@ -806,7 +806,7 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
 
     for (i = 0; i < mlod_lod->num_selections; i++) {
         for (j = 0; j < model_info->skeleton->num_sections; j++) {
-            if (strcmp(mlod_lod->selections[i].name.c_str(), model_info->skeleton->sections[j]) == 0)
+            if (mlod_lod->selections[i].name.c_str() == model_info->skeleton->sections[j])
                 break;
         }
         if (j < model_info->skeleton->num_sections) {
@@ -963,7 +963,7 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
         std::transform(odolSection.name.begin(), odolSection.name.end(), odolSection.name.begin(), tolower);
 
         for (j = 0; j < model_info->skeleton->num_sections; j++) {
-            if (strcmp(model_info->skeleton->sections[j], mlodSection.name.c_str()) == 0)
+            if (model_info->skeleton->sections[j] == mlodSection.name.c_str())
                 break;
         }
         odolSection.is_sectional = j < model_info->skeleton->num_sections;
@@ -1132,18 +1132,17 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
 }
 
 
-void write_skeleton(FILE *f_target, struct skeleton_ *skeleton) {
+void write_skeleton(FILE *f_target, const skeleton_& skeleton) {
     int i;
-    //#TODO take skeleton as reference
     //#TODO move method into skeleton class
-    fwrite(skeleton->name, strlen(skeleton->name) + 1, 1, f_target);
+    fwrite(skeleton.name.c_str(), skeleton.name.length() + 1, 1, f_target);
 
-    if (strlen(skeleton->name) > 0) {
+    if (!skeleton.name.empty()) {
         fputc(0, f_target); // is inherited @todo ?
-        fwrite(&skeleton->num_bones, sizeof(uint32_t), 1, f_target);
-        for (i = 0; i < skeleton->num_bones; i++) {
-            fwrite(skeleton->bones[i].name, strlen(skeleton->bones[i].name) + 1, 1, f_target);
-            fwrite(skeleton->bones[i].parent, strlen(skeleton->bones[i].parent) + 1, 1, f_target);
+        fwrite(&skeleton.num_bones, sizeof(uint32_t), 1, f_target);
+        for (i = 0; i < skeleton.num_bones; i++) {
+            fwrite(skeleton.bones[i].name.c_str(), skeleton.bones[i].name.length() + 1, 1, f_target);
+            fwrite(skeleton.bones[i].parent.c_str(), skeleton.bones[i].parent.length() + 1, 1, f_target);
         }
         fputc(0, f_target);
     }
@@ -1188,7 +1187,7 @@ void write_model_info(FILE *f_target, uint32_t num_lods, struct model_info *mode
     fwrite(&model_info->prefer_shadow_volume, sizeof(bool), 1, f_target);
     fwrite(&model_info->shadow_offset,       sizeof(float), 1, f_target);
     fwrite(&model_info->animated,            sizeof(bool), 1, f_target);
-    write_skeleton(f_target, model_info->skeleton.get());
+    write_skeleton(f_target, *model_info->skeleton);
     fwrite(&model_info->map_type,            sizeof(char), 1, f_target);
     fwrite(&model_info->n_floats,            sizeof(uint32_t), 1, f_target);
     //fwrite("\0\0\0\0\0", 4, 1, f_target); // compression header for empty array
@@ -1483,7 +1482,7 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_
     anim->axis_pos = empty_vector;
     anim->axis_dir = empty_vector;
 
-    if (anim->axis[0] == 0 && anim->begin[0] == 0 && anim->end[0] == 0)
+    if (anim->axis.empty() && anim->begin.empty() && anim->end.empty())
         return;
 
     for (i = 0; i < num_lods; i++) {
@@ -1494,8 +1493,8 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_
         return;
 
     for (j = 0; j < mlod_lods[i].num_selections; j++) {
-        if (anim->axis[0] == 0) {
-            if (stricmp(mlod_lods[i].selections[j].name.c_str(), anim->begin) == 0) {
+        if (anim->axis.empty()) {
+            if (stricmp(mlod_lods[i].selections[j].name.c_str(), anim->begin.c_str()) == 0) {
                 for (k = 0; k < mlod_lods[i].num_points; k++) {
                     if (mlod_lods[i].selections[j].points[k] > 0) {
                         anim->axis_pos = mlod_lods[i].points[k].getPosition();
@@ -1503,7 +1502,7 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_
                     }
                 }
             }
-            if (stricmp(mlod_lods[i].selections[j].name.c_str(), anim->end) == 0) {
+            if (stricmp(mlod_lods[i].selections[j].name.c_str(), anim->end.c_str()) == 0) {
                 for (k = 0; k < mlod_lods[i].num_points; k++) {
                     if (mlod_lods[i].selections[j].points[k] > 0) {
                         anim->axis_dir = mlod_lods[i].points[k].getPosition();
@@ -1511,7 +1510,7 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_
                     }
                 }
             }
-        } else if (stricmp(mlod_lods[i].selections[j].name.c_str(), anim->axis) == 0) {
+        } else if (stricmp(mlod_lods[i].selections[j].name.c_str(), anim->axis.c_str()) == 0) {
             for (k = 0; k < mlod_lods[i].num_points; k++) {
                 if (mlod_lods[i].selections[j].points[k] > 0) {
                     anim->axis_pos = mlod_lods[i].points[k].getPosition();
@@ -1555,8 +1554,8 @@ void write_animations(FILE *f_target, uint32_t num_lods, std::vector<mlod_lod> &
     for (i = 0; i < model_info->skeleton->num_animations; i++) {
         anim = &model_info->skeleton->animations[i];
         fwrite(&anim->type, sizeof(uint32_t), 1, f_target);
-        fwrite( anim->name, strlen(anim->name) + 1, 1, f_target);
-        fwrite( anim->source, strlen(anim->source) + 1, 1, f_target);
+        fwrite( anim->name.c_str(), anim->name.length() + 1, 1, f_target);
+        fwrite( anim->source.c_str(), anim->source.length() + 1, 1, f_target);
         fwrite(&anim->min_value, sizeof(float), 1, f_target);
         fwrite(&anim->max_value, sizeof(float), 1, f_target);
         fwrite(&anim->min_value, sizeof(float), 1, f_target);
@@ -1605,7 +1604,7 @@ void write_animations(FILE *f_target, uint32_t num_lods, std::vector<mlod_lod> &
             num = 0;
             for (k = 0; k < model_info->skeleton->num_animations; k++) {
                 anim = &model_info->skeleton->animations[k];
-                if (stricmp(anim->selection, model_info->skeleton->bones[j].name) == 0)
+                if (stricmp(anim->selection.c_str(), model_info->skeleton->bones[j].name.c_str()) == 0)
                     num++;
             }
 
@@ -1613,7 +1612,7 @@ void write_animations(FILE *f_target, uint32_t num_lods, std::vector<mlod_lod> &
 
             for (k = 0; k < model_info->skeleton->num_animations; k++) {
                 anim = &model_info->skeleton->animations[k];
-                if (stricmp(anim->selection, model_info->skeleton->bones[j].name) == 0) {
+                if (stricmp(anim->selection.c_str(), model_info->skeleton->bones[j].name.c_str()) == 0) {
                     num = (uint32_t)k;
                     fwrite(&num, sizeof(uint32_t), 1, f_target);
                 }
@@ -1628,7 +1627,7 @@ void write_animations(FILE *f_target, uint32_t num_lods, std::vector<mlod_lod> &
 
             index = -1;
             for (k = 0; k < model_info->skeleton->num_bones; k++) {
-                if (stricmp(anim->selection, model_info->skeleton->bones[k].name) == 0) {
+                if (stricmp(anim->selection.c_str(), model_info->skeleton->bones[k].name.c_str()) == 0) {
                     index = (int32_t)k;
                     break;
                 }
@@ -1639,7 +1638,7 @@ void write_animations(FILE *f_target, uint32_t num_lods, std::vector<mlod_lod> &
             if (index == -1) {
                 if (i == 0) { // we only report errors for the first LOD
                     lnwarningf(current_target, -1, "unknown-bone", "Failed to find bone \"%s\" for animation \"%s\".\n",
-                            model_info->skeleton->bones[k].name, anim->name);
+                            model_info->skeleton->bones[k].name.c_str(), anim->name.c_str());
                 }
                 continue;
             }
