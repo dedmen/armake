@@ -342,7 +342,7 @@ int cmd_build() {
     strcpy(notestpath, prefixpath);
     strcpy(nobinpath + strlen(nobinpath) - 11, "$NOBIN$");
     strcpy(notestpath + strlen(notestpath) - 11, "$NOBIN-NOTEST$");
-    if (!args.packonly && std::filesystem::exists(nobinpath) && std::filesystem::exists(notestpath)) {
+    if (!args.packonly && !std::filesystem::exists(nobinpath) && !std::filesystem::exists(notestpath)) {
         if (traverse_directory(tempfolder, binarize_callback, "")) {
             current_target = args.positionals[1];
             errorf("Failed to binarize some files.\n");

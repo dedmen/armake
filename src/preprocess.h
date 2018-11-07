@@ -22,6 +22,10 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <list>
+#include <vector>
+#include <utility>
+#include <optional>
 
 
 #define MAXCONSTS 4096
@@ -32,52 +36,48 @@
 
 
 struct constant {
-    char *name;
-    char *value;
+    std::string name;
+    std::string value;
     int num_args;
     int num_occurences;
-    int (*occurrences)[2];
-    struct constant *next;
-    struct constant *last;
-};
-
-struct constants {
-    struct constant *head;
-    struct constant *tail;
+    //offset, length
+    std::vector<std::pair<size_t, size_t>> occurrences;
 };
 
 struct lineref {
-    uint32_t num_files;
-    uint32_t num_lines;
-    char **file_names;
-    uint32_t *file_index;
-    uint32_t *line_number;
+    std::vector<std::string> file_names;
+    std::vector<uint32_t> file_index;
+    std::vector<uint32_t> line_number;
 };
 
 struct constant_stack {
-    struct constant *constant;
-    struct constant_stack *next;
+    std::list<std::list<constant>::iterator> stack;
 };
 
+bool matches_includepath(const char *path, const char *includepath, const char *includefolder);
+int find_file_helper(const char *includepath, const char *origin, char *includefolder, char *actualpath, const char *cwd);
+int find_file(const char *includepath, const char *origin, char *actualpath);
 
-extern char include_stack[MAXINCLUDES][1024];
+
+class Preprocessor {
+    std::vector<std::string> include_stack;
+    struct lineref lineref;
+
+    bool constants_parse(std::list<constant> &constants, std::string_view definition, int line);
+    std::optional<std::string> constants_preprocess(std::list<constant> &constants, std::string_view source, int line, constant_stack & constant_stack);
+
+    std::optional<std::string> constant_value(std::list<constant> &constants, std::list<constant>::iterator constant,
+        int num_args, std::vector<std::string>& args, int value, constant_stack &constant_stack);
+    void constant_free(struct constant *constant);
 
 
-struct constants *constants_init();
-bool constants_parse(struct constants *constants, char *definition, int line);
-bool constants_remove(struct constants *constants, char *name);
-struct constant *constants_find(struct constants *constants, char *name, int len);
-char *constants_preprocess(struct constants *constants, char *source, int line, struct constant_stack *constant_stack);
-void constants_free(struct constants *constants);
+    char * resolve_macros(char *string, size_t buffsize, std::list<constant> &constants);
 
-char *constant_value(struct constants *constants, struct constant *constant,
-        int num_args, char **args, int value, struct constant_stack *constant_stack);
-void constant_free(struct constant *constant);
+public:
 
-bool matches_includepath(char *path, char *includepath, char *includefolder);
+    int preprocess(char *source, std::ofstream &f_target, std::list<constant> &constants);
+    int preprocess(const char* sourceFileName, std::istream &input, std::ostream &output, std::list<constant> &constants);
+    struct lineref& getLineref() { return lineref; }
 
-int find_file(char *includepath, char *origin, char *actualpath);
+};
 
-char * resolve_macros(char *string, size_t buffsize, struct constant *constants);
-
-int preprocess(char *source, FILE *f_target, struct constants *constants, struct lineref *lineref);

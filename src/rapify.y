@@ -20,6 +20,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <fstream>
+#include <string>
 
 #include "utils.h"
 #include "filesystem.h"
@@ -29,12 +31,13 @@
 #define YYDEBUG 0
 #define YYERROR_VERBOSE 1
 
-extern int yylex(struct class_ **result, struct lineref *lineref);
+extern int yylex(struct class_ **result, struct lineref &lineref);
 extern int yyparse();
-extern FILE* yyin;
+extern int readInputForLexer(char* buffer,int *numBytesRead,int maxBytesToRead);
+extern std::ifstream* parserInput;
 extern int yylineno;
 
-void yyerror(struct class_ **result, struct lineref *lineref, const char* s);
+void yyerror(struct class_ **result, struct lineref &lineref, const char* s);
 %}
 
 %union {
@@ -63,7 +66,7 @@ void yyerror(struct class_ **result, struct lineref *lineref, const char* s);
 
 %start start
 
-%param {struct class_ **result} {struct lineref *lineref}
+%param {struct class_ **result} {struct lineref &lineref}
 %locations
 
 %%
@@ -99,11 +102,11 @@ expressions:  expression { $$ = $1; }
 ;
 %%
 
-struct class_ *parse_file(FILE *f, struct lineref *lineref) {
+struct class_ *parse_file(std::ifstream& f, struct lineref &lineref) {
     struct class_ *result;
 
     yylineno = 0;
-    yyin = f;
+    parserInput = &f;
 
 #if YYDEBUG == 1
     yydebug = 1;
@@ -113,30 +116,34 @@ struct class_ *parse_file(FILE *f, struct lineref *lineref) {
         if (yyparse(&result, lineref)) {
             return NULL;
         }
-    } while(!feof(yyin));
+    } while(!parserInput->eof());
 
     return result;
 }
 
-void yyerror(struct class_ **result, struct lineref *lineref,  const char* s) {
+void yyerror(struct class_ **result, struct lineref &lineref,  const char* s) {
     int line = 0;
-    char *buffer = NULL;
-    size_t buffsize;
 
-    fseek(yyin, 0, SEEK_SET);
+
+    parserInput->seekg(0);
+
+    std::string text;
+
     while (line < yylloc.first_line) {
-        if (buffer != NULL)
-            free(buffer);
-
-        buffer = NULL;
-        buffsize = 0;
-        getline(&buffer, &buffsize, yyin);
+        std::string newLine;
+        std::getline(*parserInput, newLine);
+        text += newLine;
 
         line++;
     }
 
-    lerrorf(lineref->file_names[lineref->file_index[yylloc.first_line]],
-            lineref->line_number[yylloc.first_line], "%s\n", s);
+    lerrorf(lineref.file_names[lineref.file_index[yylloc.first_line]].c_str(),
+            lineref.line_number[yylloc.first_line], "%s\n", s);
 
-    fprintf(stderr, " %s", buffer);
+    fprintf(stderr, " %s", text.c_str());
+}
+
+int readInputForLexer(char *buffer, int *numBytesRead, int maxBytesToRead) {
+    *numBytesRead = parserInput->read(buffer, maxBytesToRead);
+    return 0;
 }

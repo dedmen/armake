@@ -60,7 +60,7 @@ char *find_root(char *source) {
     while (true) {
         if (strrchr(root, '\\') == NULL) {
             strcpy(candidate, "config.cpp");
-            if (!std::filesystem::exists(candidate)) {
+            if (std::filesystem::exists(candidate)) {
                 free(candidate);
                 free(root);
                 return ".\\";
@@ -72,7 +72,7 @@ char *find_root(char *source) {
 
         strcpy(candidate, root);
         strcat(candidate, "config.cpp");
-        if (!std::filesystem::exists(candidate)) {
+        if (std::filesystem::exists(candidate)) {
             free(candidate);
             return root;
         }
@@ -383,7 +383,7 @@ int cmd_binarize() {
         success = binarize(args.positionals[1], "-");
     } else {
         // check if target already exists
-        if (!std::filesystem::exists(args.positionals[2]) && !args.force) {
+        if (std::filesystem::exists(args.positionals[2]) && !args.force) {
             errorf("File %s already exists and --force was not set.\n", args.positionals[2]);
             return 1;
         }

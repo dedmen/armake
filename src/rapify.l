@@ -21,7 +21,9 @@
 %option nodebug
 
 %{
-#define YY_DECL int yylex(struct class_ **result, struct lineref *lineref)
+#define YY_DECL int yylex(struct class_ **result, struct lineref &lineref)
+#define YY_INPUT(b,r,s) readInputForLexer(b,&r,s)
+#define YY_NO_UNISTD_H
 
 #include <stdio.h>
 #include <stdbool.h>
@@ -33,6 +35,8 @@ bool allow_val = false;
 bool allow_arr = false;
 bool last_was_class = false;
 bool tmp;
+std::ifstream* parserInput;
+extern int readInputForLexer(char* buffer,int *numBytesRead,int maxBytesToRead);
 
 #define YY_NO_INPUT
 #define YY_NO_UNPUT
@@ -118,7 +122,7 @@ bool tmp;
     if (*endptr == 0)
         REJECT;
 
-    lnwarningf(lineref->file_names[lineref->file_index[yylineno]], lineref->line_number[yylineno],
+    lnwarningf(lineref.file_names[lineref.file_index[yylineno]].c_str(), lineref.line_number[yylineno],
             "unquoted-string", "String \"%s\" is not quoted properly.\n", yytext);
 
     RESET_VARS;
@@ -139,7 +143,7 @@ bool tmp;
     if (*endptr == 0)
         REJECT;
 
-    lnwarningf(lineref->file_names[lineref->file_index[yylineno]], lineref->line_number[yylineno],
+    lnwarningf(lineref.file_names[lineref.file_index[yylineno]].c_str(), lineref.line_number[yylineno],
             "unquoted-string", "String \"%s\" is not quoted properly.\n", yytext);
 
     RESET_VARS;

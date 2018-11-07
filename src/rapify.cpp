@@ -33,6 +33,7 @@
 #include "utils.h"
 #include "preprocess.h"
 #include "rapify.h"
+#include <sstream>
 //#include "rapify.tab.h"
 
 
@@ -297,19 +298,17 @@ int rapify_file(char *source, char *target) {
      */
 
     extern const char *current_target;
-    FILE *f_temp;
     FILE *f_target;
     int i;
     int datasize;
     int success;
     char buffer[4096];
     uint32_t enum_offset = 0;
-    struct constants *constants;
-    struct lineref *lineref;
 
     current_target = source;
 
     // Check if the file is already rapified
+    FILE *f_temp;
     f_temp = fopen(source, "rb");
     if (!f_temp) {
         errorf("Failed to open %s.\n", source);
@@ -354,47 +353,16 @@ int rapify_file(char *source, char *target) {
         fclose(f_temp);
     }
 
-#ifdef _WIN32
-    char temp_name[2048];
-    if (!GetTempFileName(".", "amk", 0, temp_name)) {
-        errorf("Failed to get temp file name (system error %i).\n", GetLastError());
-        return 1;
-    }
-    f_temp = fopen(temp_name, "wb+");
-#else
-    f_temp = tmpfile();
-#endif
+    Preprocessor preproc;
 
-    if (!f_temp) {
-        errorf("Failed to open temp file.\n");
-#ifdef _WIN32
-        DeleteFile(temp_name);
-#endif
-        return 1;
-    }
-
-    for (i = 0; i < MAXINCLUDES; i++)
-        include_stack[i][0] = 0;
-
-    constants = constants_init();
-
-    lineref = (struct lineref *)safe_malloc(sizeof(struct lineref));
-    lineref->num_files = 0;
-    lineref->num_lines = 0;
-    lineref->file_names = (char **)safe_malloc(sizeof(char **) * FILEINTERVAL);
-    lineref->file_index = (uint32_t *)safe_malloc(sizeof(uint32_t) * LINEINTERVAL);
-    lineref->line_number = (uint32_t *)safe_malloc(sizeof(uint32_t) * LINEINTERVAL);
-
-    success = preprocess(source, f_temp, constants, lineref);
+    std::list<constant> constants;
+    std::stringstream fileToPreprocess;
+    success = preproc.preprocess(source, fileToPreprocess, constants);
 
     current_target = source;
 
     if (success) {
         errorf("Failed to preprocess %s.\n", source);
-        fclose(f_temp);
-#ifdef _WIN32
-        DeleteFile(temp_name);
-#endif
         return success;
     }
 
@@ -421,9 +389,10 @@ int rapify_file(char *source, char *target) {
     fclose(f_dump);
 #endif
 
-    fseek(f_temp, 0, SEEK_SET);
+    fileToPreprocess.seekg(0);
     struct class_ *result;
-    result = parse_file(f_temp, lineref);
+    make it use istream instead of ifstream
+    result = parse_file(fileToPreprocess, preproc.getLineref());
 
     if (result == NULL) {
         errorf("Failed to parse config.\n");
@@ -493,15 +462,6 @@ int rapify_file(char *source, char *target) {
     if (strcmp(target, "-") == 0)
         DeleteFile(temp_name2);
 #endif
-
-    constants_free(constants);
-
-    for (i = 0; i < lineref->num_files; i++)
-        free(lineref->file_names[i]);
-    free(lineref->file_names);
-    free(lineref->file_index);
-    free(lineref->line_number);
-    free(lineref);
 
     free_class(result);
 

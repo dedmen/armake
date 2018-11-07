@@ -38,6 +38,7 @@
 #include "filesystem.h"
 #include "utils.h"
 #include "preprocess.h"
+#include <fstream>
 
 
 #define IS_MACRO_CHAR(x) ( (x) == '_' || \
@@ -55,44 +56,44 @@ char *strchrnul(const char *s, int c) {
 }
 #endif
 
-char include_stack[MAXINCLUDES][1024];
-
-struct constants *constants_init() {
-    struct constants *c = (struct constants *)safe_malloc(sizeof(struct constants));
-    c->head = NULL;
-    c->tail = NULL;
-    return c;
-}
-
-bool constants_parse(struct constants *constants, char *definition, int line) {
-    struct constant *c = (struct constant *)safe_malloc(sizeof(struct constant));
-    char *ptr = definition;
-    char *name;
+bool Preprocessor::constants_parse(std::list<constant> &constants, std::string_view  definition, int line) {
+    
     char *argstr;
     char *tok;
-    char *start;
     char **args;
     int i;
     int len;
     bool quoted;
 
+
+    //Should be able to replace with by looping substr. Compiler should optimize it down
+    const char *ptr = definition.data();
     while (IS_MACRO_CHAR(*ptr))
         ptr++;
 
-    name = safe_strndup(definition, ptr - definition);
+    std::string_view name = std::string_view(definition.data(), ptr - definition.data());
 
-    if (constants_remove(constants, name))
+
+
+    auto found = std::find_if(constants.begin(), constants.end(), [name](const constant& cnst) {
+        return cnst.name == name;
+    });
+    if (found != constants.end())
+        constants.erase(found);
+    else
         lnwarningf(current_target, line, "redefinition-wo-undef",
                 "Constant \"%s\" is being redefined without an #undef.\n", name);
 
-    c->name = name;
 
-    c->num_args = 0;
+    auto& c = constants.emplace_back();
+    c.name = name;
+
+    c.num_args = 0;
     if (*ptr == '(') {
         argstr = safe_strdup(ptr + 1);
         if (strchr(argstr, ')') == NULL) {
             lerrorf(current_target, line,
-                    "Missing ) in argument list of \"%s\".\n", c->name);
+                    "Missing ) in argument list of \"%s\".\n", c.name);
             return false;
         }
         *strchr(argstr, ')') = 0;
@@ -102,11 +103,11 @@ bool constants_parse(struct constants *constants, char *definition, int line) {
 
         tok = strtok(argstr, ",");
         while (tok) {
-            if (c->num_args % 4 == 0)
-                args = (char **)safe_realloc(args, sizeof(char *) * (c->num_args + 4));
-            args[c->num_args] = safe_strdup(tok);
-            trim(args[c->num_args], strlen(args[c->num_args]) + 1);
-            c->num_args++;
+            if (c.num_args % 4 == 0)
+                args = (char **)safe_realloc(args, sizeof(char *) * (c.num_args + 4));
+            args[c.num_args] = safe_strdup(tok);
+            trim(args[c.num_args], strlen(args[c.num_args]) + 1);
+            c.num_args++;
             tok = strtok(NULL, ",");
         }
 
@@ -116,17 +117,16 @@ bool constants_parse(struct constants *constants, char *definition, int line) {
     while (*ptr == ' ' || *ptr == '\t')
         ptr++;
 
-    c->num_occurences = 0;
-    if (c->num_args > 0) {
-        c->occurrences = (int (*)[2])safe_malloc(sizeof(int) * 4 * 2);
-        c->value = safe_strdup("");
+    c.num_occurences = 0;
+    if (c.num_args > 0) {
+        c.value = safe_strdup("");
         len = 0;
 
         while (true) {
             quoted = false;
 
             // Non-tokens
-            start = ptr;
+            const char* start = ptr;
             while (*ptr != 0 && !IS_MACRO_CHAR(*ptr) && *ptr != '#')
                 ptr++;
 
@@ -135,8 +135,7 @@ bool constants_parse(struct constants *constants, char *definition, int line) {
 
             if (ptr - start > 0) {
                 len += ptr - start;
-                c->value = (char *)safe_realloc(c->value, len + 1);
-                strncat(c->value, start, ptr - start);
+                c.value += std::string_view(start, ptr - start);
             }
 
             quoted = *ptr == '#';
@@ -169,34 +168,31 @@ bool constants_parse(struct constants *constants, char *definition, int line) {
                 ptr++;
 
             tok = safe_strndup(start, ptr - start);
-            for (i = 0; i < c->num_args; i++) {
+            for (i = 0; i < c.num_args; i++) {
                 if (strcmp(tok, args[i]) == 0)
                     break;
             }
 
-            if (i == c->num_args) {
+            if (i == c.num_args) {
                 if (quoted) {
                     lerrorf(current_target, line, "Stringizing is only allowed for arguments.\n");
                     return false;
                 }
                 len += ptr - start;
-                c->value = (char *)safe_realloc(c->value, len + 1);
-                strcat(c->value, tok);
+                c.value += tok;
             } else {
-                if (c->num_occurences > 0 && c->num_occurences % 4 == 0)
-                    c->occurrences = (int (*)[2])safe_realloc(c->occurrences, sizeof(int) * 2 * (c->num_occurences + 4));
-                c->occurrences[c->num_occurences][0] = i;
+                size_t length = 0;
 
                 if (quoted) {
-                    c->occurrences[c->num_occurences][1] = len + 1;
+                    length = len + 1;
                     len += 2;
-                    c->value = (char *)safe_realloc(c->value, len + 1);
-                    strcat(c->value, "\"\"");
+                    c.value+= "\"\"";
                 } else {
-                    c->occurrences[c->num_occurences][1] = len;
+                    length = len;
                 }
+                c.occurrences.emplace_back(i, length);
 
-                c->num_occurences++;
+                c.num_occurences++;
             }
 
             free(tok);
@@ -216,29 +212,34 @@ bool constants_parse(struct constants *constants, char *definition, int line) {
             }
         }
 
-        ptr = c->value + (strlen(c->value) - 1);
-        while ((c->num_occurences == 0 || c->occurrences[c->num_occurences - 1][1] < (ptr - c->value)) &&
-                ptr > c->value && (*ptr == ' ' || *ptr == '\t'))
+        ptr = c.value.data() + (c.value.length() - 1);
+        //std::string::size_type end = c.value.find_last_not_of("\t ");
+        //if (c.value != c.value.substr(0, end + 1))
+        //    __debugbreak(); //Did it correctly trim and not cut anything off?
+        //c.value = c.value.substr(0, end + 1);
+
+        while ((c.num_occurences == 0 || c.occurrences[c.num_occurences - 1].second < (ptr - c.value.data())) &&
+                ptr > c.value.data() && (*ptr == ' ' || *ptr == '\t'))
             ptr--;
 
-        *(ptr + 1) = 0;
+        if (c.value != c.value.substr(0, ptr - c.value.data() + 1))
+            __debugbreak();
+
+        c.value = c.value.substr(0, ptr - c.value.data() + 1);
     } else {
-        c->occurrences = NULL;
-        c->value = safe_strdup(ptr);
-        trim(c->value, strlen(c->value) + 1);
+        c.occurrences.clear();
+        c.value = safe_strdup(ptr);
+
+        //trim tabs and spaces on both sides
+        if (!c.value.empty()) {
+            std::string::size_type begin = c.value.find_first_not_of("\t ");
+            std::string::size_type end = c.value.find_last_not_of("\t ");
+            c.value = c.value.substr(begin, end - begin + 1);
+        }
     }
 
-    c->last = constants->tail;
-    c->next = NULL;
-    if (constants->tail == NULL) {
-        constants->head = constants->tail = c;
-    } else {
-        constants->tail->next = c;
-        constants->tail = c;
-    }
-
-    if (c->num_args > 0) {
-        for (i = 0; i < c->num_args; i++)
+    if (c.num_args > 0) {
+        for (i = 0; i < c.num_args; i++)
             free(args[i]);
         free(args);
     }
@@ -246,56 +247,16 @@ bool constants_parse(struct constants *constants, char *definition, int line) {
     return true;
 }
 
-bool constants_remove(struct constants *constants, char *name) {
-    struct constant *c = constants_find(constants, name, 0);
-    if (c == NULL)
-        return false;
+std::optional<std::string> Preprocessor::constants_preprocess(std::list<constant> &constants, std::string_view source, int line, constant_stack &constant_stack) {
+    const char *ptr = source.data();
+    const char *start;
 
-    if (c->next == NULL)
-        constants->tail = c->last;
-    else
-        c->next->last = c->last;
-
-    if (c->last == NULL)
-        constants->head = c->next;
-    else
-        c->last->next = c->next;
-
-    constant_free(c);
-
-    return true;
-}
-
-struct constant *constants_find(struct constants *constants, char *name, int len) {
-    struct constant *c = constants->head;
-
-    while (c != NULL) {
-        if (len <= 0 && strcmp(c->name, name) == 0)
-            break;
-        if (len > 0 && strlen(c->name) == len && strncmp(c->name, name, len) == 0)
-            break;
-        c = c->next;
-    }
-
-    return c;
-}
-
-char *constants_preprocess(struct constants *constants, char *source, int line, struct constant_stack *constant_stack) {
-    char *ptr = source;
-    char *start;
-    char *result;
-    char *value;
-    char **args;
     int i;
-    int len = 0;
     int num_args;
     int level;
     char in_string;
-    struct constant *c;
-    struct constant_stack *cs;
 
-    result = (char *)safe_malloc(1);
-    result[0] = 0;
+    std::string result;
 
     while (true) {
         // Non-tokens
@@ -304,9 +265,7 @@ char *constants_preprocess(struct constants *constants, char *source, int line, 
             ptr++;
 
         if (ptr - start > 0) {
-            len += ptr - start;
-            result = (char *)safe_realloc(result, len + 1);
-            strncat(result, start, ptr - start);
+            result += std::string_view(start, ptr - start);
         }
 
         if (*ptr == 0)
@@ -317,28 +276,23 @@ char *constants_preprocess(struct constants *constants, char *source, int line, 
         while (IS_MACRO_CHAR(*ptr))
             ptr++;
 
-        c = constants_find(constants, start, ptr - start);
-        if (c == NULL || (c->num_args > 0 && *ptr != '(')) {
-            len += ptr - start;
-            result = (char *)safe_realloc(result, len + 1);
-            strncat(result, start, ptr - start);
+
+        auto c = std::find_if(constants.begin(), constants.end(), [name = std::string_view(start, ptr - start)](const constant& cnst) {
+            return cnst.name == name;
+        });
+
+        if (c == constants.end() || (c->num_args > 0 && *ptr != '(')) {
+            result += std::string_view(start, ptr - start);
             continue;
         }
 
         // prevent infinite loop
-        if (constant_stack != NULL) {
-            for (cs = constant_stack; cs != NULL; cs = cs->next) {
-                if (cs->constant == c)
-                    break;
-            }
-            if (cs != NULL && cs->constant == c)
-                continue;
-        }
+        if (std::find(constant_stack.stack.begin(), constant_stack.stack.end(), c) != constant_stack.stack.end())
+            continue;
 
-        args = NULL;
+        std::vector<std::string> args;
         num_args = 0;
         if (*ptr == '(') {
-            args = (char **)safe_malloc(sizeof(char *) * 4);
             ptr++;
             start = ptr;
 
@@ -355,9 +309,8 @@ char *constants_preprocess(struct constants *constants, char *source, int line, 
                 } else if (level > 0 && *ptr == ')') {
                     level--;
                 } else if (level == 0 && (*ptr == ',' || *ptr == ')')) {
-                    if (num_args > 0 && num_args % 4 == 0)
-                        args = (char **)safe_realloc(args, sizeof(char *) * (num_args + 4));
-                    args[num_args] = safe_strndup(start, ptr - start);
+
+                    args.emplace_back(start, ptr - start);
                     num_args++;
                     if (*ptr == ')') {
                         break;
@@ -370,107 +323,77 @@ char *constants_preprocess(struct constants *constants, char *source, int line, 
             if (*ptr == 0) {
                 lerrorf(current_target, line,
                         "Incomplete argument list for macro \"%s\".\n", c->name);
-                return NULL;
+                return {};
             } else {
                 ptr++;
             }
         }
 
-        value = constant_value(constants, c, num_args, args, line, constant_stack);
+        auto value = constant_value(constants, c, num_args, args, line, constant_stack);
         if (!value)
-            return NULL;
+            return {};
 
-        if (args) {
-            for (i = 0; i < num_args; i++)
-                free(args[i]);
-            free(args);
-        }
-
-        len += strlen(value);
-        result = (char *)safe_realloc(result, len + 1);
-        strcat(result, value);
-
-        free(value);
+        result += *value;
     }
-
-    free(source);
 
     return result;
 }
 
-void constants_free(struct constants *constants) {
-    struct constant *c = constants->head;
-    struct constant *next;
-
-    while (c != NULL) {
-        next = c->next;
-        constant_free(c);
-        c = next;
-    }
-    free(constants);
-}
-
-char *constant_value(struct constants *constants, struct constant *constant,
-        int num_args, char **args, int line, struct constant_stack *constant_stack) {
+std::optional<std::string> Preprocessor::constant_value(std::list<constant> &constants, std::list<constant>::iterator constant,
+        int num_args, std::vector<std::string>& args, int line, constant_stack & constant_stack) {
     int i;
-    char *result;
     char *ptr;
     char *tmp;
-    struct constant_stack *cs;
 
     if (num_args != constant->num_args) {
         if (num_args)
             lerrorf(current_target, line,
                     "Macro \"%s\" expects %i arguments, %i given.\n", constant->name, constant->num_args, num_args);
-        return NULL;
+        return {};
     }
 
     for (i = 0; i < num_args; i++) {
-        args[i] = constants_preprocess(constants, args[i], line, constant_stack);
-        trim(args[i], strlen(args[i]) + 1);
-        if (args[i] == NULL)
-            return NULL;
-    }
-
-    if (num_args == 0) {
-        result = safe_strdup(constant->value);
-    } else {
-        result = safe_strdup("");
-        ptr = constant->value;
-        for (i = 0; i < constant->num_occurences; i++) {
-            tmp = safe_strndup(ptr, constant->occurrences[i][1] - (ptr - constant->value));
-            result = (char *)safe_realloc(result, strlen(result) + strlen(tmp) + strlen(args[constant->occurrences[i][0]]) + 1);
-            strcat(result, tmp);
-            free(tmp);
-            strcat(result, args[constant->occurrences[i][0]]);
-            ptr = constant->value + constant->occurrences[i][1];
+        auto ret = constants_preprocess(constants, args[i], line, constant_stack);
+        if (!ret)
+            return {};
+        if (!ret->empty()) {
+            //trim tabs and spaces from both ends
+            std::string::size_type begin = ret->find_first_not_of("\t ");
+            std::string::size_type end = ret->find_last_not_of("\t ");
+            args[i] = ret->substr(begin, end - begin + 1);
         }
-        result = (char *)safe_realloc(result, strlen(result) + strlen(ptr) + 1);
-        strcat(result, ptr);
     }
 
-    cs = (struct constant_stack *)malloc(sizeof(struct constant_stack));
-    cs->next = constant_stack;
-    cs->constant = constant;
 
-    result = constants_preprocess(constants, result, line, cs);
-    trim(result, strlen(result) + 1);
+    std::string result;
+    if (num_args == 0) {
+        result = constant->value;
+    } else {
+        result = "";
+        ptr = constant->value.data();
+        for (i = 0; i < constant->num_occurences; i++) {
+            result += std::string_view(ptr, constant->occurrences[i].second - (ptr - constant->value.data()));
+            result += args[constant->occurrences[i].first];
+            ptr = constant->value.data() + constant->occurrences[i].second;
+        }
+        result += ptr;
+    }
 
-    free(cs);
+    constant_stack.stack.push_back(constant);
 
-    return result;
+    auto res = constants_preprocess(constants, result, line, constant_stack);
+
+    if (res && !res->empty()) {
+        //trim tabs and spaces from both ends
+        std::string::size_type begin = res->find_first_not_of("\t ");
+        std::string::size_type end = res->find_last_not_of("\t ");
+        return res->substr(begin, end - begin + 1);
+    }
+
+    return res;
 }
 
-void constant_free(struct constant *constant) {
-    free(constant->name);
-    free(constant->value);
-    if (constant->occurrences != NULL)
-        free(constant->occurrences);
-    free(constant);
-}
-
-
-bool matches_includepath(char *path, char *includepath, char *includefolder) {
+bool matches_includepath(const char *path, const char *includepath, const char *includefolder) {
     /*
      * Checks if a given file can be matched to an include path by traversing
      * backwards through the filesystem until a $PBOPREFIX$ file is found.
@@ -529,7 +452,7 @@ bool matches_includepath(char *path, char *includepath, char *includefolder) {
 }
 
 
-int find_file_helper(char *includepath, char *origin, char *includefolder, char *actualpath, char *cwd) {
+int find_file_helper(const char *includepath, const char *origin, char *includefolder, char *actualpath, const char *cwd) {
     /*
      * Finds the file referenced in includepath in the includefolder. origin
      * describes the file in which the include is used (used for relative
@@ -562,7 +485,7 @@ int find_file_helper(char *includepath, char *origin, char *includefolder, char 
     }
 
     char filename[2048];
-    char *ptr = includepath + strlen(includepath);
+    const char *ptr = includepath + strlen(includepath);
 
     while (*ptr != '\\')
         ptr--;
@@ -664,7 +587,7 @@ int find_file_helper(char *includepath, char *origin, char *includefolder, char 
 }
 
 
-int find_file(char *includepath, char *origin, char *actualpath) {
+int find_file(const char *includepath, const char *origin, char *actualpath) {
     /*
      * Finds the file referenced in includepath in the includefolder. origin
      * describes the file in which the include is used (used for relative
@@ -697,8 +620,21 @@ int find_file(char *includepath, char *origin, char *actualpath) {
     return 2;
 }
 
+//To make reverse iterating the include_stack easier
+template <typename T>
+struct reversion_wrapper { T& iterable; };
 
-int preprocess(char *source, FILE *f_target, struct constants *constants, struct lineref *lineref) {
+template <typename T>
+auto begin(reversion_wrapper<T> w) { return std::rbegin(w.iterable); }
+
+template <typename T>
+auto end(reversion_wrapper<T> w) { return std::rend(w.iterable); }
+
+template <typename T>
+reversion_wrapper<T> reverse(T&& iterable) { return { iterable }; }
+
+
+int Preprocessor::preprocess(char *source, std::ofstream &f_target, std::list<constant> &constants) {
     /*
      * Writes the contents of source into the target file pointer, while
      * recursively resolving constants and includes using the includefolder
@@ -706,71 +642,49 @@ int preprocess(char *source, FILE *f_target, struct constants *constants, struct
      *
      * Returns 0 on success, a positive integer on failure.
      */
-
-    extern const char *current_target;
-    extern char include_stack[MAXINCLUDES][1024];
-    int file_index;
-    int line = 0;
-    int i = 0;
-    int j = 0;
-    int level = 0;
-    int level_true = 0;
-    int level_comment = 0;
-    int success;
-    size_t buffsize;
-    char *buffer;
-    char *ptr;
-    char *directive;
-    char *directive_args;
-    char in_string = 0;
-    char includepath[2048];
-    char actualpath[2048];
-    FILE *f_source;
-
     current_target = source;
 
-    for (i = 0; i < MAXINCLUDES && include_stack[i][0] != 0; i++) {
-        if (strcmp(source, include_stack[i]) == 0) {
-            errorf("Circular dependency detected, printing include stack:\n", source);
-            fprintf(stderr, "    !!! %s\n", source);
-            for (j = MAXINCLUDES - 1; j >= 0; j--) {
-                if (include_stack[j][0] == 0)
-                    continue;
-                fprintf(stderr, "        %s\n", include_stack[j]);
-            }
-            return 1;
-        }
-    }
+    if (std::find(include_stack.begin(), include_stack.end(), std::string(source)) != include_stack.end()) {
 
-    if (i == MAXINCLUDES) {
-        errorf("Too many nested includes.\n");
+        errorf("Circular dependency detected, printing include stack:\n", source);
+        fprintf(stderr, "    !!! %s\n", source);
+        for (auto& it : reverse(include_stack)) {
+            fprintf(stderr, "        %s\n", it.c_str()); //#TODO don't print to stderr. Make a global config thingy that contains the error stream (might be file or even network)
+        }
         return 1;
     }
 
-    strcpy(include_stack[i], source);
+    include_stack.emplace_back(source);
 
-    f_source = fopen(source, "rb");
-    if (!f_source) {
+    std::ifstream f_source(source, std::ifstream::in | std::ifstream::binary);
+
+    if (!f_source.is_open() || f_source.fail()) {
         errorf("Failed to open %s.\n", source);
         return 1;
     }
 
+
+    return preprocess(source, f_source, f_target, constants);
+}
+
+
+int Preprocessor::preprocess(const char* sourceFileName, std::istream &input, std::ostream &output, std::list<constant> &constants) {
+    int line = 0;
+    int level = 0;
+    int level_true = 0;
+    int level_comment = 0;
+
     // Skip byte order mark if it exists
-    if (fgetc(f_source) == 0xef)
-        fseek(f_source, 3, SEEK_SET);
-    else
-        fseek(f_source, 0, SEEK_SET);
+    if (input.peek() == 0x3f)
+        input.seekg(3, std::ifstream::beg);
 
-    file_index = lineref->num_files;
-    if (strchr(source, PATHSEP) == NULL)
-        lineref->file_names[file_index] = strdup(source);
+    int file_index = lineref.file_names.size();
+    if (strchr(sourceFileName, PATHSEP) == NULL)
+        lineref.file_names.emplace_back(sourceFileName);
     else
-        lineref->file_names[file_index] = strdup(strrchr(source, PATHSEP) + 1);
+        lineref.file_names.emplace_back(strrchr(sourceFileName, PATHSEP) + 1);
 
-    lineref->num_files++;
-    if (lineref->num_files % FILEINTERVAL == 0) {
-        lineref->file_names = (char **)safe_realloc(lineref->file_names, sizeof(char **) * (lineref->num_files + FILEINTERVAL));
-    }
+
 
     // first constant is file name
     // @todo
@@ -791,83 +705,89 @@ int preprocess(char *source, FILE *f_target, struct constants *constants, struct
 
     while (true) {
         // get line and add next lines if line ends with a backslash
-        buffer = NULL;
-        while (buffer == NULL || (strlen(buffer) >= 2 && buffer[strlen(buffer) - 2] == '\\')) {
-            ptr = NULL;
-            buffsize = 0;
-            if (getline(&ptr, &buffsize, f_source) == -1) {
-                free(ptr);
-                ptr = NULL;
-                break;
-            }
+        std::string curLine;
+        std::getline(input, curLine);
+        if (curLine.empty() && input.eof()) break;
+        if (curLine.empty()) continue;
 
-            line++;
+        // fix windows line endings
+        if (curLine.back() == '\r')
+            curLine.pop_back();
 
-            if (buffer == NULL) {
-                buffer = ptr;
-            } else {
-                buffer = (char *)safe_realloc(buffer, strlen(buffer) + 2 + buffsize);
-                strcpy(buffer + strlen(buffer) - 2, ptr);
-                free(ptr);
-            }
+        if (curLine.empty()) continue;
 
-            // Add trailing new line if necessary
-            if (strlen(buffer) >= 1 && buffer[strlen(buffer) - 1] != '\n')
-                strcat(buffer, "\n");
+        if (strncmp(curLine.c_str(), "TEST_SUCCESS", strlen("TEST_SUCCESS")) == 0)
+            __debugbreak();
 
+        while (curLine.back() == '\\') {
+            std::string nextLine;
+            std::getline(input, nextLine);
             // fix windows line endings
-            if (strlen(buffer) >= 2 && buffer[strlen(buffer) - 2] == '\r') {
-                buffer[strlen(buffer) - 2] = '\n';
-                buffer[strlen(buffer) - 1] = 0;
-            }
+            if (nextLine.back() == '\r')
+                nextLine.pop_back();
+            curLine += nextLine;
         }
 
-        if (buffer == NULL)
-            break;
+        // Add trailing new line if necessary
+        if (!curLine.empty() && curLine.back() != '\n')
+            curLine += '\n';
 
         // Check for block comment delimiters
-        for (i = 0; i < strlen(buffer); i++) {
+        char in_string = 0;
+        for (int i = 0; i < curLine.length(); i++) {
             if (in_string != 0) {
-                if (buffer[i] == in_string && buffer[i-1] != '\\')
+                if (curLine[i] == in_string && curLine[i - 1] != '\\')
                     in_string = 0;
                 else
                     continue;
-            } else {
+            }
+            else {
                 if (level_comment == 0 &&
-                        (buffer[i] == '"' || buffer[i] == '\'') &&
-                        (i == 0 || buffer[i-1] != '\\'))
-                    in_string = buffer[i];
+                    (curLine[i] == '"' || curLine[i] == '\'') &&
+                    (i == 0 || curLine[i - 1] != '\\'))
+                    in_string = curLine[i];
             }
 
-            if (buffer[i] == '/' && buffer[i+1] == '/' && level_comment == 0) {
-                buffer[i+1] = 0;
-                buffer[i] = '\n';
-            } else if (buffer[i] == '/' && buffer[i+1] == '*') {
+            if (curLine[i] == '/' && curLine[i + 1] == '/' && level_comment == 0) {
+                curLine.resize(i + 1);
+                curLine[i] = '\n';
+            }
+            else if (curLine[i] == '/' && curLine[i + 1] == '*') {
                 level_comment++;
-                buffer[i] = ' ';
-                buffer[i+1] = ' ';
-            } else if (buffer[i] == '*' && buffer[i+1] == '/') {
+                curLine[i] = ' ';
+                curLine[i + 1] = ' ';
+            }
+            else if (curLine[i] == '*' && curLine[i + 1] == '/') {
                 level_comment--;
                 if (level_comment < 0)
                     level_comment = 0;
-                buffer[i] = ' ';
-                buffer[i+1] = ' ';
+                curLine[i] = ' ';
+                curLine[i + 1] = ' ';
             }
 
             if (level_comment > 0) {
-                buffer[i] = ' ';
+                curLine[i] = ' ';
                 continue;
             }
         }
 
         // trim leading spaces
-        trim_leading(buffer, strlen(buffer) + 1);
+        auto trimLeading = curLine.find_first_not_of(" \t");
+        if (trimLeading == std::string::npos) {//This line is empty besides a couple spaces. Nothing to preprocess here.
+            output.write(curLine.c_str(), curLine.length());
+
+            lineref.file_index.push_back(file_index);
+            lineref.line_number.push_back(line);
+            continue;
+        }
+
+        if (trimLeading != 0)
+            curLine = curLine.substr(trimLeading);
 
         // skip lines inside untrue ifs
         if (level > level_true) {
-            if ((strlen(buffer) < 5 || strncmp(buffer, "#else", 5) != 0) &&
-                    (strlen(buffer) < 6 || strncmp(buffer, "#endif", 6) != 0)) {
-                free(buffer);
+            if ((curLine.length() < 5 || strncmp(curLine.c_str(), "#else", 5) != 0) &&
+                (curLine.length() < 6 || strncmp(curLine.c_str(), "#endif", 6) != 0)) {
                 continue;
             }
         }
@@ -878,120 +798,113 @@ int preprocess(char *source, FILE *f_target, struct constants *constants, struct
         //     constants[1].value = (char *)safe_malloc(16);
         // sprintf(constants[1].value, "%i", line - 1);
 
-        if (level_comment == 0 && buffer[0] == '#') {
-            ptr = buffer+1;
+        if (level_comment == 0 && curLine[0] == '#') {
+            const char *ptr = curLine.c_str() + 1;
             while (*ptr == ' ' || *ptr == '\t')
                 ptr++;
 
-            directive = (char *)safe_malloc(strlen(ptr) + 1);
-            strcpy(directive, ptr);
-            *(strchrnul(directive, ' ')) = 0;
-            *(strchrnul(directive, '\t')) = 0;
-            *(strchrnul(directive, '\n')) = 0;
+            std::string_view inp(ptr);
+            auto directive = std::string(inp.substr(0, inp.find_first_of(" \t\n")));
+            std::string_view argUntrimmed = inp.substr(directive.length() + inp.find_first_not_of(" \t\n") + 1);
+            auto directive_args = std::string(argUntrimmed.substr(0, argUntrimmed.find_last_not_of(" \t\n") + 1));
 
-            ptr += strlen(directive);
-            while (*ptr == ' ' || *ptr == '\t')
-                ptr++;
-            directive_args = ptr;
-            *(strchrnul(directive_args, '\n')) = 0;
+            if (directive == "include") {
+                std::replace(directive_args.begin(), directive_args.end(), '<', '"');
+                std::replace(directive_args.begin(), directive_args.end(), '>', '"');
 
-            if (strcmp(directive, "include") == 0) {
-                for (i = 0; i < strlen(directive_args) ; i++) {
-                    if (directive_args[i] == '<' || directive_args[i] == '>')
-                        directive_args[i] = '"';
-                }
-                if (strchr(directive_args, '"') == NULL) {
-                    lerrorf(source, line, "Failed to parse #include.\n");
-                    fclose(f_source);
+                auto firstQuote = directive_args.find_first_of('"');
+                if (firstQuote == std::string::npos) { //No quotes around path
+                    lerrorf(sourceFileName, line, "Failed to parse #include.\n");
                     return 5;
                 }
-                strncpy(includepath, strchr(directive_args, '"') + 1, sizeof(includepath));
-                if (strchr(includepath, '"') == NULL) {
-                    lerrorf(source, line, "Failed to parse #include.\n");
-                    fclose(f_source);
+                auto lastQuote = directive_args.find_last_of('"');
+
+                if (lastQuote == std::string::npos) {
+                    lerrorf(sourceFileName, line, "Failed to parse #include.\n");
                     return 6;
                 }
-                *strchr(includepath, '"') = 0;
-                if (find_file(includepath, source, actualpath)) {
-                    lerrorf(source, line, "Failed to find %s.\n", includepath);
-                    fclose(f_source);
+
+                directive_args = directive_args.substr(firstQuote + 1, lastQuote - firstQuote - 1);
+
+                char actualpath[2048];
+                if (find_file(directive_args.c_str(), sourceFileName, actualpath)) {
+                    lerrorf(sourceFileName, line, "Failed to find %s.\n", directive_args.c_str());
                     return 7;
                 }
 
-                free(directive);
-                free(buffer);
+                std::ifstream includefile(actualpath);
 
-                success = preprocess(actualpath, f_target, constants, lineref);
+                if (!includefile.is_open() || includefile.fail()) {
+                    errorf("Failed to open %s.\n", actualpath);
+                    return 1;
+                }
 
-                for (i = 0; i < MAXINCLUDES && include_stack[i][0] != 0; i++);
-                include_stack[i - 1][0] = 0;
+                int success = preprocess(actualpath, includefile, output, constants);
 
-                current_target = source;
+                include_stack.pop_back();
+
+                current_target = sourceFileName;
 
                 if (success)
                     return success;
-                continue;
-            } else if (strcmp(directive, "define") == 0) {
+            } else if (directive == "define") { //#TODO directive string to enum
                 if (!constants_parse(constants, directive_args, line)) {
-                    lerrorf(source, line, "Failed to parse macro definition.\n");
-                    fclose(f_source);
+                    lerrorf(sourceFileName, line, "Failed to parse macro definition.\n");
                     return 3;
                 }
-            } else if (strcmp(directive, "undef") == 0) {
-                constants_remove(constants, directive_args);
-            } else if (strcmp(directive, "ifdef") == 0) {
+            } else if (directive == "undef") {
+
+                auto found = std::find_if(constants.begin(), constants.end(), [directive_args](const constant& cnst) {
+                    return cnst.name == directive_args;
+                });
+                if (found != constants.end())
+                    constants.erase(found);
+
+            } else if (directive == "ifdef") {
                 level++;
-                if (constants_find(constants, directive_args, 0))
+
+                auto found = std::find_if(constants.begin(), constants.end(), [directive_args](const constant& cnst) {
+                    return cnst.name == directive_args;
+                });
+                if (found != constants.end())
                     level_true++;
-            } else if (strcmp(directive, "ifndef") == 0) {
+            } else if (directive == "ifndef") {
                 level++;
-                if (!constants_find(constants, directive_args, 0))
+                auto found = std::find_if(constants.begin(), constants.end(), [directive_args](const constant& cnst) {
+                    return cnst.name == directive_args;
+                });
+                if (found == constants.end())
                     level_true++;
-            } else if (strcmp(directive, "else") == 0) {
-               if (level == level_true)
-                   level_true--;
-               else
-                   level_true = level;
-            } else if (strcmp(directive, "endif") == 0) {
-               if (level == 0) {
-                   lerrorf(source, line, "Unexpected #endif.\n");
-                   fclose(f_source);
-                   return 4;
-               }
-               if (level == level_true)
-                   level_true--;
-               level--;
+            } else if (directive == "else") {
+                if (level == level_true)
+                    level_true--;
+                else
+                    level_true = level;
+            } else if (directive == "endif") {
+                if (level == 0) {
+                    lerrorf(sourceFileName, line, "Unexpected #endif.\n");
+                    return 4;
+                }
+                if (level == level_true)
+                    level_true--;
+                level--;
             } else {
-                lerrorf(source, line, "Unknown preprocessor directive \"%s\".\n", directive);
-                fclose(f_source);
+                lerrorf(sourceFileName, line, "Unknown preprocessor directive \"%s\".\n", directive);
                 return 5;
             }
-
-            free(directive);
-        } else if (strlen(buffer) > 1) {
-            buffer = constants_preprocess(constants, buffer, line, NULL);
-            if (buffer == NULL) {
-                lerrorf(source, line, "Failed to resolve macros.\n");
-                fclose(f_source);
-                return success;
+        } else if (curLine.length() > 1) {
+            constant_stack c;
+            std::optional<std::string> preprocessedLine = constants_preprocess(constants, curLine, line, c);
+            if (!preprocessedLine) {
+                lerrorf(sourceFileName, line, "Failed to resolve macros.\n");
+                return 1;
             }
 
-            fputs(buffer, f_target);
+            output.write(preprocessedLine->c_str(), preprocessedLine->length());
 
-            lineref->file_index[lineref->num_lines] = file_index;
-            lineref->line_number[lineref->num_lines] = line;
-
-            lineref->num_lines++;
-            if (lineref->num_lines % LINEINTERVAL == 0) {
-                lineref->file_index = (uint32_t *)safe_realloc(lineref->file_index, 4 * (lineref->num_lines + LINEINTERVAL));
-                lineref->line_number = (uint32_t *)safe_realloc(lineref->line_number, 4 * (lineref->num_lines + LINEINTERVAL));
-            }
+            lineref.file_index.push_back(file_index);
+            lineref.line_number.push_back(line);
         }
-
-        free(buffer);
     }
-
-    fclose(f_source);
-
     return 0;
 }

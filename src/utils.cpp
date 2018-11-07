@@ -73,7 +73,7 @@ int stricmp(char *a, char *b) {
 #endif
 
 
-void infof(char *format, ...) {
+void infof(const char *format, ...) {
     char buffer[4096];
     va_list argptr;
 
@@ -91,7 +91,7 @@ void infof(char *format, ...) {
 }
 
 
-void debugf(char *format, ...) {
+void debugf(const char *format, ...) {
     char buffer[4096];
     va_list argptr;
 
@@ -109,7 +109,7 @@ void debugf(char *format, ...) {
 }
 
 
-void warningf(char *format, ...) {
+void warningf(const char *format, ...) {
     char buffer[4096];
     va_list argptr;
 
@@ -127,7 +127,7 @@ void warningf(char *format, ...) {
 }
 
 
-void lwarningf(const char *file, int line, char *format, ...) {
+void lwarningf(const char *file, int line, const char *format, ...) {
     char buffer[4096];
     va_list argptr;
 
@@ -144,7 +144,7 @@ void lwarningf(const char *file, int line, char *format, ...) {
 }
 
 
-bool warning_muted(char *name) {
+bool warning_muted(const char *name) {
     extern struct arguments args;
     int i;
 
@@ -156,7 +156,7 @@ bool warning_muted(char *name) {
 }
 
 
-void nwarningf(char *name, char *format, ...) {
+void nwarningf(const char *name, const char *format, ...) {
     char buffer[4096];
     char temp[4096];
     va_list argptr;
@@ -177,7 +177,7 @@ void nwarningf(char *name, char *format, ...) {
 }
 
 
-void lnwarningf(const char *file, int line, char *name, char *format, ...) {
+void lnwarningf(const char *file, int line, const char *name, const char *format, ...) {
     char buffer[4096];
     va_list argptr;
 
@@ -196,7 +196,7 @@ void lnwarningf(const char *file, int line, char *name, char *format, ...) {
 }
 
 
-void errorf(char *format, ...) {
+void errorf(const char *format, ...) {
     char buffer[4096];
     va_list argptr;
 
@@ -214,7 +214,7 @@ void errorf(char *format, ...) {
 }
 
 
-void lerrorf(const char *file, int line, char *format, ...) {
+void lerrorf(const char *file, int line, const char *format, ...) {
     char buffer[4096];
     va_list argptr;
 

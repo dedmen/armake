@@ -194,8 +194,7 @@ int create_temp_folder(char *addon, char *temp_folder, size_t bufsize) {
     // find a free one
     for (i = 0; i < 1024; i++) {
         snprintf(temp_folder, bufsize, "%s_%s_%i%c", temp, addon_sanitized, i, PATHSEP);
-        if ((int)(std::filesystem::status(temp_folder).permissions() & std::filesystem::perms::all))
-        //if (access(temp_folder, F_OK) == -1)
+        if (!std::filesystem::exists(temp_folder))
             break;
     }
 

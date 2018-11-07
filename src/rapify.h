@@ -68,7 +68,7 @@ struct expression {
     struct expression *next;
 };
 
-struct class_ *parse_file(FILE *f, struct lineref *lineref);
+struct class_ *parse_file(std::ifstream &f, struct lineref &lineref);
 
 struct definitions *new_definitions();
 

@@ -573,7 +573,7 @@ goto find_rule; \
 #define YY_MORE_ADJ 0
 #define YY_RESTORE_YY_MORE_OFFSET
 char *yytext;
-#line 1 ".\\src\\rapify.l"
+#line 1 "rapify.l"
 /*
  * Copyright (C)  2016  Felix "KoffeinFlummi" Wiegand
  *
@@ -591,8 +591,10 @@ char *yytext;
  * with this program; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
-#line 24 ".\\src\\rapify.l"
-#define YY_DECL int yylex(struct class_ **result, struct lineref *lineref)
+#line 24 "rapify.l"
+#define YY_DECL int yylex(struct class_ **result, struct lineref &lineref)
+#define YY_INPUT(b,r,s) readInputForLexer(b,&r,s)
+#define YY_NO_UNISTD_H
 
 #include <stdio.h>
 #include <stdbool.h>
@@ -604,6 +606,8 @@ bool allow_val = false;
 bool allow_arr = false;
 bool last_was_class = false;
 bool tmp;
+std::ofstream* parserInput;
+extern int readInputForLexer(char* buffer,int *numBytesRead,int maxBytesToRead);
 
 #define YY_NO_INPUT
 #define YY_NO_UNPUT
@@ -615,8 +619,8 @@ bool tmp;
     allow_val = false; \
     allow_arr = false; \
     last_was_class = false;
-#line 618 "lex.yy.c"
-#line 619 "lex.yy.c"
+#line 622 "lex.yy.c"
+#line 623 "lex.yy.c"
 
 #define INITIAL 0
 
@@ -625,7 +629,7 @@ bool tmp;
  * down here because we want the user's section 1 to have been scanned first.
  * The user has a chance to override it with an option.
  */
-//#include <unistd.h>
+#include <unistd.h>
 #endif
     
 #ifndef YY_EXTRA_TYPE
@@ -839,10 +843,10 @@ YY_DECL
 		}
 
 	{
-#line 49 ".\\src\\rapify.l"
+#line 53 "rapify.l"
 
 
-#line 845 "lex.yy.c"
+#line 849 "lex.yy.c"
 
 	while ( /*CONSTCOND*/1 )		/* loops until end-of-file is reached */
 		{
@@ -937,73 +941,73 @@ do_action:	/* This label is used only to access EOF actions. */
 	{ /* beginning of action switch */
 case 1:
 YY_RULE_SETUP
-#line 51 ".\\src\\rapify.l"
+#line 55 "rapify.l"
 {}
 	YY_BREAK
 case 2:
 /* rule 2 can match eol */
 YY_RULE_SETUP
-#line 52 ".\\src\\rapify.l"
+#line 56 "rapify.l"
 {}
 	YY_BREAK
 case 3:
 YY_RULE_SETUP
-#line 54 ".\\src\\rapify.l"
+#line 58 "rapify.l"
 {RESET_VARS; return T_SEMICOLON;}
 	YY_BREAK
 case 4:
 YY_RULE_SETUP
-#line 55 ".\\src\\rapify.l"
+#line 59 "rapify.l"
 {tmp = last_was_class; RESET_VARS; last_was_class = tmp; return T_COLON;}
 	YY_BREAK
 case 5:
 YY_RULE_SETUP
-#line 56 ".\\src\\rapify.l"
+#line 60 "rapify.l"
 {RESET_VARS; allow_arr = true; return T_COMMA;}
 	YY_BREAK
 case 6:
 YY_RULE_SETUP
-#line 57 ".\\src\\rapify.l"
+#line 61 "rapify.l"
 {RESET_VARS; return T_PLUS;}
 	YY_BREAK
 case 7:
 YY_RULE_SETUP
-#line 58 ".\\src\\rapify.l"
+#line 62 "rapify.l"
 {RESET_VARS; allow_val = true; return T_EQUALS;}
 	YY_BREAK
 case 8:
 YY_RULE_SETUP
-#line 59 ".\\src\\rapify.l"
+#line 63 "rapify.l"
 {RESET_VARS; return T_RBRACKET;}
 	YY_BREAK
 case 9:
 YY_RULE_SETUP
-#line 60 ".\\src\\rapify.l"
+#line 64 "rapify.l"
 {RESET_VARS; return T_LBRACKET;}
 	YY_BREAK
 case 10:
 YY_RULE_SETUP
-#line 61 ".\\src\\rapify.l"
+#line 65 "rapify.l"
 {RESET_VARS; return T_RBRACE;}
 	YY_BREAK
 case 11:
 YY_RULE_SETUP
-#line 62 ".\\src\\rapify.l"
+#line 66 "rapify.l"
 {tmp = !last_was_class; RESET_VARS; allow_arr = tmp; return T_LBRACE;}
 	YY_BREAK
 case 12:
 YY_RULE_SETUP
-#line 64 ".\\src\\rapify.l"
+#line 68 "rapify.l"
 {RESET_VARS; last_was_class = true; return T_CLASS;}
 	YY_BREAK
 case 13:
 YY_RULE_SETUP
-#line 65 ".\\src\\rapify.l"
+#line 69 "rapify.l"
 {RESET_VARS; return T_DELETE;}
 	YY_BREAK
 case 14:
 YY_RULE_SETUP
-#line 67 ".\\src\\rapify.l"
+#line 71 "rapify.l"
 {
     if (!allow_val && !allow_arr)
         REJECT;
@@ -1014,7 +1018,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 15:
 YY_RULE_SETUP
-#line 75 ".\\src\\rapify.l"
+#line 79 "rapify.l"
 {
     RESET_VARS;
     yylval.int_value = strtol(yytext, NULL, 16);
@@ -1023,7 +1027,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 16:
 YY_RULE_SETUP
-#line 81 ".\\src\\rapify.l"
+#line 85 "rapify.l"
 {
     RESET_VARS;
     yylval.float_value = atof(yytext);
@@ -1032,7 +1036,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 17:
 YY_RULE_SETUP
-#line 87 ".\\src\\rapify.l"
+#line 91 "rapify.l"
 {
     RESET_VARS;
     yylval.string_value = (char *)safe_malloc(yyleng + 1);
@@ -1043,7 +1047,7 @@ YY_RULE_SETUP
 case 18:
 /* rule 18 can match eol */
 YY_RULE_SETUP
-#line 94 ".\\src\\rapify.l"
+#line 98 "rapify.l"
 {
     RESET_VARS;
     yylval.string_value = (char *)safe_malloc(yyleng + 1);
@@ -1055,7 +1059,7 @@ YY_RULE_SETUP
 case 19:
 /* rule 19 can match eol */
 YY_RULE_SETUP
-#line 102 ".\\src\\rapify.l"
+#line 106 "rapify.l"
 {
     RESET_VARS;
     yylval.string_value = (char *)safe_malloc(yyleng + 1);
@@ -1067,7 +1071,7 @@ YY_RULE_SETUP
 case 20:
 /* rule 20 can match eol */
 YY_RULE_SETUP
-#line 110 ".\\src\\rapify.l"
+#line 114 "rapify.l"
 {
     if (!allow_val)
         REJECT;
@@ -1079,7 +1083,7 @@ YY_RULE_SETUP
     if (*endptr == 0)
         REJECT;
 
-    lnwarningf(lineref->file_names[lineref->file_index[yylineno]], lineref->line_number[yylineno],
+    lnwarningf(lineref.file_names[lineref.file_index[yylineno]].c_str(), lineref.line_number[yylineno],
             "unquoted-string", "String \"%s\" is not quoted properly.\n", yytext);
 
     RESET_VARS;
@@ -1092,7 +1096,7 @@ YY_RULE_SETUP
 case 21:
 /* rule 21 can match eol */
 YY_RULE_SETUP
-#line 131 ".\\src\\rapify.l"
+#line 135 "rapify.l"
 {
     if (!allow_arr)
         REJECT;
@@ -1104,7 +1108,7 @@ YY_RULE_SETUP
     if (*endptr == 0)
         REJECT;
 
-    lnwarningf(lineref->file_names[lineref->file_index[yylineno]], lineref->line_number[yylineno],
+    lnwarningf(lineref.file_names[lineref.file_index[yylineno]].c_str(), lineref.line_number[yylineno],
             "unquoted-string", "String \"%s\" is not quoted properly.\n", yytext);
 
     RESET_VARS;
@@ -1116,7 +1120,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 22:
 YY_RULE_SETUP
-#line 152 ".\\src\\rapify.l"
+#line 156 "rapify.l"
 {
     if (allow_arr || allow_val)
         REJECT;
@@ -1132,15 +1136,15 @@ YY_RULE_SETUP
 	YY_BREAK
 case 23:
 YY_RULE_SETUP
-#line 165 ".\\src\\rapify.l"
+#line 169 "rapify.l"
 {}
 	YY_BREAK
 case 24:
 YY_RULE_SETUP
-#line 167 ".\\src\\rapify.l"
+#line 171 "rapify.l"
 ECHO;
 	YY_BREAK
-#line 1143 "lex.yy.c"
+#line 1147 "lex.yy.c"
 			case YY_STATE_EOF(INITIAL):
 				yyterminate();
 
@@ -1696,7 +1700,7 @@ static void yy_load_buffer_state  (void)
         b->yy_bs_column = 0;
     }
 
-        b->yy_is_interactive = file ? 0 : 0;
+        b->yy_is_interactive = 0;
     
 	errno = oerrno;
 }
@@ -2130,6 +2134,6 @@ void yyfree (void * ptr )
 
 #define YYTABLES_NAME "yytables"
 
-#line 167 ".\\src\\rapify.l"
+#line 171 "rapify.l"
 
 

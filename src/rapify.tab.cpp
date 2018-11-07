@@ -62,11 +62,13 @@
 
 
 /* Copy the first part of user declarations.  */
-#line 19 ".\\src\\rapify.y" /* yacc.c:339  */
+#line 19 "rapify.y" /* yacc.c:339  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <fstream>
+#include <string>
 
 #include "utils.h"
 #include "filesystem.h"
@@ -76,14 +78,15 @@
 #define YYDEBUG 0
 #define YYERROR_VERBOSE 1
 
-extern int yylex(struct class_ **result, struct lineref *lineref);
+extern int yylex(struct class_ **result, struct lineref &lineref);
 extern int yyparse();
-extern FILE* yyin;
+extern int readInputForLexer(char* buffer,int *numBytesRead,int maxBytesToRead);
+extern std::ifstream* parserInput;
 extern int yylineno;
 
-void yyerror(struct class_ **result, struct lineref *lineref, const char* s);
+void yyerror(struct class_ **result, struct lineref &lineref, const char* s);
 
-#line 87 "rapify.tab.c" /* yacc.c:339  */
+#line 90 "rapify.tab.c" /* yacc.c:339  */
 
 # ifndef YY_NULLPTR
 #  if defined __cplusplus && 201103L <= __cplusplus
@@ -141,7 +144,7 @@ extern int yydebug;
 
 union YYSTYPE
 {
-#line 40 ".\\src\\rapify.y" /* yacc.c:355  */
+#line 43 "rapify.y" /* yacc.c:355  */
 
     struct definitions* definitions_value;
     struct class_ *class_value;
@@ -151,7 +154,7 @@ union YYSTYPE
     float float_value;
     char *string_value;
 
-#line 155 "rapify.tab.c" /* yacc.c:355  */
+#line 158 "rapify.tab.c" /* yacc.c:355  */
 };
 
 typedef union YYSTYPE YYSTYPE;
@@ -176,13 +179,13 @@ struct YYLTYPE
 
 extern YYSTYPE yylval;
 extern YYLTYPE yylloc;
-int yyparse (struct class_ **result, struct lineref *lineref);
+int yyparse (struct class_ **result, struct lineref &lineref);
 
 #endif /* !YY_YY_RAPIFY_TAB_H_INCLUDED  */
 
 /* Copy the second part of user declarations.  */
 
-#line 186 "rapify.tab.c" /* yacc.c:358  */
+#line 189 "rapify.tab.c" /* yacc.c:358  */
 
 #ifdef short
 # undef short
@@ -483,9 +486,9 @@ static const yytype_uint8 yytranslate[] =
   /* YYRLINE[YYN] -- Source line where rule number YYN was defined.  */
 static const yytype_uint8 yyrline[] =
 {
-       0,    70,    70,    72,    73,    74,    77,    78,    79,    80,
-      81,    84,    85,    86,    89,    90,    91,    92,    93,    94,
-      97,    98
+       0,    73,    73,    75,    76,    77,    80,    81,    82,    83,
+      84,    87,    88,    89,    92,    93,    94,    95,    96,    97,
+     100,   101
 };
 #endif
 
@@ -745,7 +748,7 @@ do {                                                                      \
 `----------------------------------------*/
 
 static void
-yy_symbol_value_print (FILE *yyoutput, int yytype, YYSTYPE const * const yyvaluep, YYLTYPE const * const yylocationp, struct class_ **result, struct lineref *lineref)
+yy_symbol_value_print (FILE *yyoutput, int yytype, YYSTYPE const * const yyvaluep, YYLTYPE const * const yylocationp, struct class_ **result, struct lineref &lineref)
 {
   FILE *yyo = yyoutput;
   YYUSE (yyo);
@@ -767,7 +770,7 @@ yy_symbol_value_print (FILE *yyoutput, int yytype, YYSTYPE const * const yyvalue
 `--------------------------------*/
 
 static void
-yy_symbol_print (FILE *yyoutput, int yytype, YYSTYPE const * const yyvaluep, YYLTYPE const * const yylocationp, struct class_ **result, struct lineref *lineref)
+yy_symbol_print (FILE *yyoutput, int yytype, YYSTYPE const * const yyvaluep, YYLTYPE const * const yylocationp, struct class_ **result, struct lineref &lineref)
 {
   YYFPRINTF (yyoutput, "%s %s (",
              yytype < YYNTOKENS ? "token" : "nterm", yytname[yytype]);
@@ -807,7 +810,7 @@ do {                                                            \
 `------------------------------------------------*/
 
 static void
-yy_reduce_print (yytype_int16 *yyssp, YYSTYPE *yyvsp, YYLTYPE *yylsp, int yyrule, struct class_ **result, struct lineref *lineref)
+yy_reduce_print (yytype_int16 *yyssp, YYSTYPE *yyvsp, YYLTYPE *yylsp, int yyrule, struct class_ **result, struct lineref &lineref)
 {
   unsigned long yylno = yyrline[yyrule];
   int yynrhs = yyr2[yyrule];
@@ -1088,7 +1091,7 @@ yysyntax_error (YYSIZE_T *yymsg_alloc, char **yymsg,
 `-----------------------------------------------*/
 
 static void
-yydestruct (const char *yymsg, int yytype, YYSTYPE *yyvaluep, YYLTYPE *yylocationp, struct class_ **result, struct lineref *lineref)
+yydestruct (const char *yymsg, int yytype, YYSTYPE *yyvaluep, YYLTYPE *yylocationp, struct class_ **result, struct lineref &lineref)
 {
   YYUSE (yyvaluep);
   YYUSE (yylocationp);
@@ -1126,7 +1129,7 @@ int yynerrs;
 `----------*/
 
 int
-yyparse (struct class_ **result, struct lineref *lineref)
+yyparse (struct class_ **result, struct lineref &lineref)
 {
     int yystate;
     /* Number of tokens to shift before error messages enabled.  */
@@ -1380,127 +1383,127 @@ yyreduce:
   switch (yyn)
     {
         case 2:
-#line 70 ".\\src\\rapify.y" /* yacc.c:1651  */
+#line 73 "rapify.y" /* yacc.c:1651  */
     { *result = new_class(NULL, NULL, (yyvsp[0].definitions_value), false); }
-#line 1386 "rapify.tab.c" /* yacc.c:1651  */
+#line 1389 "rapify.tab.c" /* yacc.c:1651  */
     break;
 
   case 3:
-#line 72 ".\\src\\rapify.y" /* yacc.c:1651  */
+#line 75 "rapify.y" /* yacc.c:1651  */
     { (yyval.definitions_value) = new_definitions(); }
-#line 1392 "rapify.tab.c" /* yacc.c:1651  */
+#line 1395 "rapify.tab.c" /* yacc.c:1651  */
     break;
 
   case 4:
-#line 73 ".\\src\\rapify.y" /* yacc.c:1651  */
+#line 76 "rapify.y" /* yacc.c:1651  */
     { (yyval.definitions_value) = add_definition((yyvsp[-1].definitions_value), TYPE_CLASS, (yyvsp[0].class_value)); }
-#line 1398 "rapify.tab.c" /* yacc.c:1651  */
+#line 1401 "rapify.tab.c" /* yacc.c:1651  */
     break;
 
   case 5:
-#line 74 ".\\src\\rapify.y" /* yacc.c:1651  */
+#line 77 "rapify.y" /* yacc.c:1651  */
     { (yyval.definitions_value) = add_definition((yyvsp[-1].definitions_value), TYPE_VAR, (yyvsp[0].variable_value)); }
-#line 1404 "rapify.tab.c" /* yacc.c:1651  */
+#line 1407 "rapify.tab.c" /* yacc.c:1651  */
     break;
 
   case 6:
-#line 77 ".\\src\\rapify.y" /* yacc.c:1651  */
+#line 80 "rapify.y" /* yacc.c:1651  */
     { (yyval.class_value) = new_class((yyvsp[-4].string_value), NULL, (yyvsp[-2].definitions_value), false); }
-#line 1410 "rapify.tab.c" /* yacc.c:1651  */
+#line 1413 "rapify.tab.c" /* yacc.c:1651  */
     break;
 
   case 7:
-#line 78 ".\\src\\rapify.y" /* yacc.c:1651  */
+#line 81 "rapify.y" /* yacc.c:1651  */
     { (yyval.class_value) = new_class((yyvsp[-6].string_value), (yyvsp[-4].string_value), (yyvsp[-2].definitions_value), false); }
-#line 1416 "rapify.tab.c" /* yacc.c:1651  */
+#line 1419 "rapify.tab.c" /* yacc.c:1651  */
     break;
 
   case 8:
-#line 79 ".\\src\\rapify.y" /* yacc.c:1651  */
+#line 82 "rapify.y" /* yacc.c:1651  */
     { (yyval.class_value) = new_class((yyvsp[-1].string_value), NULL, NULL, false); }
-#line 1422 "rapify.tab.c" /* yacc.c:1651  */
+#line 1425 "rapify.tab.c" /* yacc.c:1651  */
     break;
 
   case 9:
-#line 80 ".\\src\\rapify.y" /* yacc.c:1651  */
+#line 83 "rapify.y" /* yacc.c:1651  */
     { (yyval.class_value) = new_class((yyvsp[-3].string_value), (yyvsp[-1].string_value), 0, false); }
-#line 1428 "rapify.tab.c" /* yacc.c:1651  */
+#line 1431 "rapify.tab.c" /* yacc.c:1651  */
     break;
 
   case 10:
-#line 81 ".\\src\\rapify.y" /* yacc.c:1651  */
+#line 84 "rapify.y" /* yacc.c:1651  */
     { (yyval.class_value) = new_class((yyvsp[-1].string_value), NULL, NULL, true); }
-#line 1434 "rapify.tab.c" /* yacc.c:1651  */
+#line 1437 "rapify.tab.c" /* yacc.c:1651  */
     break;
 
   case 11:
-#line 84 ".\\src\\rapify.y" /* yacc.c:1651  */
+#line 87 "rapify.y" /* yacc.c:1651  */
     { (yyval.variable_value) = new_variable(TYPE_VAR, (yyvsp[-3].string_value), (yyvsp[-1].expression_value)); }
-#line 1440 "rapify.tab.c" /* yacc.c:1651  */
+#line 1443 "rapify.tab.c" /* yacc.c:1651  */
     break;
 
   case 12:
-#line 85 ".\\src\\rapify.y" /* yacc.c:1651  */
+#line 88 "rapify.y" /* yacc.c:1651  */
     { (yyval.variable_value) = new_variable(TYPE_ARRAY, (yyvsp[-5].string_value), (yyvsp[-1].expression_value)); }
-#line 1446 "rapify.tab.c" /* yacc.c:1651  */
+#line 1449 "rapify.tab.c" /* yacc.c:1651  */
     break;
 
   case 13:
-#line 86 ".\\src\\rapify.y" /* yacc.c:1651  */
+#line 89 "rapify.y" /* yacc.c:1651  */
     { (yyval.variable_value) = new_variable(TYPE_ARRAY_EXPANSION, (yyvsp[-6].string_value), (yyvsp[-1].expression_value)); }
-#line 1452 "rapify.tab.c" /* yacc.c:1651  */
+#line 1455 "rapify.tab.c" /* yacc.c:1651  */
     break;
 
   case 14:
-#line 89 ".\\src\\rapify.y" /* yacc.c:1651  */
+#line 92 "rapify.y" /* yacc.c:1651  */
     { (yyval.expression_value) = new_expression(TYPE_INT, &(yyvsp[0].int_value)); }
-#line 1458 "rapify.tab.c" /* yacc.c:1651  */
+#line 1461 "rapify.tab.c" /* yacc.c:1651  */
     break;
 
   case 15:
-#line 90 ".\\src\\rapify.y" /* yacc.c:1651  */
+#line 93 "rapify.y" /* yacc.c:1651  */
     { (yyval.expression_value) = new_expression(TYPE_FLOAT, &(yyvsp[0].float_value)); }
-#line 1464 "rapify.tab.c" /* yacc.c:1651  */
+#line 1467 "rapify.tab.c" /* yacc.c:1651  */
     break;
 
   case 16:
-#line 91 ".\\src\\rapify.y" /* yacc.c:1651  */
+#line 94 "rapify.y" /* yacc.c:1651  */
     { (yyval.expression_value) = new_expression(TYPE_STRING, (yyvsp[0].string_value)); }
-#line 1470 "rapify.tab.c" /* yacc.c:1651  */
+#line 1473 "rapify.tab.c" /* yacc.c:1651  */
     break;
 
   case 17:
-#line 92 ".\\src\\rapify.y" /* yacc.c:1651  */
+#line 95 "rapify.y" /* yacc.c:1651  */
     { (yyval.expression_value) = new_expression(TYPE_ARRAY, (yyvsp[-1].expression_value)); }
-#line 1476 "rapify.tab.c" /* yacc.c:1651  */
+#line 1479 "rapify.tab.c" /* yacc.c:1651  */
     break;
 
   case 18:
-#line 93 ".\\src\\rapify.y" /* yacc.c:1651  */
+#line 96 "rapify.y" /* yacc.c:1651  */
     { (yyval.expression_value) = new_expression(TYPE_ARRAY, (yyvsp[-2].expression_value)); }
-#line 1482 "rapify.tab.c" /* yacc.c:1651  */
+#line 1485 "rapify.tab.c" /* yacc.c:1651  */
     break;
 
   case 19:
-#line 94 ".\\src\\rapify.y" /* yacc.c:1651  */
+#line 97 "rapify.y" /* yacc.c:1651  */
     { (yyval.expression_value) = new_expression(TYPE_ARRAY, NULL); }
-#line 1488 "rapify.tab.c" /* yacc.c:1651  */
+#line 1491 "rapify.tab.c" /* yacc.c:1651  */
     break;
 
   case 20:
-#line 97 ".\\src\\rapify.y" /* yacc.c:1651  */
+#line 100 "rapify.y" /* yacc.c:1651  */
     { (yyval.expression_value) = (yyvsp[0].expression_value); }
-#line 1494 "rapify.tab.c" /* yacc.c:1651  */
+#line 1497 "rapify.tab.c" /* yacc.c:1651  */
     break;
 
   case 21:
-#line 98 ".\\src\\rapify.y" /* yacc.c:1651  */
+#line 101 "rapify.y" /* yacc.c:1651  */
     { (yyval.expression_value) = add_expression((yyvsp[-2].expression_value), (yyvsp[0].expression_value)); }
-#line 1500 "rapify.tab.c" /* yacc.c:1651  */
+#line 1503 "rapify.tab.c" /* yacc.c:1651  */
     break;
 
 
-#line 1504 "rapify.tab.c" /* yacc.c:1651  */
+#line 1507 "rapify.tab.c" /* yacc.c:1651  */
       default: break;
     }
   /* User semantic actions sometimes alter yychar, and that requires
@@ -1734,14 +1737,14 @@ yyreturn:
 #endif
   return yyresult;
 }
-#line 100 ".\\src\\rapify.y" /* yacc.c:1910  */
+#line 103 "rapify.y" /* yacc.c:1910  */
 
 
-struct class_ *parse_file(FILE *f, struct lineref *lineref) {
+struct class_ *parse_file(std::ifstream& f, struct lineref &lineref) {
     struct class_ *result;
 
     yylineno = 0;
-    yyin = f;
+    parserInput = &f;
 
 #if YYDEBUG == 1
     yydebug = 1;
@@ -1751,30 +1754,34 @@ struct class_ *parse_file(FILE *f, struct lineref *lineref) {
         if (yyparse(&result, lineref)) {
             return NULL;
         }
-    } while(!feof(yyin));
+    } while(!parserInput->eof());
 
     return result;
 }
 
-void yyerror(struct class_ **result, struct lineref *lineref,  const char* s) {
+void yyerror(struct class_ **result, struct lineref &lineref,  const char* s) {
     int line = 0;
-    char *buffer = NULL;
-    size_t buffsize;
 
-    fseek(yyin, 0, SEEK_SET);
+
+    parserInput->seekg(0);
+
+    std::string text;
+
     while (line < yylloc.first_line) {
-        if (buffer != NULL)
-            free(buffer);
-
-        buffer = NULL;
-        buffsize = 0;
-        getline(&buffer, &buffsize, yyin);
+        std::string newLine;
+        std::getline(*parserInput, newLine);
+        text += newLine;
 
         line++;
     }
 
-    lerrorf(lineref->file_names[lineref->file_index[yylloc.first_line]],
-            lineref->line_number[yylloc.first_line], "%s\n", s);
+    lerrorf(lineref.file_names[lineref.file_index[yylloc.first_line]].c_str(),
+            lineref.line_number[yylloc.first_line], "%s\n", s);
 
-    fprintf(stderr, " %s", buffer);
+    fprintf(stderr, " %s", text.c_str());
+}
+
+int readInputForLexer(char *buffer, int *numBytesRead, int maxBytesToRead) {
+    *numBytesRead = parserInput->read(buffer, maxBytesToRead);
+    return 0;
 }
