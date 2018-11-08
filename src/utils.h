@@ -23,6 +23,7 @@
 #include <stdbool.h>
 #include "vector.h"
 #include <ratio>
+#include <string>
 
 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
@@ -155,6 +156,8 @@ void trim_leading(char *string, size_t buffsize);
 
 void trim(char *string, size_t buffsize);
 
+std::string trim(std::string_view string);
+
 void replace_string(char *string, size_t buffsize, char *search, char *replace, int max, bool macro);
 
 void quote(char *string);
@@ -167,7 +170,7 @@ int skip_whitespace(FILE *f);
 
 void escape_string(char *buffer, size_t buffsize);
 
-void unescape_string(char *buffer, size_t buffsize);
+std::string unescape_string(std::string_view buffer);
 
 void write_compressed_int(uint32_t integer, FILE *f);
 

@@ -36,256 +36,138 @@
 #include <sstream>
 //#include "rapify.tab.h"
 
+struct class_ new_class(std::string name, std::string parent, std::vector<definition> content, bool is_delete) {
+    struct class_ result;
 
-struct definitions *new_definitions() {
-    struct definitions *result;
-
-    result = (struct definitions *)safe_malloc(sizeof(struct definitions));
-    result->head = NULL;
-
-    return result;
-}
-
-
-struct definitions *add_definition(struct definitions *head, int type, void *content) {
-    struct definition *definition;
-    struct definition *tmp;
-
-    definition = (struct definition *)safe_malloc(sizeof(struct definition));
-    definition->type = type;
-    definition->content = content;
-    definition->next = NULL;
-
-    if (head->head == NULL) {
-        head->head = definition;
-        return head;
-    }
-
-    tmp = head->head;
-    while (tmp != NULL) {
-        if (tmp->next == NULL) {
-            tmp->next = definition;
-            return head;
-        }
-        tmp = tmp->next;
-    }
-
-    return head;
-}
-
-
-struct class_ *new_class(char *name, char *parent, struct definitions *content, bool is_delete) {
-    struct class_ *result;
-
-    result = (struct class_ *)safe_malloc(sizeof(struct class_));
-    result->name = name;
-    result->parent = parent;
-    result->is_delete = is_delete;
-    result->content = content;
+    result.name = name;
+    result.parent = parent;
+    result.is_delete = is_delete;
+    result.content = std::move(content);
 
     return result;
 }
 
 
-struct variable *new_variable(int type, char *name, struct expression *expression) {
-    struct variable *result;
+struct variable new_variable(rap_type type, std::string name, struct expression expression) {
+    struct variable result;
 
-    result = (struct variable *)safe_malloc(sizeof(struct variable));
-    result->type = type;
-    result->name = name;
-    result->expression = expression;
-
-    return result;
-}
-
-
-struct expression *new_expression(int type, void *value) {
-    struct expression *result;
-
-    result = (struct expression *)safe_malloc(sizeof(struct expression));
-    result->type = type;
-    result->string_value = NULL;
-    result->head = NULL;
-    result->next = NULL;
-
-    if (type == TYPE_INT) {
-        result->int_value = *((int *)value);
-    } else if (type == TYPE_FLOAT) {
-        result->float_value = *((float *)value);
-    } else if (type == TYPE_STRING) {
-        result->string_value = (char *)value;
-    } else if (type == TYPE_ARRAY || type == TYPE_ARRAY_EXPANSION) {
-        result->head = (struct expression *)value;
-    }
+    result.type = type;
+    if (type == rap_type::rap_array_expansion) __debugbreak();
+    result.name = std::move(name);
+    result.expression = std::move(expression);
 
     return result;
 }
 
 
-struct expression *add_expression(struct expression *head, struct expression *new_) {
-    struct expression *tmp;
+expression new_expression(rap_type type, void *value) {
+    struct expression result;
 
-    tmp = head;
-    while (tmp != NULL) {
-        if (tmp->next == NULL) {
-            tmp->next = new_;
-            break;
-        }
-
-        tmp = tmp->next;
+    result.type = type;
+    if (type == rap_type::rap_int) {
+        result.value = *static_cast<int *>(value);
+    } else if (type == rap_type::rap_float) {
+        result.value = *static_cast<float *>(value);
+    } else if (type == rap_type::rap_string) {
+        result.value = *static_cast<std::string*>(value);
+    } else if (type == rap_type::rap_array || type == rap_type::rap_array_expansion) {
+        auto vec = std::vector<expression>();
+        if (value) //might be empty array
+            vec.emplace_back(*static_cast<struct expression *>(value));
+        result.value = std::move(vec);
     }
 
-    return head;
+    return result;
 }
 
-
-void free_expression(struct expression *expr) {
-    if (expr == NULL) { return; }
-    free(expr->string_value);
-    free_expression(expr->head);
-    free_expression(expr->next);
-    free(expr);
-}
-
-
-void free_variable(struct variable *var) {
-    free(var->name);
-    free_expression(var->expression);
-    free(var);
-}
-
-
-void free_definition(struct definition *definition) {
-    if (definition == NULL) { return; }
-
-    free_definition(definition->next);
-
-    if (definition->type == TYPE_VAR)
-        free_variable((struct variable *)definition->content);
-    else
-        free_class((struct class_ *)definition->content);
-
-    free(definition);
-}
-
-
-void free_class(struct class_ *class_) {
-    free(class_->name);
-    free(class_->parent);
-
-    if (class_->content != NULL && class_->content != (struct definitions *)-1) {
-        free_definition(class_->content->head);
-        free(class_->content);
-    }
-
-    free(class_);
-}
-
-
-void rapify_expression(struct expression *expr, FILE *f_target) {
-    struct expression *tmp;
+void rapify_expression(struct expression &expr, FILE *f_target) {
     uint32_t num_entries;
 
-    if (expr->type == TYPE_ARRAY) {
-        num_entries = 0;
-        tmp = expr->head;
-        while (tmp != NULL) {
-            num_entries++;
-            tmp = tmp->next;
-        }
+    if (expr.type == rap_type::rap_array) {
+        auto& elements = std::get<std::vector<expression>>(expr.value);
+        num_entries = elements.size();
 
         write_compressed_int(num_entries, f_target);
 
-        tmp = expr->head;
-        while (tmp != NULL) {
-            fputc((char)((tmp->type == TYPE_STRING) ? 0 :
-                ((tmp->type == TYPE_FLOAT) ? 1 :
-                ((tmp->type == TYPE_INT) ? 2 : 3))), f_target);
-            rapify_expression(tmp, f_target);
-            tmp = tmp->next;
+        for (auto& exp : elements) {
+            fputc((char)((exp.type == rap_type::rap_string) ? 0 :
+                ((exp.type == rap_type::rap_float) ? 1 :
+                ((exp.type == rap_type::rap_int) ? 2 : 3))), f_target);
+            rapify_expression(exp, f_target);
         }
-    } else if (expr->type == TYPE_INT) {
-        fwrite(&expr->int_value, 4, 1, f_target);
-    } else if (expr->type == TYPE_FLOAT) {
-        fwrite(&expr->float_value, 4, 1, f_target);
+    } else if (expr.type == rap_type::rap_int) {
+        fwrite(&std::get<int>(expr.value), 4, 1, f_target);
+    } else if (expr.type == rap_type::rap_float) {
+        fwrite(&std::get<float>(expr.value), 4, 1, f_target);
     } else {
-        fwrite(expr->string_value, strlen(expr->string_value) + 1, 1, f_target);
+        fwrite(std::get<std::string>(expr.value).c_str(), std::get<std::string>(expr.value).length() + 1, 1, f_target);
     }
 }
 
 
-void rapify_variable(struct variable *var, FILE *f_target) {
-    if (var->type == TYPE_VAR) {
+void rapify_variable(struct variable &var, FILE *f_target) {
+    if (var.type == rap_type::rap_var) {
         fputc(1, f_target);
-        fputc((char)((var->expression->type == TYPE_STRING) ? 0 : ((var->expression->type == TYPE_FLOAT) ? 1 : 2 )), f_target);
+        fputc((char)((var.expression.type == rap_type::rap_string) ? 0 : ((var.expression.type == rap_type::rap_float) ? 1 : 2 )), f_target);
     } else {
-        fputc((char)((var->type == TYPE_ARRAY) ? 2 : 5), f_target);
-        if (var->type == TYPE_ARRAY_EXPANSION) {
+        fputc((char)((var.type == rap_type::rap_array) ? 2 : 5), f_target);
+        if (var.type == rap_type::rap_array_expansion) {
             fwrite("\x01\0\0\0", 4, 1, f_target);
         }
     }
 
-    fwrite(var->name, strlen(var->name) + 1, 1, f_target);
-    rapify_expression(var->expression, f_target);
+    fwrite(var.name.c_str(), var.name.length() + 1, 1, f_target);
+    rapify_expression(var.expression, f_target);
 }
 
 
-void rapify_class(struct class_ *class__, FILE *f_target) {
-    struct definition *tmp;
+void rapify_class(struct class_ &class__, FILE *f_target) {
     uint32_t fp_temp;
-    uint32_t num_entries = 0;
 
-    if (class__->content == NULL) {
+    if (class__.content.empty()) {
         // extern or delete class
-        fputc((char)(class__->is_delete ? 4 : 3), f_target);
-        fwrite(class__->name, strlen(class__->name) + 1, 1, f_target);
+        fputc((char)(class__.is_delete ? 4 : 3), f_target);
+        fwrite(class__.name.c_str(), class__.name.length() + 1, 1, f_target);
         return;
     }
-
-    if (class__->parent)
-        fwrite(class__->parent, strlen(class__->parent) + 1, 1, f_target);
+    
+    if (!class__.parent.empty())
+        fwrite(class__.parent.c_str(), class__.parent.length() + 1, 1, f_target);
     else
         fputc(0, f_target);
 
-    tmp = class__->content->head;
-    while (tmp != NULL) {
-        num_entries++;
-        tmp = tmp->next;
-    }
+    uint32_t num_entries = class__.content.size();
 
     write_compressed_int(num_entries, f_target);
-
-    tmp = class__->content->head;
-    while (tmp != NULL) {
-        if (tmp->type == TYPE_VAR) {
-            rapify_variable((struct variable *)tmp->content, f_target);
+    for (auto& def : class__.content) {
+        if (def.type == rap_type::rap_var) {
+            auto& c = std::get<variable>(def.content);
+            rapify_variable(c, f_target);
         } else {
-            if (((struct class_ *)(tmp->content))->content != NULL) {
+            auto& c = std::get<class_>(def.content);
+            if (!c.content.empty()) {
                 fputc(0, f_target);
-                fwrite(((struct class_ *)(tmp->content))->name,
-                    strlen(((struct class_ *)(tmp->content))->name) + 1, 1, f_target);
-                ((struct class_ *)(tmp->content))->offset_location = ftell(f_target);
+                fwrite(c.name.c_str(),
+                    c.name.length() + 1, 1, f_target);
+                c.offset_location = ftell(f_target);
                 fwrite("\0\0\0\0", 4, 1, f_target);
             } else {
-                rapify_class((class_*)tmp->content, f_target);
+                rapify_class(c, f_target);
             }
         }
-
-        tmp = tmp->next;
     }
 
-    tmp = class__->content->head;
-    while (tmp != NULL) {
-        if (tmp->type == TYPE_CLASS && ((struct class_ *)(tmp->content))->content != NULL) {
-            fp_temp = ftell(f_target);
-            fseek(f_target, ((struct class_ *)(tmp->content))->offset_location, SEEK_SET);
-            fwrite(&fp_temp, sizeof(uint32_t), 1, f_target);
-            fseek(f_target, 0, SEEK_END);
+    for (auto& def : class__.content) {
+        if (def.type != rap_type::rap_class) continue;
+        auto& c = std::get<class_>(def.content);
+        if (c.content.empty())  continue;
+        
+        fp_temp = ftell(f_target);
+        fseek(f_target, c.offset_location, SEEK_SET);
+        fwrite(&fp_temp, sizeof(uint32_t), 1, f_target);
+        fseek(f_target, 0, SEEK_END);
 
-            rapify_class((class_*)tmp->content, f_target);
-        }
-
-        tmp = tmp->next;
+        rapify_class(c, f_target);
     }
 }
 
@@ -390,11 +272,9 @@ int rapify_file(char *source, char *target) {
 #endif
 
     fileToPreprocess.seekg(0);
-    struct class_ *result;
-    make it use istream instead of ifstream
-    result = parse_file(fileToPreprocess, preproc.getLineref());
+    auto result = parse_file(fileToPreprocess, preproc.getLineref());
 
-    if (result == NULL) {
+    if (!result) {
         errorf("Failed to parse config.\n");
         return 1;
     }
@@ -410,7 +290,7 @@ int rapify_file(char *source, char *target) {
             errorf("Failed to get temp file name (system error %i).\n", GetLastError());
             return 1;
         }
-        f_target = fopen(temp_name, "wb+");
+        f_target = fopen(temp_name2, "wb+");
 #else
         f_target = tmpfile();
 #endif
@@ -434,7 +314,7 @@ int rapify_file(char *source, char *target) {
     fwrite("\0\0\0\0\x08\0\0\0", 8, 1, f_target);
     fwrite(&enum_offset, 4, 1, f_target); // this is replaced later
 
-    rapify_class(result, f_target);
+    rapify_class(*result, f_target);
 
     enum_offset = ftell(f_target);
     fwrite("\0\0\0\0", 4, 1, f_target); // fuck enums
@@ -458,12 +338,11 @@ int rapify_file(char *source, char *target) {
     fclose(f_target);
 
 #ifdef _WIN32
-    DeleteFile(temp_name);
     if (strcmp(target, "-") == 0)
         DeleteFile(temp_name2);
 #endif
 
-    free_class(result);
+    //free_class(result);
 
     return 0;
 }

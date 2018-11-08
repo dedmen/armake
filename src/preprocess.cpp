@@ -356,12 +356,7 @@ std::optional<std::string> Preprocessor::constant_value(std::list<constant> &con
         auto ret = constants_preprocess(constants, args[i], line, constant_stack);
         if (!ret)
             return {};
-        if (!ret->empty()) {
-            //trim tabs and spaces from both ends
-            std::string::size_type begin = ret->find_first_not_of("\t ");
-            std::string::size_type end = ret->find_last_not_of("\t ");
-            args[i] = ret->substr(begin, end - begin + 1);
-        }
+        args[i] = trim(*ret); //trim tabs and spaces from both ends
     }
 
 
@@ -383,11 +378,11 @@ std::optional<std::string> Preprocessor::constant_value(std::list<constant> &con
 
     auto res = constants_preprocess(constants, result, line, constant_stack);
 
+    constant_stack.stack.pop_back();
+
     if (res && !res->empty()) {
         //trim tabs and spaces from both ends
-        std::string::size_type begin = res->find_first_not_of("\t ");
-        std::string::size_type end = res->find_last_not_of("\t ");
-        return res->substr(begin, end - begin + 1);
+        return trim(*res);
     }
 
     return res;
@@ -634,7 +629,7 @@ template <typename T>
 reversion_wrapper<T> reverse(T&& iterable) { return { iterable }; }
 
 
-int Preprocessor::preprocess(char *source, std::ofstream &f_target, std::list<constant> &constants) {
+int Preprocessor::preprocess(char *source, std::ostream &f_target, std::list<constant> &constants) {
     /*
      * Writes the contents of source into the target file pointer, while
      * recursively resolving constants and includes using the includefolder
@@ -642,19 +637,6 @@ int Preprocessor::preprocess(char *source, std::ofstream &f_target, std::list<co
      *
      * Returns 0 on success, a positive integer on failure.
      */
-    current_target = source;
-
-    if (std::find(include_stack.begin(), include_stack.end(), std::string(source)) != include_stack.end()) {
-
-        errorf("Circular dependency detected, printing include stack:\n", source);
-        fprintf(stderr, "    !!! %s\n", source);
-        for (auto& it : reverse(include_stack)) {
-            fprintf(stderr, "        %s\n", it.c_str()); //#TODO don't print to stderr. Make a global config thingy that contains the error stream (might be file or even network)
-        }
-        return 1;
-    }
-
-    include_stack.emplace_back(source);
 
     std::ifstream f_source(source, std::ifstream::in | std::ifstream::binary);
 
@@ -662,7 +644,6 @@ int Preprocessor::preprocess(char *source, std::ofstream &f_target, std::list<co
         errorf("Failed to open %s.\n", source);
         return 1;
     }
-
 
     return preprocess(source, f_source, f_target, constants);
 }
@@ -673,6 +654,20 @@ int Preprocessor::preprocess(const char* sourceFileName, std::istream &input, st
     int level = 0;
     int level_true = 0;
     int level_comment = 0;
+
+    current_target = sourceFileName;
+
+    if (std::find(include_stack.begin(), include_stack.end(), std::string(sourceFileName)) != include_stack.end()) {
+
+        errorf("Circular dependency detected, printing include stack:\n", sourceFileName);
+        fprintf(stderr, "    !!! %s\n", sourceFileName);
+        for (auto& it : reverse(include_stack)) {
+            fprintf(stderr, "        %s\n", it.c_str()); //#TODO don't print to stderr. Make a global config thingy that contains the error stream (might be file or even network)
+        }
+        return 1;
+    }
+
+    include_stack.emplace_back(sourceFileName);
 
     // Skip byte order mark if it exists
     if (input.peek() == 0x3f)
@@ -708,11 +703,13 @@ int Preprocessor::preprocess(const char* sourceFileName, std::istream &input, st
         std::string curLine;
         std::getline(input, curLine);
         if (curLine.empty() && input.eof()) break;
-        if (curLine.empty()) continue;
-
         // fix windows line endings
-        if (curLine.back() == '\r')
+        if (!curLine.empty() && curLine.back() == '\r')
             curLine.pop_back();
+
+        line++;
+        lineref.file_index.push_back(file_index);
+        lineref.line_number.push_back(line);
 
         if (curLine.empty()) continue;
 
@@ -720,11 +717,20 @@ int Preprocessor::preprocess(const char* sourceFileName, std::istream &input, st
             __debugbreak();
 
         while (curLine.back() == '\\') {
+            curLine.pop_back(); //remove backslash
+            if (curLine.back() != '\n')
+                curLine += '\n';
+
             std::string nextLine;
             std::getline(input, nextLine);
             // fix windows line endings
             if (nextLine.back() == '\r')
-                nextLine.pop_back();
+                nextLine.pop_back(); //remove the \r so that we hit the backslash in the while condition
+            
+            line++;
+            lineref.file_index.push_back(file_index);
+            lineref.line_number.push_back(line);
+
             curLine += nextLine;
         }
 
@@ -766,7 +772,7 @@ int Preprocessor::preprocess(const char* sourceFileName, std::istream &input, st
             }
 
             if (level_comment > 0) {
-                curLine[i] = ' ';
+                curLine[i] = ' '; //empty line
                 continue;
             }
         }
@@ -774,10 +780,13 @@ int Preprocessor::preprocess(const char* sourceFileName, std::istream &input, st
         // trim leading spaces
         auto trimLeading = curLine.find_first_not_of(" \t");
         if (trimLeading == std::string::npos) {//This line is empty besides a couple spaces. Nothing to preprocess here.
-            output.write(curLine.c_str(), curLine.length());
+            if (keepLineCount) {
+                //output.write("\n", 1);
+                output.write(curLine.c_str(), curLine.length());
 
-            lineref.file_index.push_back(file_index);
-            lineref.line_number.push_back(line);
+                lineref.file_index.push_back(file_index);
+                lineref.line_number.push_back(line);
+            }
             continue;
         }
 
@@ -901,9 +910,6 @@ int Preprocessor::preprocess(const char* sourceFileName, std::istream &input, st
             }
 
             output.write(preprocessedLine->c_str(), preprocessedLine->length());
-
-            lineref.file_index.push_back(file_index);
-            lineref.line_number.push_back(line);
         }
     }
     return 0;

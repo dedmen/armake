@@ -61,6 +61,8 @@ int find_file(const char *includepath, const char *origin, char *actualpath);
 
 class Preprocessor {
     std::vector<std::string> include_stack;
+    //Replace block comments by empty lines instead of ommiting them
+    bool keepLineCount = true;
     struct lineref lineref;
 
     bool constants_parse(std::list<constant> &constants, std::string_view definition, int line);
@@ -75,7 +77,7 @@ class Preprocessor {
 
 public:
 
-    int preprocess(char *source, std::ofstream &f_target, std::list<constant> &constants);
+    int preprocess(char *source, std::ostream &f_target, std::list<constant> &constants);
     int preprocess(const char* sourceFileName, std::istream &input, std::ostream &output, std::list<constant> &constants);
     struct lineref& getLineref() { return lineref; }
 

@@ -20,7 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <fstream>
+#include <iostream>
 #include <string>
 
 #include "utils.h"
@@ -31,24 +31,31 @@
 #define YYDEBUG 0
 #define YYERROR_VERBOSE 1
 
-extern int yylex(struct class_ **result, struct lineref &lineref);
-extern int yyparse();
-extern int readInputForLexer(char* buffer,int *numBytesRead,int maxBytesToRead);
-extern std::ifstream* parserInput;
-extern int yylineno;
+struct parserStaticData {
+    bool allow_val = false;
+    bool allow_arr = false;
+    bool last_was_class = false;
+};
 
-void yyerror(struct class_ **result, struct lineref &lineref, const char* s);
-%}
-
-%union {
-    struct definitions* definitions_value;
-    struct class_ *class_value;
-    struct variable *variable_value;
-    struct expression *expression_value;
+struct YYTypeStruct {
+    std::vector<definition> definitions_value;
+    struct class_ class_value;
+    struct variable variable_value;
+    struct expression expression_value;
     int32_t int_value;
     float float_value;
-    char *string_value;
-}
+    std::string string_value;
+};
+
+struct YYLTYPE;
+extern int yylex(YYTypeStruct* yylval_param, YYLTYPE* yylloc,struct class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner);
+extern int yyparse();
+void yyerror(YYLTYPE* yylloc, struct class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner, const char* s);
+
+%}
+
+%define api.value.type {struct YYTypeStruct}
+%pure-parser
 
 %token<string_value> T_NAME
 %token<int_value> T_INT
@@ -66,84 +73,91 @@ void yyerror(struct class_ **result, struct lineref &lineref, const char* s);
 
 %start start
 
-%param {struct class_ **result} {struct lineref &lineref}
+%param {struct class_ &result} {struct lineref &lineref} {parserStaticData& staticData} {void* yyscanner}
 %locations
 
 %%
-start: definitions { *result = new_class(NULL, NULL, $1, false); }
+start: definitions { result = new_class({}, {}, $1, false); }
 
-definitions:  /* empty */ { $$ = new_definitions(); }
-            | definitions class_ { $$ = add_definition($1, TYPE_CLASS, $2); }
-            | definitions variable { $$ = add_definition($1, TYPE_VAR, $2); }
+definitions:  /* empty */ { $$ = std::vector<definition>(); }
+            | definitions class_ { $$.emplace_back(rap_type::rap_class, $2); }
+            | definitions variable { $$.emplace_back(rap_type::rap_var, $2); }
 ;
 
-class_:        T_CLASS T_NAME T_LBRACE definitions T_RBRACE T_SEMICOLON { $$ = new_class($2, NULL, $4, false); }
+class_:        T_CLASS T_NAME T_LBRACE definitions T_RBRACE T_SEMICOLON { $$ = new_class($2, {}, $4, false); }
             | T_CLASS T_NAME T_COLON T_NAME T_LBRACE definitions T_RBRACE T_SEMICOLON { $$ = new_class($2, $4, $6, false); }
-            | T_CLASS T_NAME T_SEMICOLON { $$ = new_class($2, NULL, NULL, false); }
-            | T_CLASS T_NAME T_COLON T_NAME T_SEMICOLON { $$ = new_class($2, $4, 0, false); }
-            | T_DELETE T_NAME T_SEMICOLON { $$ = new_class($2, NULL, NULL, true); }
+            | T_CLASS T_NAME T_SEMICOLON { $$ = new_class($2, {}, {}, false); }
+            | T_CLASS T_NAME T_COLON T_NAME T_SEMICOLON { $$ = new_class($2, $4, {}, false); }
+            | T_DELETE T_NAME T_SEMICOLON { $$ = new_class($2, {}, {}, true); }
 ;
 
-variable:     T_NAME T_EQUALS expression T_SEMICOLON { $$ = new_variable(TYPE_VAR, $1, $3); }
-            | T_NAME T_LBRACKET T_RBRACKET T_EQUALS expression T_SEMICOLON { $$ = new_variable(TYPE_ARRAY, $1, $5); }
-            | T_NAME T_LBRACKET T_RBRACKET T_PLUS T_EQUALS expression T_SEMICOLON { $$ = new_variable(TYPE_ARRAY_EXPANSION, $1, $6); }
+variable:     T_NAME T_EQUALS expression T_SEMICOLON { $$ = new_variable(rap_type::rap_var, $1, $3); }
+            | T_NAME T_LBRACKET T_RBRACKET T_EQUALS expression T_SEMICOLON { $$ = new_variable(rap_type::rap_array, $1, $5); }
+            | T_NAME T_LBRACKET T_RBRACKET T_PLUS T_EQUALS expression T_SEMICOLON { $$ = new_variable(rap_type::rap_array_expansion, $1, $6); }
 ;
 
-expression:   T_INT { $$ = new_expression(TYPE_INT, &$1); }
-            | T_FLOAT { $$ = new_expression(TYPE_FLOAT, &$1); }
-            | T_STRING { $$ = new_expression(TYPE_STRING, $1); }
-            | T_LBRACE expressions T_RBRACE { $$ = new_expression(TYPE_ARRAY, $2); }
-            | T_LBRACE expressions T_COMMA T_RBRACE { $$ = new_expression(TYPE_ARRAY, $2); }
-            | T_LBRACE T_RBRACE { $$ = new_expression(TYPE_ARRAY, NULL); }
+expression:   T_INT { $$ = new_expression(rap_type::rap_int, &$1); }
+            | T_FLOAT { $$ = new_expression(rap_type::rap_float, &$1); }
+            | T_STRING { $$ = new_expression(rap_type::rap_string, &$1); }
+            | T_LBRACE expressions T_RBRACE { $$ = new_expression(rap_type::rap_array, &$2); }
+            | T_LBRACE expressions T_COMMA T_RBRACE { $$ = new_expression(rap_type::rap_array, &$2); }
+            | T_LBRACE T_RBRACE { $$ = new_expression(rap_type::rap_array, NULL); }
 ;
 
 expressions:  expression { $$ = $1; }
-            | expressions T_COMMA expression { $$ = add_expression($1, $3); }
+            | expressions T_COMMA expression { $$.addArrayElement($3); }
 ;
 %%
 
-struct class_ *parse_file(std::ifstream& f, struct lineref &lineref) {
-    struct class_ *result;
 
-    yylineno = 0;
-    parserInput = &f;
+void yyset_extra(void* user_defined, void* yyscanner);
+void* yyget_extra(void* yyscanner);
+void yyset_lineno(int _line_number , void* yyscanner)
+int yylex_init(void** ptr_yy_globals);
+int yylex_destroy(void* yyscanner);
+
+std::optional<struct class_> parse_file(std::istream& f, struct lineref &lineref) {
+    struct class_ result;
 
 #if YYDEBUG == 1
     yydebug = 1;
 #endif
+    void* yyscanner;
+    yylex_init(&yyscanner);
+    yyset_extra(&f, yyscanner);
+    yyset_lineno(0, yyscanner);
+    parserStaticData staticData;
+
 
     do { 
-        if (yyparse(&result, lineref)) {
-            return NULL;
+        if (yyparse(result, lineref, staticData, yyscanner)) {
+            return {};
         }
-    } while(!parserInput->eof());
+    } while(!f.eof());
+
+    yylex_destroy(yyscanner);
 
     return result;
 }
 
-void yyerror(struct class_ **result, struct lineref &lineref,  const char* s) {
+void yyerror(YYLTYPE* yylloc, struct class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner, const char* s) {
     int line = 0;
 
-
-    parserInput->seekg(0);
+    auto& inputStream = *static_cast<std::istream*>(yyget_extra(yyscanner));
+    inputStream.seekg(0);
 
     std::string text;
 
-    while (line < yylloc.first_line) {
+    while (line < yylloc->first_line) {
         std::string newLine;
-        std::getline(*parserInput, newLine);
+        std::getline(inputStream, newLine);
         text += newLine;
 
         line++;
     }
 
-    lerrorf(lineref.file_names[lineref.file_index[yylloc.first_line]].c_str(),
-            lineref.line_number[yylloc.first_line], "%s\n", s);
+    lerrorf(lineref.file_names[lineref.file_index[yylloc->first_line]].c_str(),
+            lineref.line_number[yylloc->first_line], "%s\n", s);
 
     fprintf(stderr, " %s", text.c_str());
-}
-
-int readInputForLexer(char *buffer, int *numBytesRead, int maxBytesToRead) {
-    *numBytesRead = parserInput->read(buffer, maxBytesToRead);
-    return 0;
 }

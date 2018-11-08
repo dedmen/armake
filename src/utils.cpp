@@ -392,6 +392,17 @@ void trim(char *string, size_t buffsize) {
 }
 
 
+std::string trim(std::string_view string) {
+    /*
+     * Trims tabs and spaces on either side of the string.
+     */
+    if (string.empty()) return "";
+
+    auto begin = string.find_first_not_of("\t ");
+    auto end = string.find_last_not_of("\t ");
+    return std::string(string.substr(begin, end - begin + 1));
+}
+
 void replace_string(char *string, size_t buffsize, char *search, char *replace, int max, bool macro) {
     /*
      * Replaces the search string with the given replacement in string.
@@ -568,33 +579,31 @@ void escape_string(char *buffer, size_t buffsize) {
     free(tmp);
 }
 
-
-void unescape_string(char *buffer, size_t buffsize) {
-    char *tmp;
-    char *ptr;
+std::string unescape_string(std::string_view buffer) {
     char tmp_array[2];
-    char current;
-    char quote;
 
-    tmp = (char*)safe_malloc(buffsize);
-    tmp[0] = 0;
     tmp_array[1] = 0;
 
-    quote = buffer[0];
+    std::string tmp;
+    const char quote = buffer[0];
+    //#TODO get rid of the copy here. Also use std::copy_if maybe?
+    std::string forIterate = std::string(buffer.substr(1, buffer.length() - 2 )); //Cut off end and start
 
-    buffer[strlen(buffer) - 1] = 0;
-    for (ptr = buffer + 1; *ptr != 0; ptr++) {
-        current = *ptr;
+    for (char *ptr = forIterate.data(); *ptr != 0; ptr++) {
+        char current = *ptr;
 
         if (*ptr == '\\' && *(ptr + 1) == '\\') {
             ptr++;
-        } else if (*ptr == '\\' && *(ptr + 1) == '"') {
+        }
+        else if (*ptr == '\\' && *(ptr + 1) == '"') {
             current = '"';
             ptr++;
-        } else if (*ptr == '\\' && *(ptr + 1) == '\'') {
+        }
+        else if (*ptr == '\\' && *(ptr + 1) == '\'') {
             current = '\'';
             ptr++;
-        } else if (*ptr == quote && *(ptr + 1) == quote) {
+        }
+        else if (*ptr == quote && *(ptr + 1) == quote) {
             ptr++;
         }
 
@@ -602,14 +611,11 @@ void unescape_string(char *buffer, size_t buffsize) {
             break;
 
         tmp_array[0] = current;
-        strcat(tmp, tmp_array);
+        tmp += tmp_array;
     }
 
-    strcpy(buffer, tmp);
-
-    free(tmp);
+    return tmp;
 }
-
 
 void write_compressed_int(uint32_t integer, FILE *f) {
     uint64_t temp;
