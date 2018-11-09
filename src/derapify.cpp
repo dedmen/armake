@@ -681,7 +681,7 @@ int derapify_array(FILE *f_source, FILE *f_target) {
 }
 
 
-int derapify_class(FILE *f_source, FILE *f_target, char *classname, int level) {
+int derapify_class(FILE *f_source, FILE *f_target, Config::class_ &curClass, int level) {
     extern struct arguments args;
     char buffer[4096];
     char inherited[2048];
@@ -689,7 +689,6 @@ int derapify_class(FILE *f_source, FILE *f_target, char *classname, int level) {
     char indentation_wrapping[2048];
     int i;
     int success;
-    uint8_t type;
     uint32_t num_entries;
     uint32_t fp_tmp;
     uint32_t fp_class;
@@ -710,7 +709,7 @@ int derapify_class(FILE *f_source, FILE *f_target, char *classname, int level) {
     else if (strlen(indentation_wrapping) > 0) 
         indentation_wrapping[strlen(indentation_wrapping) - 4] = 0;
 
-    if (strlen(classname) == 0) {
+    if (curClass.name.empty()) {
         fseek(f_source, 16, SEEK_SET);
     }
 
@@ -720,11 +719,11 @@ int derapify_class(FILE *f_source, FILE *f_target, char *classname, int level) {
 
     num_entries = read_compressed_int(f_source);
 
-    if (strlen(classname) > 0) {
+    if (!curClass.name.empty()) {
         if (strlen(inherited) > 0)
-            snprintf(buffer, sizeof(buffer), "%sclass %s: %s {", indentation_wrapping, classname, inherited);
+            snprintf(buffer, sizeof(buffer), "%sclass %s: %s {", indentation_wrapping, curClass.name.c_str(), inherited);
         else
-            snprintf(buffer, sizeof(buffer), "%sclass %s {", indentation_wrapping, classname);
+            snprintf(buffer, sizeof(buffer), "%sclass %s {", indentation_wrapping, curClass.name.c_str());
         fwrite(buffer, strlen(buffer), 1, f_target);
 
         if (num_entries > 0)
@@ -732,9 +731,10 @@ int derapify_class(FILE *f_source, FILE *f_target, char *classname, int level) {
     }
 
     for (i = 0; i < num_entries; i++) {
+        uint8_t type;
         fread(&type, sizeof(type), 1, f_source);
 
-        if (type == 0) {
+        if (type == 0) { //class definition
             fp_tmp = ftell(f_source);
             fgets(buffer, sizeof(buffer), f_source);
             fseek(f_source, fp_tmp + strlen(buffer) + 1, SEEK_SET);
@@ -742,6 +742,7 @@ int derapify_class(FILE *f_source, FILE *f_target, char *classname, int level) {
             fread(&fp_class, sizeof(uint32_t), 1, f_source);
 
             fseek(f_source, fp_class, SEEK_SET);
+            create new subclass with name "buffer" and pass it
             success = derapify_class(f_source, f_target, buffer, level + 1);
 
             if (success) {
@@ -750,7 +751,13 @@ int derapify_class(FILE *f_source, FILE *f_target, char *classname, int level) {
             }
 
             fseek(f_source, fp_tmp + strlen(buffer) + sizeof(uint32_t) + 1, SEEK_SET);
-        } else if (type == 1) {
+        } else if (type == 1) { //value
+            //#TODO make enums for these
+            //Var has special type
+            //0 string
+            //1 float
+            //2 int
+
             fread(&type, sizeof(type), 1, f_source);
 
             fp_tmp = ftell(f_source);
@@ -778,7 +785,7 @@ int derapify_class(FILE *f_source, FILE *f_target, char *classname, int level) {
                 return 1;
             }
             fputs(";\n", f_target);
-        } else if (type == 2 || type == 5) {
+        } else if (type == 2 || type == 5) { //array or array append
             if (type == 5)
                 fseek(f_source, 4, SEEK_CUR);
 
@@ -791,10 +798,14 @@ int derapify_class(FILE *f_source, FILE *f_target, char *classname, int level) {
             else
                 fprintf(f_target, "%s%s[] += {", indentation, buffer);
 
+
+            create expression I think and let derapify array return array of definitions or so
+            or just append by ref. That's probably better
+
             success = derapify_array(f_source, f_target);
 
             fputs("};\n", f_target);
-        } else if (type == 3 || type == 4) {
+        } else if (type == 3 || type == 4) { //3 is class 4 is delete class
             fp_tmp = ftell(f_source);
             fgets(buffer, sizeof(buffer), f_source);
             fseek(f_source, fp_tmp + strlen(buffer) + 1, SEEK_SET);
@@ -809,7 +820,7 @@ int derapify_class(FILE *f_source, FILE *f_target, char *classname, int level) {
         }
     }
 
-    if (strlen(classname) > 0) {
+    if (!curClass.name.empty()) {
         if (num_entries > 0)
             fputs(indentation_wrapping, f_target);
         fputs("};\n", f_target);
@@ -892,8 +903,9 @@ int derapify_file(char *source, char *target) {
             return 2;
         }
     }
+    auto outClass = std::make_shared<Config::class_>();
 
-    success = derapify_class(f_source, f_target, "", 0);
+    success = derapify_class(f_source, f_target, *outClass, 0);
 
     fclose(f_source);
 
