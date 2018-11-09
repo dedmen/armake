@@ -25,8 +25,7 @@
 
 #include "args.h"
 #include "utils.h"
-#include "img2paa.h"
-#include "paa2img.h"
+#include "paaconverter.h"
 #include "binarize.h"
 #include "build.h"
 #include "unpack.h"
@@ -260,9 +259,9 @@ int main(int argc, char *argv[]) {
     else if (strcmp(args.positionals[0], "sign") == 0)
         success = cmd_sign();
     else if (strcmp(args.positionals[0], "paa2img") == 0)
-        success = cmd_paa2img();
+        success = PAAConverter::cmd_paa2img();
     else if (strcmp(args.positionals[0], "img2paa") == 0)
-        success = cmd_img2paa();
+        success = PAAConverter::cmd_img2paa();
     else
         goto error;
 
