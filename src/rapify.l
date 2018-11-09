@@ -23,7 +23,7 @@
 %option bison-bridge
 
 %{
-#define YY_DECL int yylex(YYTypeStruct* yylval_param, YYLTYPE* yylloc,struct class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner)
+#define YY_DECL int yylex(YYTypeStruct* yylval_param, YYLTYPE* yylloc, Config::class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner)
 //char *buffer, int numBytesRead, int maxBytesToRead
 #define YY_INPUT(b,r,s)  auto& inStr = *static_cast<std::istream*>(yyget_extra(yyscanner)); inStr.read(b, s); r = inStr.gcount()
 #define YY_NO_UNISTD_H
@@ -42,10 +42,10 @@ struct parserStaticData {
 };
 
 struct YYTypeStruct {
-    std::vector<definition> definitions_value;
-    struct class_ class_value;
-    struct variable variable_value;
-    struct expression expression_value;
+    std::vector<Config::definition> definitions_value;
+    Config::class_ class_value;
+    Config::variable variable_value;
+    Config::expression expression_value;
     int32_t int_value;
     float float_value;
     std::string string_value;

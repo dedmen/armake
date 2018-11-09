@@ -38,19 +38,19 @@ struct parserStaticData {
 };
 
 struct YYTypeStruct {
-    std::vector<definition> definitions_value;
-    struct class_ class_value;
-    struct variable variable_value;
-    struct expression expression_value;
+    std::vector<Config::definition> definitions_value;
+    Config::class_ class_value;
+    Config::variable variable_value;
+    Config::expression expression_value;
     int32_t int_value;
     float float_value;
     std::string string_value;
 };
 
 struct YYLTYPE;
-extern int yylex(YYTypeStruct* yylval_param, YYLTYPE* yylloc,struct class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner);
+extern int yylex(YYTypeStruct* yylval_param, YYLTYPE* yylloc, Config::class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner);
 extern int yyparse();
-void yyerror(YYLTYPE* yylloc, struct class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner, const char* s);
+void yyerror(YYLTYPE* yylloc, Config::class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner, const char* s);
 
 %}
 
@@ -73,35 +73,35 @@ void yyerror(YYLTYPE* yylloc, struct class_ &result, struct lineref &lineref, pa
 
 %start start
 
-%param {struct class_ &result} {struct lineref &lineref} {parserStaticData& staticData} {void* yyscanner}
+%param {Config::class_ &result} {struct lineref &lineref} {parserStaticData& staticData} {void* yyscanner}
 %locations
 
 %%
-start: definitions { result = new_class({}, {}, $1, false); }
+start: definitions { result = Config::class_($1); }
 
-definitions:  /* empty */ { $$ = std::vector<definition>(); }
-            | definitions class_ { $$.emplace_back(rap_type::rap_class, $2); }
-            | definitions variable { $$.emplace_back(rap_type::rap_var, $2); }
+definitions:  /* empty */ { $$ = std::vector<Config::definition>(); }
+            | definitions class_ { $$.emplace_back(Config::rap_type::rap_class, $2); }
+            | definitions variable { $$.emplace_back(Config::rap_type::rap_var, $2); }
 ;
 
-class_:        T_CLASS T_NAME T_LBRACE definitions T_RBRACE T_SEMICOLON { $$ = new_class($2, {}, $4, false); }
-            | T_CLASS T_NAME T_COLON T_NAME T_LBRACE definitions T_RBRACE T_SEMICOLON { $$ = new_class($2, $4, $6, false); }
-            | T_CLASS T_NAME T_SEMICOLON { $$ = new_class($2, {}, {}, false); }
-            | T_CLASS T_NAME T_COLON T_NAME T_SEMICOLON { $$ = new_class($2, $4, {}, false); }
-            | T_DELETE T_NAME T_SEMICOLON { $$ = new_class($2, {}, {}, true); }
+class_:        T_CLASS T_NAME T_LBRACE definitions T_RBRACE T_SEMICOLON { $$ = Config::class_($2, $4, false); }
+            | T_CLASS T_NAME T_COLON T_NAME T_LBRACE definitions T_RBRACE T_SEMICOLON { $$ = Config::class_($2, $4, $6, false); }
+            | T_CLASS T_NAME T_SEMICOLON { $$ = Config::class_($2, {}, false); }
+            | T_CLASS T_NAME T_COLON T_NAME T_SEMICOLON { $$ = Config::class_($2, $4, {}, false); }
+            | T_DELETE T_NAME T_SEMICOLON { $$ = Config::class_($2, {}, true); }
 ;
 
-variable:     T_NAME T_EQUALS expression T_SEMICOLON { $$ = new_variable(rap_type::rap_var, $1, $3); }
-            | T_NAME T_LBRACKET T_RBRACKET T_EQUALS expression T_SEMICOLON { $$ = new_variable(rap_type::rap_array, $1, $5); }
-            | T_NAME T_LBRACKET T_RBRACKET T_PLUS T_EQUALS expression T_SEMICOLON { $$ = new_variable(rap_type::rap_array_expansion, $1, $6); }
+variable:     T_NAME T_EQUALS expression T_SEMICOLON { $$ = Config::variable(Config::rap_type::rap_var, $1, $3); }
+            | T_NAME T_LBRACKET T_RBRACKET T_EQUALS expression T_SEMICOLON { $$ = Config::variable(Config::rap_type::rap_array, $1, $5); }
+            | T_NAME T_LBRACKET T_RBRACKET T_PLUS T_EQUALS expression T_SEMICOLON { $$ = Config::variable(Config::rap_type::rap_array_expansion, $1, $6); }
 ;
 
-expression:   T_INT { $$ = new_expression(rap_type::rap_int, &$1); }
-            | T_FLOAT { $$ = new_expression(rap_type::rap_float, &$1); }
-            | T_STRING { $$ = new_expression(rap_type::rap_string, &$1); }
-            | T_LBRACE expressions T_RBRACE { $$ = new_expression(rap_type::rap_array, &$2); }
-            | T_LBRACE expressions T_COMMA T_RBRACE { $$ = new_expression(rap_type::rap_array, &$2); }
-            | T_LBRACE T_RBRACE { $$ = new_expression(rap_type::rap_array, NULL); }
+expression:   T_INT { $$ = Config::expression(Config::rap_type::rap_int, $1); }
+            | T_FLOAT { $$ = Config::expression(Config::rap_type::rap_float, $1); }
+            | T_STRING { $$ = Config::expression(Config::rap_type::rap_string, $1); }
+            | T_LBRACE expressions T_RBRACE { $$ = Config::expression(Config::rap_type::rap_array, {$2}); }
+            | T_LBRACE expressions T_COMMA T_RBRACE { $$ = Config::expression(Config::rap_type::rap_array, {$2}); }
+            | T_LBRACE T_RBRACE { $$ = Config::expression(Config::rap_type::rap_array, std::vector<Config::expression>{}); }
 ;
 
 expressions:  expression { $$ = $1; }
@@ -112,35 +112,31 @@ expressions:  expression { $$ = $1; }
 
 void yyset_extra(void* user_defined, void* yyscanner);
 void* yyget_extra(void* yyscanner);
-void yyset_lineno(int _line_number , void* yyscanner)
 int yylex_init(void** ptr_yy_globals);
 int yylex_destroy(void* yyscanner);
 
-std::optional<struct class_> parse_file(std::istream& f, struct lineref &lineref) {
-    struct class_ result;
-
+bool parse_file(std::istream& f, struct lineref &lineref, Config::class_ &result) {
 #if YYDEBUG == 1
     yydebug = 1;
 #endif
     void* yyscanner;
     yylex_init(&yyscanner);
     yyset_extra(&f, yyscanner);
-    yyset_lineno(0, yyscanner);
     parserStaticData staticData;
 
 
     do { 
         if (yyparse(result, lineref, staticData, yyscanner)) {
-            return {};
+            return false;
         }
     } while(!f.eof());
 
     yylex_destroy(yyscanner);
 
-    return result;
+    return true;
 }
 
-void yyerror(YYLTYPE* yylloc, struct class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner, const char* s) {
+void yyerror(YYLTYPE* yylloc, Config::class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner, const char* s) {
     int line = 0;
 
     auto& inputStream = *static_cast<std::istream*>(yyget_extra(yyscanner));

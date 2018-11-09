@@ -173,5 +173,6 @@ void escape_string(char *buffer, size_t buffsize);
 std::string unescape_string(std::string_view buffer);
 
 void write_compressed_int(uint32_t integer, FILE *f);
+void write_compressed_int(uint32_t integer, std::ostream &f);
 
 uint32_t read_compressed_int(FILE *f);

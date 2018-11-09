@@ -159,7 +159,7 @@ int read_material(struct material *material) {
     strcat(rapified_path, ".armake.bin"); // it is assumed that this doesn't exist
 
     // Rapify file
-    if (rapify_file(actual_path, rapified_path)) {
+    if (Rapifier::rapify_file(actual_path, rapified_path)) {
         lwarningf(current_target, -1, "Failed to rapify %s.\n", actual_path);
         return 2;
     }

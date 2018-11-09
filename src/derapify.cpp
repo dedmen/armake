@@ -707,7 +707,7 @@ int derapify_class(FILE *f_source, FILE *f_target, char *classname, int level) {
     strcpy(indentation_wrapping, indentation);
     if (args.indent)
         indentation_wrapping[strlen(indentation_wrapping) - strlen(args.indent)] = 0;
-    else
+    else if (strlen(indentation_wrapping) > 0) 
         indentation_wrapping[strlen(indentation_wrapping) - 4] = 0;
 
     if (strlen(classname) == 0) {

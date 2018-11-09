@@ -642,6 +642,31 @@ void write_compressed_int(uint32_t integer, FILE *f) {
     }
 }
 
+void write_compressed_int(uint32_t integer, std::ostream &f) {
+    uint64_t temp;
+    char c;
+
+    temp = (uint64_t)integer;
+
+    if (temp == 0) {
+        f.put(0);
+    }
+
+    while (temp > 0) {
+        if (temp > 0x7f) {
+            // there are going to be more entries
+            c = 0x80 | (temp & 0x7f);
+            f.put(c);
+            temp = temp >> 7;
+        }
+        else {
+            // last entry
+            c = temp;
+            f.put(c);
+            temp = 0;
+        }
+    }
+}
 
 uint32_t read_compressed_int(FILE *f) {
     int i;

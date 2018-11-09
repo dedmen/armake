@@ -34,123 +34,110 @@
 #include "preprocess.h"
 #include "rapify.h"
 #include <sstream>
+#include <iostream>
+#include <fstream>
+#include <iterator>
 //#include "rapify.tab.h"
 
-struct class_ new_class(std::string name, std::string parent, std::vector<definition> content, bool is_delete) {
-    struct class_ result;
+bool parse_file(std::istream& f, struct lineref &lineref, Config::class_ &result);
 
-    result.name = name;
-    result.parent = parent;
-    result.is_delete = is_delete;
-    result.content = std::move(content);
+Config Config::fromPreprocessedText(std::istream &input, lineref& lineref) {
+    Config output;
+    output.config = std::make_shared<class_>();
+    input.seekg(0);
+    auto result = parse_file(input, lineref, *output.config);
 
-    return result;
-}
-
-
-struct variable new_variable(rap_type type, std::string name, struct expression expression) {
-    struct variable result;
-
-    result.type = type;
-    if (type == rap_type::rap_array_expansion) __debugbreak();
-    result.name = std::move(name);
-    result.expression = std::move(expression);
-
-    return result;
-}
-
-
-expression new_expression(rap_type type, void *value) {
-    struct expression result;
-
-    result.type = type;
-    if (type == rap_type::rap_int) {
-        result.value = *static_cast<int *>(value);
-    } else if (type == rap_type::rap_float) {
-        result.value = *static_cast<float *>(value);
-    } else if (type == rap_type::rap_string) {
-        result.value = *static_cast<std::string*>(value);
-    } else if (type == rap_type::rap_array || type == rap_type::rap_array_expansion) {
-        auto vec = std::vector<expression>();
-        if (value) //might be empty array
-            vec.emplace_back(*static_cast<struct expression *>(value));
-        result.value = std::move(vec);
+    if (!result) {
+        errorf("Failed to parse config.\n");
+        return {};
     }
-
-    return result;
+    return output;
 }
 
-void rapify_expression(struct expression &expr, FILE *f_target) {
+void Config::toBinarized(std::ostream& output) {
+    if (!hasConfig()) return;
+
+    Rapifier::rapify(getConfig(), output);
+}
+
+void Rapifier::rapify_expression(Config::expression &expr, std::ostream &f_target) {
     uint32_t num_entries;
 
-    if (expr.type == rap_type::rap_array) {
-        auto& elements = std::get<std::vector<expression>>(expr.value);
+    if (expr.type == Config::rap_type::rap_array) {
+        auto& elements = std::get<std::vector<Config::expression>>(expr.value);
         num_entries = elements.size();
 
         write_compressed_int(num_entries, f_target);
 
         for (auto& exp : elements) {
-            fputc((char)((exp.type == rap_type::rap_string) ? 0 :
-                ((exp.type == rap_type::rap_float) ? 1 :
-                ((exp.type == rap_type::rap_int) ? 2 : 3))), f_target);
+            f_target.put(
+                static_cast<char>((exp.type == Config::rap_type::rap_string)
+                                      ? 0
+                                      : ((exp.type == Config::rap_type::rap_float)
+                                             ? 1
+                                             : ((exp.type == Config::rap_type::rap_int) ? 2 : 3)))
+            );
             rapify_expression(exp, f_target);
         }
-    } else if (expr.type == rap_type::rap_int) {
-        fwrite(&std::get<int>(expr.value), 4, 1, f_target);
-    } else if (expr.type == rap_type::rap_float) {
-        fwrite(&std::get<float>(expr.value), 4, 1, f_target);
+    } else if (expr.type == Config::rap_type::rap_int) {
+        f_target.write(reinterpret_cast<char*>(&std::get<int>(expr.value)), 4);
+    } else if (expr.type == Config::rap_type::rap_float) {
+        f_target.write(reinterpret_cast<char*>(&std::get<float>(expr.value)), 4);
     } else {
-        fwrite(std::get<std::string>(expr.value).c_str(), std::get<std::string>(expr.value).length() + 1, 1, f_target);
+        f_target.write(
+            std::get<std::string>(expr.value).c_str(),
+            std::get<std::string>(expr.value).length() + 1
+        );
     }
 }
 
-
-void rapify_variable(struct variable &var, FILE *f_target) {
-    if (var.type == rap_type::rap_var) {
-        fputc(1, f_target);
-        fputc((char)((var.expression.type == rap_type::rap_string) ? 0 : ((var.expression.type == rap_type::rap_float) ? 1 : 2 )), f_target);
+void Rapifier::rapify_variable(Config::variable &var, std::ostream &f_target) {
+    if (var.type == Config::rap_type::rap_var) {
+        f_target.put(1);
+        f_target.put(static_cast<char>((var.expression.type == Config::rap_type::rap_string)
+                                           ? 0
+                                           : ((var.expression.type == Config::rap_type::rap_float) ? 1 : 2)));
     } else {
-        fputc((char)((var.type == rap_type::rap_array) ? 2 : 5), f_target);
-        if (var.type == rap_type::rap_array_expansion) {
-            fwrite("\x01\0\0\0", 4, 1, f_target);
+        f_target.put(static_cast<char>((var.type == Config::rap_type::rap_array) ? 2 : 5));
+        if (var.type == Config::rap_type::rap_array_expansion) {
+            f_target.write("\x01\0\0\0", 4);
         }
     }
 
-    fwrite(var.name.c_str(), var.name.length() + 1, 1, f_target);
+    f_target.write(var.name.c_str(), var.name.length() + 1);
     rapify_expression(var.expression, f_target);
 }
 
-
-void rapify_class(struct class_ &class__, FILE *f_target) {
+void Rapifier::rapify_class(Config::class_ &class__, std::ostream &f_target) {
     uint32_t fp_temp;
 
     if (class__.content.empty()) {
         // extern or delete class
-        fputc((char)(class__.is_delete ? 4 : 3), f_target);
-        fwrite(class__.name.c_str(), class__.name.length() + 1, 1, f_target);
+        f_target.put(static_cast<char>(class__.is_delete ? 4 : 3));
+        f_target.write(class__.name.c_str(), class__.name.length() + 1);
         return;
     }
     
     if (!class__.parent.empty())
-        fwrite(class__.parent.c_str(), class__.parent.length() + 1, 1, f_target);
+        f_target.write(class__.parent.c_str(), class__.parent.length() + 1);
     else
-        fputc(0, f_target);
+        f_target.put(0);
 
     uint32_t num_entries = class__.content.size();
 
     write_compressed_int(num_entries, f_target);
     for (auto& def : class__.content) {
-        if (def.type == rap_type::rap_var) {
-            auto& c = std::get<variable>(def.content);
+        if (def.type == Config::rap_type::rap_var) {
+            auto& c = std::get<Config::variable>(def.content);
             rapify_variable(c, f_target);
         } else {
-            auto& c = std::get<class_>(def.content);
+            auto& c = std::get<Config::class_>(def.content);
             if (!c.content.empty()) {
-                fputc(0, f_target);
-                fwrite(c.name.c_str(),
-                    c.name.length() + 1, 1, f_target);
-                c.offset_location = ftell(f_target);
-                fwrite("\0\0\0\0", 4, 1, f_target);
+                f_target.put(0);
+                f_target.write(c.name.c_str(),
+                    c.name.length() + 1);
+                c.offset_location = f_target.tellp();
+                f_target.write("\0\0\0\0", 4);
             } else {
                 rapify_class(c, f_target);
             }
@@ -158,88 +145,58 @@ void rapify_class(struct class_ &class__, FILE *f_target) {
     }
 
     for (auto& def : class__.content) {
-        if (def.type != rap_type::rap_class) continue;
-        auto& c = std::get<class_>(def.content);
+        if (def.type != Config::rap_type::rap_class) continue;
+        auto& c = std::get<Config::class_>(def.content);
         if (c.content.empty())  continue;
         
-        fp_temp = ftell(f_target);
-        fseek(f_target, c.offset_location, SEEK_SET);
-        fwrite(&fp_temp, sizeof(uint32_t), 1, f_target);
-        fseek(f_target, 0, SEEK_END);
+        fp_temp = f_target.tellp();
+        f_target.seekp(c.offset_location);
+        
+        f_target.write(reinterpret_cast<char*>(&fp_temp), sizeof(uint32_t));
+        f_target.seekp(0, std::ofstream::end);
 
         rapify_class(c, f_target);
     }
 }
 
-int rapify_file(char *source, char *target) {
+bool Rapifier::isRapified(std::istream& input) {
+    auto sourcePos = input.tellg();
+    char buffer[4];
+    input.read(buffer, 4);
+    input.seekg(sourcePos);
+    return strncmp(buffer, "\0raP", 4) == 0;
+}
+
+int Rapifier::rapify_file(char *source, char *target) {
     /*
      * Resolves macros/includes and rapifies the given file. If source and
      * target are identical, the target is overwritten.
      *
      * Returns 0 on success and a positive integer on failure.
      */
-
-    extern const char *current_target;
-    FILE *f_target;
-    int i;
-    int datasize;
-    int success;
-    char buffer[4096];
-    uint32_t enum_offset = 0;
-
     current_target = source;
 
+    std::ifstream sourceFile(source, std::ifstream::in | std::ifstream::binary);
+
     // Check if the file is already rapified
-    FILE *f_temp;
-    f_temp = fopen(source, "rb");
-    if (!f_temp) {
-        errorf("Failed to open %s.\n", source);
-        return 1;
-    }
-
-    fread(buffer, 4, 1, f_temp);
-    if (strncmp(buffer, "\0raP", 4) == 0) {
-        if ((strcmp(source, target)) == 0) {
-            fclose(f_temp);
-            return 0;
-        }
-
+    if (isRapified(sourceFile)) {
         if (strcmp(target, "-") == 0) {
-            f_target = stdout;
-        } else {
-            f_target = fopen(target, "wb");
-            if (!f_target) {
-                errorf("Failed to open %s.\n", target);
-                fclose(f_temp);
-                return 2;
-            }
+            std::copy(std::istreambuf_iterator<char>(sourceFile),
+                std::istreambuf_iterator<char>(),
+                std::ostream_iterator<char>(std::cout));
         }
-
-        fseek(f_temp, 0, SEEK_END);
-        datasize = ftell(f_temp);
-
-        fseek(f_temp, 0, SEEK_SET);
-        for (i = 0; datasize - i >= sizeof(buffer); i += sizeof(buffer)) {
-            fread(buffer, sizeof(buffer), 1, f_temp);
-            fwrite(buffer, sizeof(buffer), 1, f_target);
+        else {
+            std::ofstream targetFile(target, std::ofstream::out | std::ofstream::binary);
+            std::copy(std::istreambuf_iterator<char>(sourceFile),
+                std::istreambuf_iterator<char>(),
+                std::ostream_iterator<char>(targetFile));
         }
-        fread(buffer, datasize - i, 1, f_temp);
-        fwrite(buffer, datasize - i, 1, f_target);
-
-        fclose(f_temp);
-        if (strcmp(target, "-") != 0)
-            fclose(f_target);
-
-        return 0;
-    } else {
-        fclose(f_temp);
     }
-
     Preprocessor preproc;
 
     std::list<constant> constants;
     std::stringstream fileToPreprocess;
-    success = preproc.preprocess(source, fileToPreprocess, constants);
+    int success = preproc.preprocess(source, fileToPreprocess, constants);
 
     current_target = source;
 
@@ -249,100 +206,43 @@ int rapify_file(char *source, char *target) {
     }
 
 #if 0
-    FILE *f_dump;
-
     char dump_name[2048];
     sprintf(dump_name, "armake_preprocessed_%u.dump", (unsigned)time(NULL));
-    printf("Done with preprocessing, dumping preprocessed config to %s.\n", dump_name);
 
-    f_dump = fopen(dump_name, "wb");
-    fseek(f_temp, 0, SEEK_END);
-    datasize = ftell(f_temp);
-
-    fseek(f_temp, 0, SEEK_SET);
-    for (i = 0; datasize - i >= sizeof(buffer); i += sizeof(buffer)) {
-        fread(buffer, sizeof(buffer), 1, f_temp);
-        fwrite(buffer, sizeof(buffer), 1, f_dump);
-    }
-
-    fread(buffer, datasize - i, 1, f_temp);
-    fwrite(buffer, datasize - i, 1, f_dump);
-
-    fclose(f_dump);
+    std::copy(std::istreambuf_iterator<char>(fileToPreprocess),
+        std::istreambuf_iterator<char>(),
+        std::ostream_iterator<char>(std::ofstream(dump_name)));
 #endif
 
-    fileToPreprocess.seekg(0);
-    auto result = parse_file(fileToPreprocess, preproc.getLineref());
+    auto parsedConfig = Config::fromPreprocessedText(fileToPreprocess, preproc.getLineref());
 
-    if (!result) {
+    if (!parsedConfig.hasConfig()) {
         errorf("Failed to parse config.\n");
         return 1;
     }
 
-#ifdef _WIN32
-    char temp_name2[2048];
-#endif
-
-    // Rapify file
     if (strcmp(target, "-") == 0) {
-#ifdef _WIN32
-        if (!GetTempFileName(".", "amk", 0, temp_name2)) {
-            errorf("Failed to get temp file name (system error %i).\n", GetLastError());
-            return 1;
-        }
-        f_target = fopen(temp_name2, "wb+");
-#else
-        f_target = tmpfile();
-#endif
-
-        if (!f_target) {
-            errorf("Failed to open temp file.\n");
-#ifdef _WIN32
-            DeleteFile(temp_name2);
-#endif
-            return 1;
-        }
+        rapify(parsedConfig.getConfig(), std::cout);
     } else {
-        f_target = fopen(target, "wb+");
-        if (!f_target) {
-            errorf("Failed to open %s.\n", target);
-            fclose(f_temp);
-            return 2;
-        }
+        std::ofstream targetFile(target, std::ofstream::out | std::ofstream::binary);
+        rapify(parsedConfig.getConfig(), targetFile);
     }
-    fwrite("\0raP", 4, 1, f_target);
-    fwrite("\0\0\0\0\x08\0\0\0", 8, 1, f_target);
-    fwrite(&enum_offset, 4, 1, f_target); // this is replaced later
-
-    rapify_class(*result, f_target);
-
-    enum_offset = ftell(f_target);
-    fwrite("\0\0\0\0", 4, 1, f_target); // fuck enums
-    fseek(f_target, 12, SEEK_SET);
-    fwrite(&enum_offset, 4, 1, f_target);
-
-    if (strcmp(target, "-") == 0) {
-        fseek(f_target, 0, SEEK_END);
-        datasize = ftell(f_target);
-
-        fseek(f_target, 0, SEEK_SET);
-        for (i = 0; datasize - i >= sizeof(buffer); i += sizeof(buffer)) {
-            fread(buffer, sizeof(buffer), 1, f_target);
-            fwrite(buffer, sizeof(buffer), 1, stdout);
-        }
-        fread(buffer, datasize - i, 1, f_target);
-        fwrite(buffer, datasize - i, 1, stdout);
-    }
-
-    fclose(f_temp);
-    fclose(f_target);
-
-#ifdef _WIN32
-    if (strcmp(target, "-") == 0)
-        DeleteFile(temp_name2);
-#endif
-
-    //free_class(result);
 
     return 0;
+}
+
+int Rapifier::rapify(Config::class_& cls, std::ostream& output) {
+    
+    uint32_t enum_offset = 0;
+    output.write("\0raP", 4);
+    output.write("\0\0\0\0\x08\0\0\0", 8);
+    output.write(reinterpret_cast<char*>(&enum_offset), 4); // this is replaced later
+
+    rapify_class(cls, output);
+
+    enum_offset = output.tellp();
+    output.write("\0\0\0\0", 4); // fuck enums
+    output.seekp(12);
+    output.write(reinterpret_cast<char*>(&enum_offset), 4);
+    return 0; //#TODO this can't fail...
 }

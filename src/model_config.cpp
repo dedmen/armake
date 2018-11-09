@@ -329,7 +329,7 @@ int read_model_config(char *path, struct skeleton_ *skeleton) {
         return -1;
 
     // Rapify file
-    success = rapify_file(model_config_path, rapified_path);
+    success = Rapifier::rapify_file(model_config_path, rapified_path);
     if (success) {
         errorf("Failed to rapify model config.\n");
         return 1;

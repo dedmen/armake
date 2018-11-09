@@ -353,7 +353,7 @@ int binarize(char *source, char *target) {
     if (!strcmp(fileext, ".cpp") ||
             !strcmp(fileext, ".rvmat") ||
             !strcmp(fileext, ".ext"))
-        return rapify_file(source, target);
+        return Rapifier::rapify_file(source, target);
 
     if (!strcmp(fileext, ".p3d") ||
             !strcmp(fileext, ".rtm")) {

@@ -20,103 +20,119 @@
 
 
 #include "preprocess.h"
+#include <utility>
 #include <variant>
 #include <vector>
+#include <memory>
 
 
 #define MAXCLASSES 4096
 
-enum class rap_type {
-    rap_class,
-    rap_var,
-    rap_array,
-    rap_array_expansion,
-    rap_string,
-    rap_int,
-    rap_float
-};
-//enum {
-//    TYPE_CLASS,
-//    TYPE_VAR,
-//    TYPE_ARRAY,
-//    TYPE_ARRAY_EXPANSION,
-//    TYPE_STRING,
-//    TYPE_INT,
-//    TYPE_FLOAT
-//};
+class Config {
+public:
+    enum class rap_type {
+        rap_class,
+        rap_var,
+        rap_array,
+        rap_array_expansion,
+        rap_string,
+        rap_int,
+        rap_float
+    };
 
-struct definitions {
-    struct definition *head;
-};
+    struct definition;
 
-struct class_ {
-    std::string name;
-    std::string parent;
-    bool is_delete;
-    long offset_location;
-    std::vector<definition> content;
-};
+    struct class_ {
+        class_() = default;
+        class_(std::string name, std::string parent, std::vector<definition> content, bool is_delete)
+            : name(std::move(name)), parent(std::move(parent)), is_delete(is_delete), content(std::move(content)) {}
+        class_(std::string name, std::vector<definition> content, bool is_delete)
+            : name(std::move(name)), parent(std::move(parent)), is_delete(is_delete), content(std::move(content)) {}
+        class_(std::vector<definition> content)
+            : content(std::move(content)) {}
 
-struct expression {
-    expression() {}
-    expression(rap_type t, int32_t x): type(t), value(x) {}
-    expression(rap_type t, float x): type(t), value(x) {}
-    expression(rap_type t, std::string x): type(t), value(std::move(x)) {}
-    expression(rap_type t, std::vector<expression> x): type(t), value(std::move(x)) {}
-    rap_type type;
-    std::variant<int32_t, float, std::string, std::vector<expression>> value;
-    void addArrayElement(expression exp) {
-        if (std::holds_alternative<std::vector<expression>>(value)) {
-            std::get<std::vector<expression>>(value).emplace_back(std::move(exp));
-            return;
+        std::string name;
+        std::string parent;
+        bool is_delete{ false };
+        long offset_location{ 0 };
+        std::vector<definition> content;
+    };
+
+    struct expression {
+        expression() = default;
+        expression(rap_type t, int32_t x) : type(t), value(x) {}
+        expression(rap_type t, float x) : type(t), value(x) {}
+        expression(rap_type t, std::string x) : type(t), value(std::move(x)) {}
+        expression(rap_type t, std::vector<expression> x) : type(t), value(std::move(x)) {}
+        rap_type type;
+        std::variant<int32_t, float, std::string, std::vector<expression>> value;
+        void addArrayElement(expression exp) {
+            if (std::holds_alternative<std::vector<expression>>(value)) {
+                std::get<std::vector<expression>>(value).emplace_back(std::move(exp));
+                return;
+            }
+
+            std::vector<expression> newVal;
+
+            std::visit([&newVal](auto&& arg) {
+
+                using T = std::decay_t<decltype(arg)>;
+                if constexpr (std::is_same_v<T, int>)
+                    newVal.emplace_back(rap_type::rap_int, arg);
+                else if constexpr (std::is_same_v<T, float>)
+                    newVal.emplace_back(rap_type::rap_float, arg);
+                else if constexpr (std::is_same_v<T, std::string>)
+                    newVal.emplace_back(rap_type::rap_string, arg);
+            }, value);
+            newVal.emplace_back(std::move(exp));
+            value = newVal;
+            type = rap_type::rap_array;
         }
-            
+    };
 
-        std::vector<expression> newVal;
+    struct variable {
+        variable() = default;
+        variable(rap_type type, std::string name, struct expression expression)
+            : type(type), name(name), expression(std::move(expression)) {}
+        rap_type type;
+        std::string name;
+        struct expression expression;
+    };
 
-        std::visit([&newVal](auto&& arg) {
+    struct definition {
+        definition(rap_type t, variable v) : type(t), content(std::move(v)) {}
+        definition(rap_type t, class_ c) : type(t), content(std::move(c)) {}
+        rap_type type;
+        std::variant<variable, class_> content;
+    };
 
-            using T = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<T, int>)
-                newVal.emplace_back(rap_type::rap_int, arg);
-            else if constexpr (std::is_same_v<T, float>)
-                newVal.emplace_back(rap_type::rap_float, arg);
-            else if constexpr (std::is_same_v<T, std::string>)
-                newVal.emplace_back(rap_type::rap_string, arg);
-        }, value);
-        newVal.emplace_back(std::move(exp));
-        value = newVal;
-        type = rap_type::rap_array;
+    static Config fromPreprocessedText(std::istream &input, struct lineref &lineref);
+    static Config fromBinarized(std::istream &input);
+    void toBinarized(std::ostream &output);
+
+    bool hasConfig() { return static_cast<bool>(config); }
+    class_& getConfig() { return *config; }
+
+    operator class_&(){
+        return *config;
     }
-};
 
-struct variable {
-    rap_type type;
-    std::string name;
-    struct expression expression;
-};
-
-struct definition {
-    definition(){}
-    definition(rap_type t, variable v) : type(t), content(std::move(v)) {}
-    definition(rap_type t, class_ c): type(t), content(std::move(c)) {}
-    rap_type type;
-    std::variant<variable, class_> content;
+private:
+    std::shared_ptr<class_> config;
 };
 
 
-std::optional<struct class_> parse_file(std::istream &f, struct lineref &lineref);
+class Rapifier {
+    static void rapify_expression(Config::expression &expr, std::ostream &f_target);
 
-struct class_ new_class(std::string name, std::string parent, std::vector<definition> content, bool is_delete);
+    static void rapify_variable(Config::variable &var, std::ostream &f_target);
 
-struct variable new_variable(rap_type type, std::string name, struct expression expression);
+    static void rapify_class(Config::class_ &class_, std::ostream &f_target);
 
-expression new_expression(rap_type type, void *value);
+    static bool isRapified(std::istream &input);
+public:
 
-void rapify_expression(struct expression &expr, FILE *f_target);
+    static  int rapify_file(char *source, char *target);
 
-void rapify_variable(struct variable &var, FILE *f_target);
-
-void rapify_class(struct class_ &class_, FILE *f_target);
-
-int rapify_file(char *source, char *target);
+    static int rapify(Config::class_& cls, std::ostream& output);
+};
