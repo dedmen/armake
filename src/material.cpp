@@ -23,6 +23,8 @@
 #include <string.h>
 //#include <unistd.h>
 #include <math.h>
+#include <fstream>
+#include <sstream>
 
 #include "args.h"
 #include "filesystem.h"
@@ -98,7 +100,6 @@ int read_material(struct material *material) {
      */
 
     extern const char *current_target;
-    FILE *f;
     char actual_path[2048];
     char rapified_path[2048];
     char config_path[2048];
@@ -131,8 +132,8 @@ int read_material(struct material *material) {
     material->num_textures = 1;
     material->num_transforms = 1;
 
-    material->textures = (struct stage_texture *)safe_malloc(sizeof(struct stage_texture) * material->num_textures);
-    material->transforms = (struct stage_transform *)safe_malloc(sizeof(struct stage_transform) * material->num_transforms);
+    material->textures.resize(material->num_textures);
+    material->transforms.resize(material->num_transforms);
 
     material->textures[0].path[0] = 0;
     material->textures[0].texture_filter = 3;
@@ -155,23 +156,24 @@ int read_material(struct material *material) {
 
     current_target = temp;
 
+    std::ifstream inputFile(actual_path, std::ifstream::in | std::ifstream::binary);
+    std::stringstream rapifiedMaterial;
+
     strcpy(rapified_path, actual_path);
     strcat(rapified_path, ".armake.bin"); // it is assumed that this doesn't exist
 
     // Rapify file
-    if (Rapifier::rapify_file(actual_path, rapified_path)) {
+    if (Rapifier::rapify_file(inputFile, rapifiedMaterial, actual_path)) {
         lwarningf(current_target, -1, "Failed to rapify %s.\n", actual_path);
         return 2;
     }
 
     current_target = material->path.c_str();
 
-    // Open rapified file
-    f = fopen(rapified_path, "rb");
-    if (!f) {
-        lwarningf(current_target, -1, "Failed to open rapified material.\n");
-        return 3;
-    }
+
+    rapifiedMaterial.seekg(0);
+    FILE* f;
+    //#TODO continue here
 
     // Read colors
     read_float_array(f, "emmisive", (float *)&material->emissive, 4); // "Did you mean: emissive?"
@@ -186,7 +188,7 @@ int read_material(struct material *material) {
     // Read shaders
     if (!read_string(f, "PixelShaderID", shader, sizeof(shader))) {
         for (i = 0; i < sizeof(pixelshaders) / sizeof(struct shader_ref); i++) {
-            if (stricmp((char *)pixelshaders[i].name, shader) == 0)
+            if (stricmp((char *)pixelshaders[i].name.data(), shader) == 0)
                 break;
         }
         if (i == sizeof(pixelshaders) / sizeof(struct shader_ref)) {
@@ -198,7 +200,7 @@ int read_material(struct material *material) {
 
     if (!read_string(f, "VertexShaderID", shader, sizeof(shader))) {
         for (i = 0; i < sizeof(vertexshaders) / sizeof(struct shader_ref); i++) {
-            if (stricmp((char *)vertexshaders[i].name, shader) == 0)
+            if (stricmp((char *)vertexshaders[i].name.data(), shader) == 0)
                 break;
         }
         if (i == sizeof(vertexshaders) / sizeof(struct shader_ref)) {
@@ -216,18 +218,15 @@ int read_material(struct material *material) {
         material->num_textures++;
         material->num_transforms++;
     }
-
-    free(material->textures);
-    free(material->transforms);
-    material->textures = (struct stage_texture *)safe_malloc(sizeof(struct stage_texture) * material->num_textures);
-    material->transforms = (struct stage_transform *)safe_malloc(sizeof(struct stage_transform) * material->num_transforms);
+    material->textures.resize(material->num_textures);
+    material->transforms.resize(material->num_transforms);
 
     for (i = 0; i < material->num_textures; i++) {
         if (i == 0) {
             material->textures[i].path[0] = 0;
         } else {
             snprintf(config_path, sizeof(config_path), "Stage%i >> texture", i);
-            read_string(f, config_path, material->textures[i].path, sizeof(material->textures[i].path));
+            //read_string(f, config_path, material->textures[i].path, sizeof(material->textures[i].path));
         }
 
         material->textures[i].texture_filter = 3;
@@ -253,7 +252,7 @@ int read_material(struct material *material) {
         }
     }
 
-    read_string(f, "StageTI >> texture", material->dummy_texture.path, sizeof(material->dummy_texture.path));
+    //read_string(f, "StageTI >> texture", material->dummy_texture.path, sizeof(material->dummy_texture.path));
 
     // Clean up
     fclose(f);

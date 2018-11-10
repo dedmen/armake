@@ -132,7 +132,8 @@ class Rapifier {
     static bool isRapified(std::istream &input);
 public:
 
-    static  int rapify_file(char *source, char *target);
+    static int rapify_file(const char* source, const char* target);
+    static int rapify_file(std::istream &source, std::ostream &target, const char* sourceFileName);
 
     static int rapify(Config::class_& cls, std::ostream& output);
 };

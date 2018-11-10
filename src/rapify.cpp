@@ -167,38 +167,43 @@ bool Rapifier::isRapified(std::istream& input) {
     return strncmp(buffer, "\0raP", 4) == 0;
 }
 
-int Rapifier::rapify_file(char *source, char *target) {
+int Rapifier::rapify_file(const char* source, const char* target) {
+
+    std::ifstream sourceFile(source, std::ifstream::in | std::ifstream::binary);
+
+    if (strcmp(target, "-") == 0) {
+        return rapify_file(sourceFile, std::cout, source);
+    }
+    else {
+        std::ofstream targetFile(target, std::ofstream::out | std::ofstream::binary);
+        return rapify_file(sourceFile, targetFile, source);
+    }
+
+
+}
+int Rapifier::rapify_file(std::istream &source, std::ostream &target, const char* sourceFileName) {
     /*
      * Resolves macros/includes and rapifies the given file. If source and
      * target are identical, the target is overwritten.
      *
      * Returns 0 on success and a positive integer on failure.
      */
-    current_target = source;
-
-    std::ifstream sourceFile(source, std::ifstream::in | std::ifstream::binary);
+    current_target = sourceFileName;
 
     // Check if the file is already rapified
-    if (isRapified(sourceFile)) {
-        if (strcmp(target, "-") == 0) {
-            std::copy(std::istreambuf_iterator<char>(sourceFile),
-                std::istreambuf_iterator<char>(),
-                std::ostream_iterator<char>(std::cout));
-        }
-        else {
-            std::ofstream targetFile(target, std::ofstream::out | std::ofstream::binary);
-            std::copy(std::istreambuf_iterator<char>(sourceFile),
-                std::istreambuf_iterator<char>(),
-                std::ostream_iterator<char>(targetFile));
-        }
+    if (isRapified(source)) {
+        std::copy(std::istreambuf_iterator<char>(source),
+            std::istreambuf_iterator<char>(),
+            std::ostream_iterator<char>(target));
+        return 0;
     }
     Preprocessor preproc;
 
     std::list<constant> constants;
     std::stringstream fileToPreprocess;
-    int success = preproc.preprocess(source, fileToPreprocess, constants);
+    int success = preproc.preprocess(sourceFileName, source, fileToPreprocess, constants);
 
-    current_target = source;
+    current_target = sourceFileName;
 
     if (success) {
         errorf("Failed to preprocess %s.\n", source);
@@ -221,12 +226,7 @@ int Rapifier::rapify_file(char *source, char *target) {
         return 1;
     }
 
-    if (strcmp(target, "-") == 0) {
-        rapify(parsedConfig.getConfig(), std::cout);
-    } else {
-        std::ofstream targetFile(target, std::ofstream::out | std::ofstream::binary);
-        rapify(parsedConfig.getConfig(), targetFile);
-    }
+    rapify(parsedConfig.getConfig(), target);
 
     return 0;
 }
