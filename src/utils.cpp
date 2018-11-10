@@ -685,3 +685,18 @@ uint32_t read_compressed_int(FILE *f) {
 
     return (uint32_t)result;
 }
+
+uint32_t read_compressed_int(std::istream & f) {
+    uint64_t result = 0;
+
+    for (int i = 0; i <= 4; i++) {
+        
+        uint8_t temp = f.get();
+        result = result | ((temp & 0x7f) << (i * 7));
+
+        if (temp < 0x80)
+            break;
+    }
+
+    return (uint32_t)result;
+}

@@ -33,10 +33,12 @@
 #include "utils.h"
 #include "preprocess.h"
 #include "rapify.h"
+#include "derapify.h"
 #include <sstream>
 #include <iostream>
 #include <fstream>
 #include <iterator>
+#include <functional>
 //#include "rapify.tab.h"
 
 bool parse_file(std::istream& f, struct lineref &lineref, Config::class_ &result);
@@ -54,10 +56,106 @@ Config Config::fromPreprocessedText(std::istream &input, lineref& lineref) {
     return output;
 }
 
+Config Config::fromBinarized(std::istream & input) {
+    Config output;
+    output.config = std::make_shared<class_>();
+    input.seekg(0);
+
+
+    auto success = derapify_class(input, *output.config, 0);
+
+    if (success) {
+        errorf("Failed to parse config.\n");
+        return {};
+    }
+    return output;
+}
+
 void Config::toBinarized(std::ostream& output) {
     if (!hasConfig()) return;
 
     Rapifier::rapify(getConfig(), output);
+}
+
+void Config::toPlainText(std::ostream& output) {
+    if(!hasConfig()) return;
+
+    std::function<void(std::vector<Config::expression>&)> printArray = [&](std::vector<Config::expression>& data) {
+        output << "{";
+        for (auto& it : data) {
+            switch (it.type) {
+            case Config::rap_type::rap_string:
+                    output << "\"" << std::get<std::string>(it.value) << "\", ";
+                    break;
+            case Config::rap_type::rap_int:
+                output << std::get<int>(it.value) << ", ";
+                break;
+            case Config::rap_type::rap_float:
+                output << std::get<float>(it.value) << ", ";
+                break;
+            case Config::rap_type::rap_array:
+                printArray(std::get<std::vector<Config::expression>>(it.value));
+                break;
+            default:
+                errorf("Unknown array element type %i.\n", (int)it.type);
+            }
+
+        };
+        output.seekp(-2, std::ostream::_Seekcur); //remove last ,
+        output << "}";
+    };
+
+    std::function<void(std::vector<Config::definition>&)> printClass = [&](std::vector<Config::definition>& data) {
+        for (auto& it : data) {
+            switch (it.type) {
+            case Config::rap_type::rap_class: {
+                auto& c = std::get<Config::class_>(it.content);
+
+                if (c.is_delete || c.is_definition) {
+                    if (c.is_delete)
+                        output << "delete " << c.name << ";\n";
+                    else
+                        output << "class " << c.name << ";\n";
+                } else {
+                    output << "class " << c.name;
+                    if (!c.parent.empty())
+                        output << ": " << c.parent << " {\n";
+                    else
+                        output << "{\n";
+                    printClass(c.content);
+
+                }
+            } break;
+            case Config::rap_type::rap_var: {
+                auto& var = std::get<Config::variable>(it.content);
+                auto& exp = var.expression;
+
+                switch (exp.type) {
+                case Config::rap_type::rap_string:
+                    output << var.name << " = \"" << std::get<std::string>(exp.value) << "\";\n";
+                    break;
+                case Config::rap_type::rap_int:
+                    output << var.name << " = " << std::get<int>(exp.value) << ";\n";
+                    break;
+                case Config::rap_type::rap_float:
+                    output << var.name << " = " << std::get<float>(exp.value) << ";\n";
+                    break;
+                case Config::rap_type::rap_array:
+                case Config::rap_type::rap_array_expansion:
+                    output << var.name << (exp.type == Config::rap_type::rap_array_expansion) ? " += ": " = ";
+                    printArray(std::get<std::vector<Config::expression>>(exp.value));
+                    output << ";\n";
+                    break;
+                }
+
+
+            } break;
+            default:
+                errorf("Unknown class entry type %i.\n", (int)it.type);
+            }
+        };
+    };
+    printClass(getConfig().content);
 }
 
 void Rapifier::rapify_expression(Config::expression &expr, std::ostream &f_target) {

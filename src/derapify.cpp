@@ -23,6 +23,8 @@
 #include <string.h>
 //#include <unistd.h>
 #include <math.h>
+#include <iostream>
+#include <fstream>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -632,125 +634,96 @@ int read_classes(FILE *f, char *config_path, std::vector<std::string> output, si
 }
 
 
-int derapify_array(FILE *f_source, FILE *f_target) {
-    char buffer[4096];
-    uint32_t num_entries;
-    int i;
-    int success;
-    uint8_t type;
-    uint32_t fp_tmp;
-    int32_t long_value;
-    float float_value;
+std::optional<std::vector<Config::expression>> derapify_array(std::istream &source) {
+    std::vector<Config::expression> output;
+    uint32_t num_entries = read_compressed_int(source);
 
-    num_entries = read_compressed_int(f_source);
-
-    for (i = 0; i < num_entries; i++) {
-        fread(&type, sizeof(uint8_t), 1, f_source);
+    for (int i = 0; i < num_entries; i++) {
+        uint8_t type = source.get();
 
         if (type == 0) {
-            fp_tmp = ftell(f_source);
-            fgets(buffer, sizeof(buffer), f_source);
-            fseek(f_source, fp_tmp + strlen(buffer) + 1, SEEK_SET);
+            char buffer[4096];
+            uint32_t fp_tmp = source.tellg();
+            source.read(buffer, sizeof(buffer));
+            source.seekg(fp_tmp + strlen(buffer) + 1);
 
             escape_string(buffer, sizeof(buffer));
 
-            fprintf(f_target, "\"%s\"", buffer);
+            output.emplace_back(Config::rap_type::rap_string, std::string(buffer));
         } else if (type == 1) {
-            fread(&float_value, sizeof(float_value), 1, f_source);
-            fprintf(f_target, "%g", float_value);
-        } else if (type == 2) {
-            fread(&long_value, sizeof(long_value), 1, f_source);
-            fprintf(f_target, "%i", long_value);
-        } else if (type == 3) {
-            success = derapify_array(f_source, f_target);
+            float float_value;
+            source.read((char*)&float_value, sizeof(float_value));
 
-            if (success) {
+            output.emplace_back(Config::rap_type::rap_float, float_value);
+        } else if (type == 2) {
+            int32_t long_value;
+            source.read((char*)&long_value, sizeof(long_value));
+
+            output.emplace_back(Config::rap_type::rap_int, long_value);
+        } else if (type == 3) {
+            auto result = derapify_array(source);
+
+            if (!result) {
                 errorf("Failed to derapify subarray.\n");
-                return 1;
+                return {};
             }
+            output.emplace_back(Config::rap_type::rap_array, std::move(*result));
         } else {
             errorf("Unknown array element type %i.\n", type);
-            return 2;
+            return {};
         }
-
-        if (i < num_entries - 1)
-            fputs(", ", f_target);
     }
 
-    return 0;
+    return output;
 }
 
 
-int derapify_class(FILE *f_source, FILE *f_target, Config::class_ &curClass, int level) {
+int derapify_class(std::istream &source, Config::class_ &curClass, int level) {
     extern struct arguments args;
     char buffer[4096];
-    char inherited[2048];
-    char indentation[2048];
-    char indentation_wrapping[2048];
-    int i;
-    int success;
-    uint32_t num_entries;
-    uint32_t fp_tmp;
-    uint32_t fp_class;
-    int32_t long_value;
-    float float_value;
-
-    indentation[0] = 0;
-    for (i = 0; i < level; i++) {
-        if (args.indent)
-            strcat(indentation, args.indent);
-        else
-            strcat(indentation, "    ");
-    }
-
-    strcpy(indentation_wrapping, indentation);
-    if (args.indent)
-        indentation_wrapping[strlen(indentation_wrapping) - strlen(args.indent)] = 0;
-    else if (strlen(indentation_wrapping) > 0) 
-        indentation_wrapping[strlen(indentation_wrapping) - 4] = 0;
 
     if (curClass.name.empty()) {
-        fseek(f_source, 16, SEEK_SET);
+        source.seekg(16);
     }
 
-    fp_tmp = ftell(f_source);
-    fgets(inherited, sizeof(inherited), f_source);
-    fseek(f_source, fp_tmp + strlen(inherited) + 1, SEEK_SET);
+    uint32_t fp_tmp = source.tellg();
+    std::string inherited;
+    std::getline(source, inherited);
+    source.seekg(fp_tmp + inherited.length() + 1);
 
-    num_entries = read_compressed_int(f_source);
+    uint32_t num_entries = read_compressed_int(source);
 
     if (!curClass.name.empty()) {
-        if (strlen(inherited) > 0)
-            snprintf(buffer, sizeof(buffer), "%sclass %s: %s {", indentation_wrapping, curClass.name.c_str(), inherited);
-        else
-            snprintf(buffer, sizeof(buffer), "%sclass %s {", indentation_wrapping, curClass.name.c_str());
-        fwrite(buffer, strlen(buffer), 1, f_target);
-
-        if (num_entries > 0)
-            fputc('\n', f_target);
+        curClass.parent = inherited;
     }
 
-    for (i = 0; i < num_entries; i++) {
-        uint8_t type;
-        fread(&type, sizeof(type), 1, f_source);
-
+    for (int i = 0; i < num_entries; i++) {
+        uint8_t type = source.get();
+ 
         if (type == 0) { //class definition
-            fp_tmp = ftell(f_source);
-            fgets(buffer, sizeof(buffer), f_source);
-            fseek(f_source, fp_tmp + strlen(buffer) + 1, SEEK_SET);
+            fp_tmp = source.tellg();
+            source.read(buffer, sizeof(buffer));
+            source.seekg(fp_tmp + strlen(buffer) + 1);
+            //#TODO try reading here with std::getline. Might be able to get rid of the seek. Or just skip the null byte then
 
-            fread(&fp_class, sizeof(uint32_t), 1, f_source);
+            uint32_t fp_class;
+            source.read((char*)&fp_class, sizeof(uint32_t));
 
-            fseek(f_source, fp_class, SEEK_SET);
-            create new subclass with name "buffer" and pass it
-            success = derapify_class(f_source, f_target, buffer, level + 1);
+            source.seekg(fp_class);
+            //create new subclass with name "buffer" and pass it
+
+            Config::class_ subclass;
+
+            auto success = derapify_class(source, subclass, level + 1);
 
             if (success) {
                 errorf("Failed to derapify class \"%s\".\n", buffer);
                 return success;
             }
 
-            fseek(f_source, fp_tmp + strlen(buffer) + sizeof(uint32_t) + 1, SEEK_SET);
+            curClass.content.emplace_back(Config::rap_type::rap_class ,std::move(subclass));
+
+            source.seekg(fp_tmp + strlen(buffer) + sizeof(uint32_t) + 1);
         } else if (type == 1) { //value
             //#TODO make enums for these
             //Var has special type
@@ -758,72 +731,83 @@ int derapify_class(FILE *f_source, FILE *f_target, Config::class_ &curClass, int
             //1 float
             //2 int
 
-            fread(&type, sizeof(type), 1, f_source);
+            type = source.get();
 
-            fp_tmp = ftell(f_source);
-            fgets(buffer, sizeof(buffer), f_source);
-            fseek(f_source, fp_tmp + strlen(buffer) + 1, SEEK_SET);
+            fp_tmp = source.tellg();
+            source.read(buffer, sizeof(buffer));
+            source.seekg(fp_tmp + strlen(buffer) + 1);
 
-            fprintf(f_target, "%s%s = ", indentation, buffer);
+            std::string valueName = buffer;
+
+            Config::rap_type valueType;
+            Config::expression valueContent;
 
             if (type == 0) {
-                fp_tmp = ftell(f_source);
-                fgets(buffer, sizeof(buffer), f_source);
-                fseek(f_source, fp_tmp + strlen(buffer) + 1, SEEK_SET);
+                fp_tmp = source.get();
+                source.read(buffer, sizeof(buffer));
+                source.seekg(fp_tmp + strlen(buffer) + 1);
 
                 escape_string(buffer, sizeof(buffer));
 
-                fprintf(f_target, "\"%s\"", buffer);
+                valueType = valueContent.type = Config::rap_type::rap_string;
+                valueContent.value = std::string(buffer);
             } else if (type == 1) {
-                fread(&float_value, sizeof(float_value), 1, f_source);
-                fprintf(f_target, "%g", float_value);
+                float float_value;
+                source.read((char*)&float_value, sizeof(float_value));
+
+                valueType = valueContent.type = Config::rap_type::rap_float;
+                valueContent.value = float_value;
             } else if (type == 2) {
-                fread(&long_value, sizeof(long_value), 1, f_source);
-                fprintf(f_target, "%i", long_value);
+                int32_t long_value;
+                source.read((char*)&long_value, sizeof(long_value));
+
+                valueType = valueContent.type = Config::rap_type::rap_int;
+                valueContent.value = long_value;
             } else {
                 errorf("Unknown token type %i.\n", type);
                 return 1;
             }
-            fputs(";\n", f_target);
+
+            curClass.content.emplace_back(Config::rap_type::rap_var, Config::variable(valueType, std::move(valueName), std::move(valueContent)));
+
         } else if (type == 2 || type == 5) { //array or array append
             if (type == 5)
-                fseek(f_source, 4, SEEK_CUR);
+                source.seekg(4, std::istream::_Seekcur);
 
-            fp_tmp = ftell(f_source);
-            fgets(buffer, sizeof(buffer), f_source);
-            fseek(f_source, fp_tmp + strlen(buffer) + 1, SEEK_SET);
+            fp_tmp = source.tellg();
+            source.read(buffer, sizeof(buffer));
+            source.seekg(fp_tmp + strlen(buffer) + 1);
 
-            if (type == 2)
-                fprintf(f_target, "%s%s[] = {", indentation, buffer);
-            else
-                fprintf(f_target, "%s%s[] += {", indentation, buffer);
+            std::string valueName = buffer;
+            auto rapType = type == 2 ? Config::rap_type::rap_array : Config::rap_type::rap_array_expansion;
+
+            //create expression I think and let derapify array return array of definitions or so
+            //or just append by ref. That's probably better
+            auto result = derapify_array(source);
+            if (result) { //#TODO throw error if not? derapify array already throws errors
+
+                curClass.content.emplace_back(Config::rap_type::rap_var,
+                    Config::variable(rapType, std::move(valueName),
+                        Config::expression(rapType, std::move(*result))
+                    )
+                );
+            }
 
 
-            create expression I think and let derapify array return array of definitions or so
-            or just append by ref. That's probably better
-
-            success = derapify_array(f_source, f_target);
-
-            fputs("};\n", f_target);
         } else if (type == 3 || type == 4) { //3 is class 4 is delete class
-            fp_tmp = ftell(f_source);
-            fgets(buffer, sizeof(buffer), f_source);
-            fseek(f_source, fp_tmp + strlen(buffer) + 1, SEEK_SET);
+            fp_tmp = source.tellg();
+            source.read(buffer, sizeof(buffer));
+            source.seekg(fp_tmp + strlen(buffer) + 1);
 
-            if (type == 3)
-                fprintf(f_target, "%sclass %s;\n", indentation, buffer);
-            else
-                fprintf(f_target, "%sdelete %s;\n", indentation, buffer);
+            Config::class_ subclass;
+            subclass.name = buffer;
+            subclass.is_delete = type == 4;
+
+            curClass.content.emplace_back(Config::rap_type::rap_class, std::move(subclass));
         } else {
             errorf("Unknown class entry type %i.\n", type);
             return 2;
         }
-    }
-
-    if (!curClass.name.empty()) {
-        if (num_entries > 0)
-            fputs(indentation_wrapping, f_target);
-        fputs("};\n", f_target);
     }
 
     return 0;
@@ -852,79 +836,52 @@ int derapify_file(char *source, char *target) {
     else
         current_target = source;
 
-    // Open source
-    if (strcmp(source, "-") == 0) {
-#ifdef _WIN32
-        if (!GetTempFileName(".", "amk", 0, temp_name)) {
-            errorf("Failed to get temp file name (system error %i).\n", GetLastError());
-            return 1;
-        }
-        f_source = fopen(temp_name, "wb+");
-#else
-        f_source = tmpfile();
-#endif
+    bool fromConsoleInput = strcmp(source, "-") == 0;
+    bool toConsoleOutput = strcmp(target, "-") == 0;
 
-        if (!f_source) {
-            errorf("Failed to open temp file.\n");
-#ifdef _WIN32
-            DeleteFile(temp_name);
-#endif
-            return 1;
-        }
+    //#TODO check if input is rapified
+    //if (strncmp(buffer, "\0raP", 4) != 0) {
+    //    errorf("Source file is not a rapified config.\n");
+    //    if (strcmp(source, "-") != 0)
+    //        fclose(f_source);
+    //    return -3;
+    //}
 
-        while ((bytes = fread(buffer, 1, sizeof(buffer), stdin)))
-            fwrite(buffer, bytes, 1, f_source);
+    Config x;
 
-        fseek(f_source, 0, SEEK_SET);
-    } else {
-        f_source = fopen(source, "rb");
-        if (!f_source) {
-            errorf("Failed to open source file.\n");
-            return 2;
-        }
+    
+    if (fromConsoleInput)
+        x = Config::fromBinarized(std::cin);
+    else
+        x = Config::fromBinarized(std::ifstream(source, std::ifstream::binary));
+
+    if (!x.hasConfig()) {
+        errorf("Failed to derapify root class.\n");
+        return 1;
     }
 
-    fgets(buffer, 5, f_source);
-    if (strncmp(buffer, "\0raP", 4) != 0) {
-        errorf("Source file is not a rapified config.\n");
-        if (strcmp(source, "-") != 0)
-            fclose(f_source);
-        return -3;
-    }
+    if (toConsoleOutput)
+        x.toPlainText(std::cout);
+    else
+        x.toPlainText(std::ofstream(target));
 
-    if (strcmp(target, "-") == 0) {
-        f_target = stdout;
-    } else {
-        f_target = fopen(target, "wb");
-        if (!f_target) {
-            if (strcmp(source, "-") != 0)
-                fclose(f_source);
-            errorf("Failed to open target file.\n");
-            return 2;
-        }
-    }
+    return 0;
+}
+int derapify_file(std::istream& source, std::ostream& target) {
+
     auto outClass = std::make_shared<Config::class_>();
 
-    success = derapify_class(f_source, f_target, *outClass, 0);
+    auto success = derapify_class(source, *outClass, 0);
 
-    fclose(f_source);
+    //#TODO write to file
 
-#ifdef _WIN32
-    if (strcmp(source, "-") == 0)
-        DeleteFile(temp_name);
-#endif
-
-    if (strcmp(target, "-") != 0)
-        fclose(f_target);
 
     if (success) {
         errorf("Failed to derapify root class.\n");
         return 1;
     }
-
     return 0;
 }
-
 
 int cmd_derapify() {
     extern struct arguments args;

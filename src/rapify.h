@@ -54,6 +54,7 @@ public:
         std::string name;
         std::string parent;
         bool is_delete{ false };
+        bool is_definition{ false };
         long offset_location{ 0 };
         std::vector<definition> content;
     };
@@ -93,7 +94,7 @@ public:
     struct variable {
         variable() = default;
         variable(rap_type type, std::string name, struct expression expression)
-            : type(type), name(name), expression(std::move(expression)) {}
+            : type(type), name(std::move(name)), expression(std::move(expression)) {}
         rap_type type;
         std::string name;
         struct expression expression;
@@ -102,6 +103,8 @@ public:
     struct definition {
         definition(rap_type t, variable v) : type(t), content(std::move(v)) {}
         definition(rap_type t, class_ c) : type(t), content(std::move(c)) {}
+        definition(rap_type t, variable &&v) : type(t), content(std::move(v)) {}
+        definition(rap_type t, class_ &&c) : type(t), content(std::move(c)) {}
         rap_type type;
         std::variant<variable, class_> content;
     };
@@ -109,6 +112,7 @@ public:
     static Config fromPreprocessedText(std::istream &input, struct lineref &lineref);
     static Config fromBinarized(std::istream &input);
     void toBinarized(std::ostream &output);
+    void toPlainText(std::ostream &output);
 
     bool hasConfig() { return static_cast<bool>(config); }
     class_& getConfig() { return *config; }

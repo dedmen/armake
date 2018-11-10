@@ -44,6 +44,11 @@ int read_string_array(FILE *f, char *config_path, std::vector<std::string> buffe
 
 int read_classes(FILE *f, char *config_path, std::vector<std::string> output, size_t buffsize);
 
+int derapify_class(std::istream &source, Config::class_ &curClass, int level);
+
+//#TODO move to rapifier class
+
 int derapify_file(char *source, char *target);
+int derapify_file(std::istream& source, std::ostream& target);
 
 int cmd_derapify();

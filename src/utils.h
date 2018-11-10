@@ -176,3 +176,4 @@ void write_compressed_int(uint32_t integer, FILE *f);
 void write_compressed_int(uint32_t integer, std::ostream &f);
 
 uint32_t read_compressed_int(FILE *f);
+uint32_t read_compressed_int(std::istream& f);

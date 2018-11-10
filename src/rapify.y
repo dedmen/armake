@@ -86,7 +86,7 @@ definitions:  /* empty */ { $$ = std::vector<Config::definition>(); }
 
 class_:        T_CLASS T_NAME T_LBRACE definitions T_RBRACE T_SEMICOLON { $$ = Config::class_($2, $4, false); }
             | T_CLASS T_NAME T_COLON T_NAME T_LBRACE definitions T_RBRACE T_SEMICOLON { $$ = Config::class_($2, $4, $6, false); }
-            | T_CLASS T_NAME T_SEMICOLON { $$ = Config::class_($2, {}, false); }
+            | T_CLASS T_NAME T_SEMICOLON { $$ = Config::class_($2, {}, false); &&.is_definition = true; }
             | T_CLASS T_NAME T_COLON T_NAME T_SEMICOLON { $$ = Config::class_($2, $4, {}, false); }
             | T_DELETE T_NAME T_SEMICOLON { $$ = Config::class_($2, {}, true); }
 ;
