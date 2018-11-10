@@ -48,31 +48,20 @@
 #include "utils.h"
 #include "paaconverter.h"
 
-#define DXT1     0xFF01
-#define DXT3     0xFF03
-#define DXT5     0xFF05
-#define ARGB4444 0x4444
-#define ARGB1555 0x1555
-#define AI88     0x8080
-
 #define COMP_NONE 0
 #define COMP_LZSS 1
 #define COMP_LZO  2
 
-int PAAConverter::img2dxt1(unsigned char *input, unsigned char *output, int width, int height) {
+void PAAConverter::img2dxt1(unsigned char *input, unsigned char *output, int width, int height) {
     /*
      * Converts image data to DXT1 data.
-     *
-     * Returns 0 on success and a positive integer on failure.
      */
 
     unsigned char img_block[64];
     unsigned char dxt_block[8];
-    int i;
-    int j;
 
-    for (i = 0; i < height; i += 4) {
-        for (j = 0; j < width; j += 4) {
+    for (int i = 0; i < height; i += 4) {
+        for (int j = 0; j < width; j += 4) {
             memcpy(img_block +  0, input + (i + 0) * width * 4 + j * 4, 16);
             memcpy(img_block + 16, input + (i + 1) * width * 4 + j * 4, 16);
             memcpy(img_block + 32, input + (i + 2) * width * 4 + j * 4, 16);
@@ -83,25 +72,18 @@ int PAAConverter::img2dxt1(unsigned char *input, unsigned char *output, int widt
             memcpy(output + (i / 4) * (width / 4) * sizeof(dxt_block) + (j / 4) * sizeof(dxt_block), dxt_block, sizeof(dxt_block));
         }
     }
-
-    return 0;
 }
 
-
-int PAAConverter::img2dxt5(unsigned char *input, unsigned char *output, int width, int height) {
+void PAAConverter::img2dxt5(unsigned char *input, unsigned char *output, int width, int height) {
     /*
      * Converts image data to DXT5 data.
-     *
-     * Returns 0 on success and a positive integer on failure.
      */
 
     unsigned char img_block[64];
     unsigned char dxt_block[16];
-    int i;
-    int j;
 
-    for (i = 0; i < height; i += 4) {
-        for (j = 0; j < width; j += 4) {
+    for (int i = 0; i < height; i += 4) {
+        for (int j = 0; j < width; j += 4) {
             memcpy(img_block +  0, input + (i + 0) * width * 4 + j * 4, 16);
             memcpy(img_block + 16, input + (i + 1) * width * 4 + j * 4, 16);
             memcpy(img_block + 32, input + (i + 2) * width * 4 + j * 4, 16);
@@ -112,276 +94,11 @@ int PAAConverter::img2dxt5(unsigned char *input, unsigned char *output, int widt
             memcpy(output + (i / 4) * (width / 4) * sizeof(dxt_block) + (j / 4) * sizeof(dxt_block), dxt_block, sizeof(dxt_block));
         }
     }
-
-    return 0;
 }
 
-
-int calculate_average_color(unsigned char *imgdata, int num_pixels, unsigned char color[4]) {
-    uint32_t total_color[4];
-    int i;
-    int j;
-
-    memset(total_color, 0, 16);
-
-    for (i = 0; i < num_pixels; i++) {
-        for (j = 0; j < 4; j++)
-            total_color[j] += (uint32_t)imgdata[i * 4 + j];
-    }
-
-    for (i = 0; i < 4; i++)
-        color[i] = (unsigned char)(total_color[i ^ 2] / num_pixels);
-
-    return 0;
-}
-
-
-int calculate_maximum_color(unsigned char *imgdata, int num_pixels, unsigned char color[4]) {
-    int i;
-    int j;
-
-    memset(color, 0, 4);
-
-    for (i = 0; i < num_pixels; i++) {
-        for (j = 0; j < 4; j++) {
-            if (imgdata[(i ^ 2) * 4 + j] > color[j])
-                color[j] = imgdata[(i ^ 2) * 4 + j];
-        }
-    }
-
-    return 0;
-}
-
-
-int PAAConverter::img2paa(std::istream &source, std::ostream &target) {
-    /*
-     * Converts source image to target PAA.
-     *
-     * Returns 0 on success and a positive integer on failure.
-     */
-
-    extern struct arguments args;
-
-    uint32_t offsets[16];
-    uint16_t paatype;
-    uint16_t width;
-    int num_channels;
-    int w;
-    int h;
-    int i;
-    lzo_uint out_len;
-    unsigned char color[4];
-    
-    if (!args.paatype) {
-        paatype = 0;
-    } else if (stricmp("DXT1", args.paatype) == 0) {
-        paatype = DXT1;
-    } else if (stricmp("DXT3", args.paatype) == 0) {
-        errorf("DXT3 support is not implemented.\n");
-        return 4;
-    } else if (stricmp("DXT5", args.paatype) == 0) {
-        paatype = DXT5;
-    } else if (stricmp("ARGB4444", args.paatype) == 0) {
-        errorf("ARGB4444 support is not implemented.\n");
-        return 4;
-    } else if (stricmp("ARGB1555", args.paatype) == 0) {
-        errorf("ARGB1555 support is not implemented.\n");
-        return 4;
-    } else if (stricmp("AI88", args.paatype) == 0) {
-        errorf("AI88 support is not implemented.\n");
-        return 4;
-    } else {
-        errorf("Unrecognized PAA type \"%s\".\n", args.paatype);
-        return 4;
-    }
-
-    stbi_io_callbacks cbacks = {
-    [](void *user, char *data, int size) -> int {//read
-        auto& stream = *static_cast<std::istream*>(user);
-        return stream.readsome(data, size);
-    },
-    [](void *user, int n) {//skip
-          auto& stream = *static_cast<std::istream*>(user);
-          stream.ignore(n);
-    },
-    [](void *user) -> int {//eof
-          auto& stream = *static_cast<std::istream*>(user);
-          return stream.eof() ? 1 : 0;
-    }
-    };
-
-
-    unsigned char* tmp = stbi_load_from_callbacks(&cbacks, &source, &w, &h, &num_channels, 4);
-    if (!tmp) {
-        errorf("Failed to load image.\n");
-        return 1;
-    }
-
-    width = w;
-    uint16_t height = h;
-
-    // Check if alpha channel is necessary
-    if (num_channels == 4) {
-        num_channels--;
-        for (i = 3; i < width * height * 4; i += 4) {
-            if (tmp[i] < 0xff) {
-                num_channels++;
-                break;
-            }
-        }
-    }
-
-    // Unless told otherwise, use DXT5 for alpha stuff and DXT1 for everything else
-    if (paatype == 0) {
-        paatype = (num_channels == 4) ? DXT5 : DXT1;
-    }
-
-    if (width % 4 != 0 || height % 4 != 0) {
-        errorf("Dimensions are no multiple of 4.\n");
-        stbi_image_free(tmp);
-        return 2;
-    }
-
-    std::vector<unsigned char> imgdata;
-    imgdata.resize(width * height * 4);
-    memcpy(imgdata.data(), tmp, width * height * 4);
-    stbi_image_free(tmp);
-
-
-    // Type
-    target.write(reinterpret_cast<char*>(&paatype), sizeof(paatype));
-
-    // TAGGs
-    target.write("GGATCGVA", 8);
-    target.write("\x04\x00\x00\x00", 4);
-    calculate_average_color(imgdata.data(), width * height, color);
-    target.write(reinterpret_cast<const char*>(color), sizeof(color));
-
-    target.write("GGATCXAM", 8);
-    target.write("\x04\x00\x00\x00", 4);
-    calculate_maximum_color(imgdata.data(), width * height, color);
-    target.write(reinterpret_cast<const char*>(color), sizeof(color));
-
-    target.write("GGATSFFO", 8);
-    target.write("\x40\x00\x00\x00", 4);
-    long fp_offsets = target.tellp();
-    memset(offsets, 0, sizeof(offsets));
-    target.write(reinterpret_cast<const char*>(offsets), sizeof(offsets));
-
-    // Palette
-    target.write("\x00\x00", 2);
-
-    // MipMaps
-    for (i = 0; i < 15; i++) {
-        uint32_t datalen = width * height;
-        if (paatype == DXT1)
-            datalen /= 2;
-
-        std::vector<unsigned char> outputdata;
-        outputdata.resize(datalen);
-
-        // Convert to output format
-        switch (paatype) {
-            case DXT1:
-                if (img2dxt1(imgdata.data(), outputdata.data(), width, height)) {
-                    errorf("Failed to convert image data to DXT1.\n");
-                    return 5;
-                }
-                break;
-            case DXT5:
-                if (img2dxt5(imgdata.data(), outputdata.data(), width, height)) {
-                    errorf("Failed to convert image data to DXT5.\n");
-                    return 5;
-                }
-                break;
-            default:
-                return 5;
-        }
-
-        // LZO compression
-        bool compressed = args.compress && datalen > LZO1X_MEM_COMPRESS;
-
-        if (compressed) {
-            auto tmpCopy = outputdata;
-
-            std::vector<unsigned char> LZOWorkMem;
-            LZOWorkMem.resize(LZO1X_MEM_COMPRESS);
-
-            lzo_uint in_len = datalen;
-
-            if (lzo_init() != LZO_E_OK) {
-                errorf("Failed to initialize LZO for compression.\n");
-                return 6;
-	    }
-            if (lzo1x_1_compress(tmpCopy.data(), in_len, outputdata.data(), &out_len, LZOWorkMem.data()) != LZO_E_OK) {
-                errorf("Failed to compress image data.\n");
-                return 6;
-            }
-
-            datalen = out_len;
-        }
-
-        // Write to file
-        offsets[i] = target.tellp();
-        if (compressed)
-            width += 32768;
-        target.write(reinterpret_cast<char*>(&width), sizeof(width));
-        if (compressed)
-            width -= 32768;
-        target.write(reinterpret_cast<char*>(height), sizeof(height));
-        target.write(reinterpret_cast<char*>(datalen), 3);
-        target.write(reinterpret_cast<char*>(outputdata.data()), datalen);
-
-        // Resize image for next MipMap
-        width /= 2;
-        height /= 2;
-
-        if (width < 4 || height < 4) { break; }
-
-        auto tmpCpy = imgdata;
-        if (!stbir_resize_uint8(imgdata.data(), width * 2, height * 2, 0, tmpCpy.data(), width, height, 0, 4)) {
-            errorf("Failed to resize image.\n");
-            return 7;
-        }
-        imgdata = tmpCpy;
-    }
-
-    offsets[i] = target.tellp();
-    target.write("\x00\x00\x00\x00", 4);
-
-    target.write("\x00\x00", 2);
-
-    // Update offsets
-    target.seekp(fp_offsets);
-    target.write(reinterpret_cast<const char*>(offsets), sizeof(offsets));
-
-    return 0;
-}
-
-
-int PAAConverter::cmd_img2paa() {
-    extern struct arguments args;
-
-    if (args.num_positionals != 3)
-        return 128;
-
-    // check if target already exists
-    if (std::filesystem::exists(args.positionals[2]) && !args.force) {
-        errorf("File %s already exists and --force was not set.\n", args.positionals[2]);
-        return 1;
-    }
-
-    std::ifstream input(args.positionals[1], std::ifstream::in | std::ifstream::binary);
-    std::ofstream output(args.positionals[2], std::ifstream::out | std::ifstream::binary);
-
-    return img2paa(input, output);
-}
-
-int PAAConverter::dxt12img(unsigned char *input, unsigned char *output, int width, int height) {
+void PAAConverter::dxt12img(unsigned char *input, unsigned char *output, int width, int height) {
     /* Convert DXT1 data into a PNG image array. */
 
-    int i;
-    int j;
     uint8_t c[4][3];
     unsigned int clookup[16];
     unsigned int x, y, index;
@@ -407,7 +124,7 @@ int PAAConverter::dxt12img(unsigned char *input, unsigned char *output, int widt
         uint8_t cl12 : 2;
     } block;
 
-    for (i = 0; i < (width * height) / 2; i += 8) {
+    for (int i = 0; i < (width * height) / 2; i += 8) {
         memcpy(&block, input + i, 8);
 
         c[0][0] = 255 * ((63488 & block.c0) >> 11) / 31;
@@ -440,7 +157,7 @@ int PAAConverter::dxt12img(unsigned char *input, unsigned char *output, int widt
         clookup[14] = block.cl14;
         clookup[15] = block.cl15;
 
-        for (j = 0; j < 16; j++) {
+        for (int j = 0; j < 16; j++) {
             x = ((i / 8) % (width / 4)) * 4 + 3 - (j % 4);
             y = ((i / 8) / (width / 4)) * 4 + (j / 4);
             index = (y * width + x) * 4;
@@ -450,16 +167,11 @@ int PAAConverter::dxt12img(unsigned char *input, unsigned char *output, int widt
             *(output + index + 3) = 255;
         }
     }
-
-    return 0;
 }
 
-
-int PAAConverter::dxt52img(unsigned char *input, unsigned char *output, int width, int height) {
+void PAAConverter::dxt52img(unsigned char *input, unsigned char *output, int width, int height) {
     /* Convert DXT5 data into a PNG image array. */
 
-    int i;
-    int j;
     uint8_t a[8];
     unsigned int alookup[16];
     uint8_t c[4][3];
@@ -493,7 +205,7 @@ int PAAConverter::dxt52img(unsigned char *input, unsigned char *output, int widt
         uint8_t cl12 : 2;
     } block;
 
-    for (i = 0; i < width * height; i += 16) {
+    for (int i = 0; i < width * height; i += 16) {
         memcpy(&block, input + i, 16);
 
         a[0] = block.a0;
@@ -563,7 +275,7 @@ int PAAConverter::dxt52img(unsigned char *input, unsigned char *output, int widt
         clookup[14] = block.cl14;
         clookup[15] = block.cl15;
 
-        for (j = 0; j < 16; j++) {
+        for (int j = 0; j < 16; j++) {
             x = ((i / 16) % (width / 4)) * 4 + 3 - (j % 4);
             y = ((i / 16) / (width / 4)) * 4 + (j / 4);
             index = (y * width + x) * 4;
@@ -573,10 +285,237 @@ int PAAConverter::dxt52img(unsigned char *input, unsigned char *output, int widt
             *(output + index + 3) = a[alookup[j]];
         }
     }
+}
+
+int calculate_average_color(unsigned char *imgdata, int num_pixels, unsigned char color[4]) {
+    uint32_t total_color[4];
+    int i;
+    int j;
+
+    memset(total_color, 0, 16);
+
+    for (i = 0; i < num_pixels; i++) {
+        for (j = 0; j < 4; j++)
+            total_color[j] += (uint32_t)imgdata[i * 4 + j];
+    }
+
+    for (i = 0; i < 4; i++)
+        color[i] = (unsigned char)(total_color[i ^ 2] / num_pixels);
 
     return 0;
 }
 
+int calculate_maximum_color(unsigned char *imgdata, int num_pixels, unsigned char color[4]) {
+    int i;
+    int j;
+
+    memset(color, 0, 4);
+
+    for (i = 0; i < num_pixels; i++) {
+        for (j = 0; j < 4; j++) {
+            if (imgdata[(i ^ 2) * 4 + j] > color[j])
+                color[j] = imgdata[(i ^ 2) * 4 + j];
+        }
+    }
+
+    return 0;
+}
+
+int PAAConverter::img2paa(std::istream &source, std::ostream &target, PAAType paatype) {
+    /*
+     * Converts source image to target PAA.
+     *
+     * Returns 0 on success and a positive integer on failure.
+     */
+
+    extern struct arguments args;
+
+    uint32_t offsets[16];
+    uint16_t width;
+    int num_channels;
+    int w;
+    int h;
+    int i;
+    lzo_uint out_len;
+    unsigned char color[4];
+
+    switch (paatype) {
+        case PAAType::DXT1:
+        case PAAType::DXT5:
+            break;
+        case PAAType::DXT3:
+            errorf("DXT3 support is not implemented.\n");
+            return 4;
+        case PAAType::ARGB4444:
+            errorf("ARGB4444 support is not implemented.\n");
+            return 4;
+        case PAAType::ARGB1555:
+            errorf("ARGB1555 support is not implemented.\n");
+            return 4;
+        case PAAType::AI88:
+            errorf("AI88 support is not implemented.\n");
+            return 4;
+        default:
+            errorf("Unrecognized PAA type \"%s\".\n", args.paatype);
+            return 4;
+    }
+
+    stbi_io_callbacks cbacks = {
+    [](void *user, char *data, int size) -> int {//read
+        auto& stream = *static_cast<std::istream*>(user);
+        return stream.readsome(data, size);
+    },
+    [](void *user, int n) {//skip
+          auto& stream = *static_cast<std::istream*>(user);
+          stream.ignore(n);
+    },
+    [](void *user) -> int {//eof
+          auto& stream = *static_cast<std::istream*>(user);
+          return stream.eof() ? 1 : 0;
+    }
+    };
+
+
+    unsigned char* tmp = stbi_load_from_callbacks(&cbacks, &source, &w, &h, &num_channels, 4);
+    if (!tmp) {
+        errorf("Failed to load image.\n");
+        return 1;
+    }
+
+    width = w;
+    uint16_t height = h;
+
+    // Check if alpha channel is necessary
+    if (num_channels == 4) {
+        num_channels--;
+        for (i = 3; i < width * height * 4; i += 4) {
+            if (tmp[i] < 0xff) {
+                num_channels++;
+                break;
+            }
+        }
+    }
+
+    // Unless told otherwise, use DXT5 for alpha stuff and DXT1 for everything else
+    if (paatype == PAAType::default) {
+        paatype = (num_channels == 4) ? PAAType::DXT5 : PAAType::DXT1;
+    }
+
+    if (width % 4 != 0 || height % 4 != 0) {
+        errorf("Dimensions are no multiple of 4.\n");
+        stbi_image_free(tmp);
+        return 2;
+    }
+
+    std::vector<unsigned char> imgdata;
+    imgdata.resize(width * height * 4);
+    memcpy(imgdata.data(), tmp, width * height * 4);
+    stbi_image_free(tmp);
+
+
+    // Type
+    target.write(reinterpret_cast<char*>(&paatype), 2);
+
+    // TAGGs
+    target.write("GGATCGVA", 8);
+    target.write("\x04\x00\x00\x00", 4);
+    calculate_average_color(imgdata.data(), width * height, color);
+    target.write(reinterpret_cast<const char*>(color), sizeof(color));
+
+    target.write("GGATCXAM", 8);
+    target.write("\x04\x00\x00\x00", 4);
+    calculate_maximum_color(imgdata.data(), width * height, color);
+    target.write(reinterpret_cast<const char*>(color), sizeof(color));
+
+    target.write("GGATSFFO", 8);
+    target.write("\x40\x00\x00\x00", 4);
+    long fp_offsets = target.tellp();
+    memset(offsets, 0, sizeof(offsets));
+    target.write(reinterpret_cast<const char*>(offsets), sizeof(offsets));
+
+    // Palette
+    target.write("\x00\x00", 2);
+
+    // MipMaps
+    for (i = 0; i < 15; i++) {
+        uint32_t datalen = width * height;
+        if (paatype == PAAType::DXT1)
+            datalen /= 2;
+
+        std::vector<unsigned char> outputdata;
+        outputdata.resize(datalen);
+
+        // Convert to output format
+        switch (paatype) {
+            case PAAType::DXT1:
+                img2dxt1(imgdata.data(), outputdata.data(), width, height);
+                break;
+            case PAAType::DXT5:
+                img2dxt5(imgdata.data(), outputdata.data(), width, height);
+                break;
+            default:
+                return 5;
+        }
+
+        // LZO compression
+        bool compressed = args.compress && datalen > LZO1X_MEM_COMPRESS;
+
+        if (compressed) {
+            auto tmpCopy = outputdata;
+
+            std::vector<unsigned char> LZOWorkMem;
+            LZOWorkMem.resize(LZO1X_MEM_COMPRESS);
+
+            lzo_uint in_len = datalen;
+
+            if (lzo_init() != LZO_E_OK) {
+                errorf("Failed to initialize LZO for compression.\n");
+                return 6;
+	    }
+            if (lzo1x_1_compress(tmpCopy.data(), in_len, outputdata.data(), &out_len, LZOWorkMem.data()) != LZO_E_OK) {
+                errorf("Failed to compress image data.\n");
+                return 6;
+            }
+
+            datalen = out_len;
+        }
+
+        // Write to file
+        offsets[i] = target.tellp();
+        if (compressed)
+            width += 32768;
+        target.write(reinterpret_cast<char*>(&width), sizeof(width));
+        if (compressed)
+            width -= 32768;
+        target.write(reinterpret_cast<char*>(height), sizeof(height));
+        target.write(reinterpret_cast<char*>(datalen), 3);
+        target.write(reinterpret_cast<char*>(outputdata.data()), datalen);
+
+        // Resize image for next MipMap
+        width /= 2;
+        height /= 2;
+
+        if (width < 4 || height < 4) { break; }
+
+        auto tmpCpy = imgdata;
+        if (!stbir_resize_uint8(imgdata.data(), width * 2, height * 2, 0, tmpCpy.data(), width, height, 0, 4)) {
+            errorf("Failed to resize image.\n");
+            return 7;
+        }
+        imgdata = tmpCpy;
+    }
+
+    offsets[i] = target.tellp();
+    target.write("\x00\x00\x00\x00", 4);
+
+    target.write("\x00\x00", 2);
+
+    // Update offsets
+    target.seekp(fp_offsets);
+    target.write(reinterpret_cast<const char*>(offsets), sizeof(offsets));
+
+    return 0;
+}
 
 int PAAConverter::paa2img(std::istream &source, std::ostream &target) {
     /*
@@ -588,7 +527,7 @@ int PAAConverter::paa2img(std::istream &source, std::ostream &target) {
     char taggname[5];
     uint32_t tagglen;
     uint32_t mipmap;
-    uint16_t paatype;
+    PAAType paatype;
 
     source.read(reinterpret_cast<char*>(&paatype), 2);
 
@@ -626,16 +565,16 @@ int PAAConverter::paa2img(std::istream &source, std::ostream &target) {
     source.read(reinterpret_cast<char*>(compressedData.data()), datalen);
 
     int compression = COMP_NONE;
-    if (width % 32768 != width && (paatype == DXT1 || paatype == DXT3 || paatype == DXT5)) {
+    if (width % 32768 != width && (paatype == PAAType::DXT1 || paatype == PAAType::DXT3 || paatype == PAAType::DXT5)) {
         width -= 32768;
         compression = COMP_LZO;
     }
-    else if (paatype == ARGB4444 || paatype == ARGB1555 || paatype == AI88) {
+    else if (paatype == PAAType::ARGB4444 || paatype == PAAType::ARGB1555 || paatype == PAAType::AI88) {
         compression = COMP_LZSS;
     }
 
     int imgdatalen = width * height;
-    if (paatype == DXT1)
+    if (paatype == PAAType::DXT1)
         imgdatalen /= 2;
     std::vector<unsigned char> imgdata;
     imgdata.resize(imgdatalen);
@@ -663,28 +602,22 @@ int PAAConverter::paa2img(std::istream &source, std::ostream &target) {
     outputdata.resize(width * height * 4);
 
     switch (paatype) {
-    case DXT1:
-        if (dxt12img(imgdata.data(), outputdata.data(), width, height)) {
-            errorf("DXT1 decoding failed.\n");
-            return 4;
-        }
+    case PAAType::DXT1:
+        dxt12img(imgdata.data(), outputdata.data(), width, height);
         break;
-    case DXT3:
+    case PAAType::DXT3:
         errorf("DXT3 support is not implemented.\n");
         return 4;
-    case DXT5:
-        if (dxt52img(imgdata.data(), outputdata.data(), width, height)) {
-            errorf("DXT5 decoding failed.\n");
-            return 4;
-        }
+    case PAAType::DXT5:
+        dxt52img(imgdata.data(), outputdata.data(), width, height);
         break;
-    case ARGB4444:
+    case PAAType::ARGB4444:
         errorf("ARGB4444 support is not implemented.\n");
         return 4;
-    case ARGB1555:
+    case PAAType::ARGB1555:
         errorf("ARGB1555 support is not implemented.\n");
         return 4;
-    case AI88:
+    case PAAType::AI88:
         errorf("GRAY / AI88 support is not implemented.\n");
         return 4;
     default:
@@ -701,6 +634,31 @@ int PAAConverter::paa2img(std::istream &source, std::ostream &target) {
     }
 
     return 0;
+}
+
+int PAAConverter::cmd_img2paa() {
+    extern struct arguments args;
+
+    if (args.num_positionals != 3)
+        return 128;
+
+    // check if target already exists
+    if (std::filesystem::exists(args.positionals[2]) && !args.force) {
+        errorf("File %s already exists and --force was not set.\n", args.positionals[2]);
+        return 1;
+    }
+
+    std::ifstream input(args.positionals[1], std::ifstream::in | std::ifstream::binary);
+    std::ofstream output(args.positionals[2], std::ifstream::out | std::ifstream::binary);
+
+    auto paatype = typeFromString(args.paatype);
+    if (paatype == PAAType::invalid) {
+        errorf("Unrecognized PAA type \"%s\".\n", args.paatype);
+        return 4;
+    }
+        
+
+    return img2paa(input, output);
 }
 
 

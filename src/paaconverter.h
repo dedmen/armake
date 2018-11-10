@@ -19,18 +19,46 @@
 #pragma once
 
 class PAAConverter{
-    static int img2dxt1(unsigned char *input, unsigned char *output, int width, int height);
-    static int img2dxt5(unsigned char *input, unsigned char *output, int width, int height);
-    static int dxt12img(unsigned char *input, unsigned char *output, int width, int height);
-    static int dxt52img(unsigned char *input, unsigned char *output, int width, int height);
+    static void img2dxt1(unsigned char *input, unsigned char *output, int width, int height);
+    static void img2dxt5(unsigned char *input, unsigned char *output, int width, int height);
+    static void dxt12img(unsigned char *input, unsigned char *output, int width, int height);
+    static void dxt52img(unsigned char *input, unsigned char *output, int width, int height);
 public:
+    enum class PAAType {
+        default,
+        DXT1 = 0xFF01,
+        DXT3 = 0xFF03,
+        DXT5 = 0xFF05,
+        ARGB4444 = 0x4444,
+        ARGB1555 = 0x1555,
+        AI88 = 0x8080,
+        invalid
+    };
 
-    static int img2paa(std::istream &source, std::ostream &target);
+    static constexpr PAAType typeFromString(std::string_view str) {
+        if (str.empty())
+            return PAAType::default;
+        else if (str == "DXT1")
+            return PAAType::DXT1;
+        else if (str == "DXT3")
+            return PAAType::DXT3;
+        else if (str == "DXT5")
+            return PAAType::DXT5;
+        else if (str == "ARGB4444")
+            return PAAType::ARGB4444;
+        else if (str == "ARGB1555")
+            return PAAType::ARGB1555;
+        else if (str == "AI88")
+            return PAAType::AI88;
+        else
+            return PAAType::invalid;
+    }
 
-    static int cmd_img2paa();
-
+    static int img2paa(std::istream &source, std::ostream &target, PAAType targetType = PAAType::default);
     static int paa2img(std::istream &source, std::ostream &target);
 
+    static int cmd_img2paa();
     static int cmd_paa2img();
+
 };
 
