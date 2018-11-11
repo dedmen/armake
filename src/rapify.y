@@ -16,7 +16,7 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-%{
+%code requires {
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -52,9 +52,9 @@ extern int yylex(YYTypeStruct* yylval_param, YYLTYPE* yylloc, Config::class_ &re
 extern int yyparse();
 void yyerror(YYLTYPE* yylloc, Config::class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner, const char* s);
 
-%}
+}
 
-%define api.value.type {struct YYTypeStruct}
+%define api.value.type {YYTypeStruct}
 %pure-parser
 
 %token<string_value> T_NAME
@@ -86,7 +86,7 @@ definitions:  /* empty */ { $$ = std::vector<Config::definition>(); }
 
 class_:        T_CLASS T_NAME T_LBRACE definitions T_RBRACE T_SEMICOLON { $$ = Config::class_($2, $4, false); }
             | T_CLASS T_NAME T_COLON T_NAME T_LBRACE definitions T_RBRACE T_SEMICOLON { $$ = Config::class_($2, $4, $6, false); }
-            | T_CLASS T_NAME T_SEMICOLON { $$ = Config::class_($2, {}, false); &&.is_definition = true; }
+            | T_CLASS T_NAME T_SEMICOLON { $$ = Config::class_($2, {}, false); $$.is_definition = true; }
             | T_CLASS T_NAME T_COLON T_NAME T_SEMICOLON { $$ = Config::class_($2, $4, {}, false); }
             | T_DELETE T_NAME T_SEMICOLON { $$ = Config::class_($2, {}, true); }
 ;
@@ -99,8 +99,8 @@ variable:     T_NAME T_EQUALS expression T_SEMICOLON { $$ = Config::variable(Con
 expression:   T_INT { $$ = Config::expression(Config::rap_type::rap_int, $1); }
             | T_FLOAT { $$ = Config::expression(Config::rap_type::rap_float, $1); }
             | T_STRING { $$ = Config::expression(Config::rap_type::rap_string, $1); }
-            | T_LBRACE expressions T_RBRACE { $$ = Config::expression(Config::rap_type::rap_array, {$2}); }
-            | T_LBRACE expressions T_COMMA T_RBRACE { $$ = Config::expression(Config::rap_type::rap_array, {$2}); }
+            | T_LBRACE expressions T_RBRACE { $$ = Config::expression(Config::rap_type::rap_array, $2); }
+            | T_LBRACE expressions T_COMMA T_RBRACE { $$ = Config::expression(Config::rap_type::rap_array, $2); }
             | T_LBRACE T_RBRACE { $$ = Config::expression(Config::rap_type::rap_array, std::vector<Config::expression>{}); }
 ;
 

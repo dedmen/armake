@@ -169,6 +169,7 @@ int lookahead_word(FILE *f, char *buffer, size_t buffsize);
 int skip_whitespace(FILE *f);
 
 void escape_string(char *buffer, size_t buffsize);
+std::string escape_string(std::string_view input);
 
 std::string unescape_string(std::string_view buffer);
 

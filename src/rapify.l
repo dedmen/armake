@@ -33,23 +33,7 @@
 #include <iostream>
 #include "utils.h"
 #include "rapify.h"
-#include "rapify.tab.h"
-
-struct parserStaticData {
-    bool allow_val = false;
-    bool allow_arr = false;
-    bool last_was_class = false;
-};
-
-struct YYTypeStruct {
-    std::vector<Config::definition> definitions_value;
-    Config::class_ class_value;
-    Config::variable variable_value;
-    Config::expression expression_value;
-    int32_t int_value;
-    float float_value;
-    std::string string_value;
-};
+#include "rapify.tab.hpp"
 
 #define YY_NO_INPUT
 #define YY_NO_UNPUT

@@ -1276,7 +1276,7 @@ void write_material(FILE *f_target, struct material *material) {
     fwrite(&material->vertexshader_id, sizeof(uint32_t), 1, f_target);
     fwrite(&material->depr_1, sizeof(uint32_t), 1, f_target);
     fwrite(&material->depr_2, sizeof(uint32_t), 1, f_target);
-    fwrite( material->surface, strlen(material->surface) + 1, 1, f_target);
+    fwrite( material->surface.c_str(), material->surface.length() + 1, 1, f_target);
     fwrite(&material->depr_3, sizeof(uint32_t), 1, f_target);
     fwrite(&material->render_flags, sizeof(uint32_t), 1, f_target);
     fwrite(&material->num_textures, sizeof(uint32_t), 1, f_target);
@@ -1284,15 +1284,15 @@ void write_material(FILE *f_target, struct material *material) {
 
     for (i = 0; i < material->num_textures; i++) {
         fwrite(&material->textures[i].texture_filter, sizeof(uint32_t), 1, f_target);
-        fwrite( material->textures[i].path, strlen(material->textures[i].path) + 1, 1, f_target);
+        fwrite( material->textures[i].path.c_str(), material->textures[i].path.length() + 1, 1, f_target);
         fwrite(&material->textures[i].transform_index, sizeof(uint32_t), 1, f_target);
         fwrite(&material->dummy_texture.type11_bool, sizeof(bool), 1, f_target);
     }
 
-    fwrite( material->transforms, sizeof(struct stage_transform), material->num_transforms, f_target);
+    fwrite( material->transforms.data(), sizeof(struct stage_transform), material->num_transforms, f_target);
 
     fwrite(&material->dummy_texture.texture_filter, sizeof(uint32_t), 1, f_target);
-    fwrite( material->dummy_texture.path, strlen(material->dummy_texture.path) + 1, 1, f_target);
+    fwrite( material->dummy_texture.path.c_str(), material->dummy_texture.path.length() + 1, 1, f_target);
     fwrite(&material->dummy_texture.transform_index, sizeof(uint32_t), 1, f_target);
     fwrite(&material->dummy_texture.type11_bool, sizeof(bool), 1, f_target);
 }

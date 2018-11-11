@@ -78,12 +78,11 @@ bool Preprocessor::constants_parse(std::list<constant> &constants, std::string_v
     auto found = std::find_if(constants.begin(), constants.end(), [name](const constant& cnst) {
         return cnst.name == name;
     });
-    if (found != constants.end())
+    if (found != constants.end()) {
         constants.erase(found);
-    else
         lnwarningf(current_target, line, "redefinition-wo-undef",
-                "Constant \"%s\" is being redefined without an #undef.\n", name);
-
+            "Constant \"%s\" is being redefined without an #undef.\n", name.data());
+    }
 
     auto& c = constants.emplace_back();
     c.name = name;

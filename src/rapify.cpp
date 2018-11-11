@@ -43,6 +43,170 @@
 
 bool parse_file(std::istream& f, struct lineref &lineref, Config::class_ &result);
 
+std::optional<std::vector<Config::expression>> derapify_array(std::istream &source) {
+    std::vector<Config::expression> output;
+    uint32_t num_entries = read_compressed_int(source);
+
+    for (int i = 0; i < num_entries; i++) {
+        uint8_t type = source.get();
+
+        if (type == 0) {
+            std::string value;
+            std::getline(source, value, '\0');
+
+            output.emplace_back(Config::rap_type::rap_string, escape_string(value));
+        }
+        else if (type == 1) {
+            float float_value;
+            source.read(reinterpret_cast<char*>(&float_value), sizeof(float_value));
+
+            output.emplace_back(Config::rap_type::rap_float, float_value);
+        }
+        else if (type == 2) {
+            int32_t long_value;
+            source.read(reinterpret_cast<char*>(&long_value), sizeof(long_value));
+
+            output.emplace_back(Config::rap_type::rap_int, long_value);
+        }
+        else if (type == 3) {
+            auto result = derapify_array(source);
+
+            if (!result) {
+                errorf("Failed to derapify subarray.\n");
+                return {};
+            }
+            output.emplace_back(Config::rap_type::rap_array, std::move(*result));
+        }
+        else {
+            errorf("Unknown array element type %i.\n", type);
+            return {};
+        }
+    }
+
+    return output;
+}
+
+int derapify_class(std::istream &source, Config::class_ &curClass, int level) {
+    if (curClass.name.empty()) {
+        source.seekg(16);
+    }
+
+    uint32_t fp_tmp = source.tellg();
+    std::string inherited;
+    std::getline(source, inherited, '\0');
+
+    uint32_t num_entries = read_compressed_int(source);
+
+    if (!curClass.name.empty()) {
+        curClass.parent = inherited;
+    }
+
+    for (int i = 0; i < num_entries; i++) {
+        uint8_t type = source.get();
+
+        if (type == 0) { //class definition
+            Config::class_ subclass;
+
+
+            std::getline(source, subclass.name, '\0');
+
+            uint32_t fp_class;
+            source.read(reinterpret_cast<char*>(&fp_class), sizeof(uint32_t));
+            fp_tmp = source.tellg();
+            source.seekg(fp_class);
+
+            auto success = derapify_class(source, subclass, level + 1);
+
+            if (success) {
+                errorf("Failed to derapify class \"%s\".\n", subclass.name.c_str());
+                return success;
+            }
+
+            curClass.content.emplace_back(Config::rap_type::rap_class, std::move(subclass));
+            source.seekg(fp_tmp);
+        }
+        else if (type == 1) { //value
+         //#TODO make enums for these
+         //Var has special type
+         //0 string
+         //1 float
+         //2 int
+
+            type = source.get();
+
+            std::string valueName;
+            std::getline(source, valueName, '\0');
+
+            Config::rap_type valueType;
+            Config::expression valueContent;
+
+            if (type == 0) {
+                std::string value;
+                std::getline(source, value, '\0');
+
+                valueType = valueContent.type = Config::rap_type::rap_string;
+                valueContent.value = escape_string(value);
+            } else if (type == 1) {
+                float float_value;
+                source.read((char*)&float_value, sizeof(float_value));
+
+                valueType = valueContent.type = Config::rap_type::rap_float;
+                valueContent.value = float_value;
+            } else if (type == 2) {
+                int32_t long_value;
+                source.read((char*)&long_value, sizeof(long_value));
+
+                valueType = valueContent.type = Config::rap_type::rap_int;
+                valueContent.value = long_value;
+            } else {
+                errorf("Unknown token type %i.\n", type);
+                return 1;
+            }
+
+            curClass.content.emplace_back(Config::rap_type::rap_var, Config::variable(valueType, std::move(valueName), std::move(valueContent)));
+
+        }
+        else if (type == 2 || type == 5) { //array or array append
+            if (type == 5)
+                source.seekg(4, std::istream::_Seekcur);
+
+            std::string valueName;
+            std::getline(source, valueName, '\0');
+
+            auto rapType = type == 2 ? Config::rap_type::rap_array : Config::rap_type::rap_array_expansion;
+
+            auto result = derapify_array(source);
+            if (result) { //#TODO throw error if not? derapify array already throws errors
+
+                curClass.content.emplace_back(Config::rap_type::rap_var,
+                    Config::variable(rapType, std::move(valueName),
+                        Config::expression(rapType, std::move(*result))
+                    )
+                );
+            }
+
+
+        }
+        else if (type == 3 || type == 4) { //3 is class 4 is delete class
+            std::string className;
+            std::getline(source, className, '\0');
+
+            Config::class_ subclass;
+            subclass.name = className;
+            subclass.is_delete = type == 4;
+            subclass.is_definition = true;
+
+            curClass.content.emplace_back(Config::rap_type::rap_class, std::move(subclass));
+        }
+        else {
+            errorf("Unknown class entry type %i.\n", type);
+            return 2;
+        }
+    }
+
+    return 0;
+}
+
 Config Config::fromPreprocessedText(std::istream &input, lineref& lineref) {
     Config output;
     output.config = std::make_shared<class_>();
@@ -57,6 +221,11 @@ Config Config::fromPreprocessedText(std::istream &input, lineref& lineref) {
 }
 
 Config Config::fromBinarized(std::istream & input) {
+    if (!Rapifier::isRapified(input)) {
+        errorf("Source file is not a rapified config.\n");
+        return {};
+    }
+
     Config output;
     output.config = std::make_shared<class_>();
     input.seekg(0);
@@ -77,16 +246,32 @@ void Config::toBinarized(std::ostream& output) {
     Rapifier::rapify(getConfig(), output);
 }
 
+#include "args.h"
+extern struct arguments args;
+
 void Config::toPlainText(std::ostream& output) {
+
+    uint8_t indentLevel = 0;
     if(!hasConfig()) return;
 
+    auto pushIndent = [&]() {
+        for (int i = 0; i < indentLevel; ++i) {
+            output << (args.indent ? args.indent : "    ");
+        }
+    };
+
     std::function<void(std::vector<Config::expression>&)> printArray = [&](std::vector<Config::expression>& data) {
+        if (data.empty()) {
+            output << "{}";
+            return;
+        }
+
         output << "{";
         for (auto& it : data) {
             switch (it.type) {
             case Config::rap_type::rap_string:
-                    output << "\"" << std::get<std::string>(it.value) << "\", ";
-                    break;
+                output << "\"" << std::get<std::string>(it.value) << "\", ";
+                break;
             case Config::rap_type::rap_int:
                 output << std::get<int>(it.value) << ", ";
                 break;
@@ -95,12 +280,12 @@ void Config::toPlainText(std::ostream& output) {
                 break;
             case Config::rap_type::rap_array:
                 printArray(std::get<std::vector<Config::expression>>(it.value));
+                output << ", ";
                 break;
             default:
                 errorf("Unknown array element type %i.\n", (int)it.type);
             }
-
-        };
+        }
         output.seekp(-2, std::ostream::_Seekcur); //remove last ,
         output << "}";
     };
@@ -110,7 +295,7 @@ void Config::toPlainText(std::ostream& output) {
             switch (it.type) {
             case Config::rap_type::rap_class: {
                 auto& c = std::get<Config::class_>(it.content);
-
+                pushIndent();
                 if (c.is_delete || c.is_definition) {
                     if (c.is_delete)
                         output << "delete " << c.name << ";\n";
@@ -121,15 +306,20 @@ void Config::toPlainText(std::ostream& output) {
                     if (!c.parent.empty())
                         output << ": " << c.parent << " {\n";
                     else
-                        output << "{\n";
+                        output << " {\n";
+                    indentLevel++;
                     printClass(c.content);
-
+                    indentLevel--;
+                    pushIndent();
+                    output << "};\n";
+                    if (indentLevel == 0)
+                        output << "\n"; //Seperate classes on root level. Just for fancyness
                 }
             } break;
             case Config::rap_type::rap_var: {
                 auto& var = std::get<Config::variable>(it.content);
                 auto& exp = var.expression;
-
+                pushIndent();
                 switch (exp.type) {
                 case Config::rap_type::rap_string:
                     output << var.name << " = \"" << std::get<std::string>(exp.value) << "\";\n";
@@ -142,13 +332,11 @@ void Config::toPlainText(std::ostream& output) {
                     break;
                 case Config::rap_type::rap_array:
                 case Config::rap_type::rap_array_expansion:
-                    output << var.name << (exp.type == Config::rap_type::rap_array_expansion) ? " += ": " = ";
+                    output << var.name << (exp.type == Config::rap_type::rap_array_expansion ? "[] += ": "[] = ");
                     printArray(std::get<std::vector<Config::expression>>(exp.value));
                     output << ";\n";
                     break;
                 }
-
-
             } break;
             default:
                 errorf("Unknown class entry type %i.\n", (int)it.type);
@@ -168,13 +356,12 @@ void Rapifier::rapify_expression(Config::expression &expr, std::ostream &f_targe
         write_compressed_int(num_entries, f_target);
 
         for (auto& exp : elements) {
-            f_target.put(
-                static_cast<char>((exp.type == Config::rap_type::rap_string)
-                                      ? 0
-                                      : ((exp.type == Config::rap_type::rap_float)
-                                             ? 1
-                                             : ((exp.type == Config::rap_type::rap_int) ? 2 : 3)))
-            );
+            switch (exp.type) {
+                case Config::rap_type::rap_string: f_target.put(0); break;
+                case Config::rap_type::rap_float: f_target.put(1); break;
+                case Config::rap_type::rap_int: f_target.put(2); break;
+                case Config::rap_type::rap_array: f_target.put(3); break;
+            }
             rapify_expression(exp, f_target);
         }
     } else if (expr.type == Config::rap_type::rap_int) {
@@ -192,13 +379,18 @@ void Rapifier::rapify_expression(Config::expression &expr, std::ostream &f_targe
 void Rapifier::rapify_variable(Config::variable &var, std::ostream &f_target) {
     if (var.type == Config::rap_type::rap_var) {
         f_target.put(1);
-        f_target.put(static_cast<char>((var.expression.type == Config::rap_type::rap_string)
-                                           ? 0
-                                           : ((var.expression.type == Config::rap_type::rap_float) ? 1 : 2)));
+        switch (var.expression.type) {
+            case Config::rap_type::rap_string: f_target.put(0); break;
+            case Config::rap_type::rap_float: f_target.put(1); break;
+            case Config::rap_type::rap_int: f_target.put(2); break;
+        }
     } else {
-        f_target.put(static_cast<char>((var.type == Config::rap_type::rap_array) ? 2 : 5));
-        if (var.type == Config::rap_type::rap_array_expansion) {
-            f_target.write("\x01\0\0\0", 4);
+        switch (var.type) {
+            case Config::rap_type::rap_array: f_target.put(2); break;
+            case Config::rap_type::rap_array_expansion: 
+                f_target.put(5);
+                f_target.write("\x01\0\0\0", 4);//last 3 bytes are unused by engine
+                break;
         }
     }
 
@@ -241,6 +433,8 @@ void Rapifier::rapify_class(Config::class_ &class__, std::ostream &f_target) {
             }
         }
     }
+    //#TODO mikero writes a filesize marker here. 4 bytes
+    //Arma won't read cuz num_entries
 
     for (auto& def : class__.content) {
         if (def.type != Config::rap_type::rap_class) continue;
@@ -279,6 +473,7 @@ int Rapifier::rapify_file(const char* source, const char* target) {
 
 
 }
+
 int Rapifier::rapify_file(std::istream &source, std::ostream &target, const char* sourceFileName) {
     /*
      * Resolves macros/includes and rapifies the given file. If source and
@@ -304,7 +499,7 @@ int Rapifier::rapify_file(std::istream &source, std::ostream &target, const char
     current_target = sourceFileName;
 
     if (success) {
-        errorf("Failed to preprocess %s.\n", source);
+        errorf("Failed to preprocess %s.\n", sourceFileName);
         return success;
     }
 

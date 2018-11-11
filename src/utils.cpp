@@ -579,6 +579,33 @@ void escape_string(char *buffer, size_t buffsize) {
     free(tmp);
 }
 
+std::string escape_string(std::string_view input) {
+    char tmp_array[3];
+
+    std::string tmp;
+    tmp_array[2] = 0;
+
+    for (const char* ptr = input.data(); *ptr != 0; ptr++) {
+        tmp_array[0] = '\\';
+        if (*ptr == '\r') {
+            tmp_array[1] = 'r';
+        }
+        else if (*ptr == '\n') {
+            tmp_array[1] = 'n';
+        }
+        else if (*ptr == '"') {
+            tmp_array[0] = '"';
+            tmp_array[1] = '"';
+        }
+        else {
+            tmp_array[0] = *ptr;
+            tmp_array[1] = 0;
+        }
+        tmp += tmp_array;
+    }
+    return tmp;
+}
+
 std::string unescape_string(std::string_view buffer) {
     char tmp_array[2];
 

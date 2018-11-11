@@ -634,185 +634,6 @@ int read_classes(FILE *f, char *config_path, std::vector<std::string> output, si
 }
 
 
-std::optional<std::vector<Config::expression>> derapify_array(std::istream &source) {
-    std::vector<Config::expression> output;
-    uint32_t num_entries = read_compressed_int(source);
-
-    for (int i = 0; i < num_entries; i++) {
-        uint8_t type = source.get();
-
-        if (type == 0) {
-            char buffer[4096];
-            uint32_t fp_tmp = source.tellg();
-            source.read(buffer, sizeof(buffer));
-            source.seekg(fp_tmp + strlen(buffer) + 1);
-
-            escape_string(buffer, sizeof(buffer));
-
-            output.emplace_back(Config::rap_type::rap_string, std::string(buffer));
-        } else if (type == 1) {
-            float float_value;
-            source.read((char*)&float_value, sizeof(float_value));
-
-            output.emplace_back(Config::rap_type::rap_float, float_value);
-        } else if (type == 2) {
-            int32_t long_value;
-            source.read((char*)&long_value, sizeof(long_value));
-
-            output.emplace_back(Config::rap_type::rap_int, long_value);
-        } else if (type == 3) {
-            auto result = derapify_array(source);
-
-            if (!result) {
-                errorf("Failed to derapify subarray.\n");
-                return {};
-            }
-            output.emplace_back(Config::rap_type::rap_array, std::move(*result));
-        } else {
-            errorf("Unknown array element type %i.\n", type);
-            return {};
-        }
-    }
-
-    return output;
-}
-
-
-int derapify_class(std::istream &source, Config::class_ &curClass, int level) {
-    extern struct arguments args;
-    char buffer[4096];
-
-    if (curClass.name.empty()) {
-        source.seekg(16);
-    }
-
-    uint32_t fp_tmp = source.tellg();
-    std::string inherited;
-    std::getline(source, inherited);
-    source.seekg(fp_tmp + inherited.length() + 1);
-
-    uint32_t num_entries = read_compressed_int(source);
-
-    if (!curClass.name.empty()) {
-        curClass.parent = inherited;
-    }
-
-    for (int i = 0; i < num_entries; i++) {
-        uint8_t type = source.get();
- 
-        if (type == 0) { //class definition
-            fp_tmp = source.tellg();
-            source.read(buffer, sizeof(buffer));
-            source.seekg(fp_tmp + strlen(buffer) + 1);
-            //#TODO try reading here with std::getline. Might be able to get rid of the seek. Or just skip the null byte then
-
-            uint32_t fp_class;
-            source.read((char*)&fp_class, sizeof(uint32_t));
-
-            source.seekg(fp_class);
-            //create new subclass with name "buffer" and pass it
-
-            Config::class_ subclass;
-
-            auto success = derapify_class(source, subclass, level + 1);
-
-            if (success) {
-                errorf("Failed to derapify class \"%s\".\n", buffer);
-                return success;
-            }
-
-            curClass.content.emplace_back(Config::rap_type::rap_class ,std::move(subclass));
-
-            source.seekg(fp_tmp + strlen(buffer) + sizeof(uint32_t) + 1);
-        } else if (type == 1) { //value
-            //#TODO make enums for these
-            //Var has special type
-            //0 string
-            //1 float
-            //2 int
-
-            type = source.get();
-
-            fp_tmp = source.tellg();
-            source.read(buffer, sizeof(buffer));
-            source.seekg(fp_tmp + strlen(buffer) + 1);
-
-            std::string valueName = buffer;
-
-            Config::rap_type valueType;
-            Config::expression valueContent;
-
-            if (type == 0) {
-                fp_tmp = source.get();
-                source.read(buffer, sizeof(buffer));
-                source.seekg(fp_tmp + strlen(buffer) + 1);
-
-                escape_string(buffer, sizeof(buffer));
-
-                valueType = valueContent.type = Config::rap_type::rap_string;
-                valueContent.value = std::string(buffer);
-            } else if (type == 1) {
-                float float_value;
-                source.read((char*)&float_value, sizeof(float_value));
-
-                valueType = valueContent.type = Config::rap_type::rap_float;
-                valueContent.value = float_value;
-            } else if (type == 2) {
-                int32_t long_value;
-                source.read((char*)&long_value, sizeof(long_value));
-
-                valueType = valueContent.type = Config::rap_type::rap_int;
-                valueContent.value = long_value;
-            } else {
-                errorf("Unknown token type %i.\n", type);
-                return 1;
-            }
-
-            curClass.content.emplace_back(Config::rap_type::rap_var, Config::variable(valueType, std::move(valueName), std::move(valueContent)));
-
-        } else if (type == 2 || type == 5) { //array or array append
-            if (type == 5)
-                source.seekg(4, std::istream::_Seekcur);
-
-            fp_tmp = source.tellg();
-            source.read(buffer, sizeof(buffer));
-            source.seekg(fp_tmp + strlen(buffer) + 1);
-
-            std::string valueName = buffer;
-            auto rapType = type == 2 ? Config::rap_type::rap_array : Config::rap_type::rap_array_expansion;
-
-            //create expression I think and let derapify array return array of definitions or so
-            //or just append by ref. That's probably better
-            auto result = derapify_array(source);
-            if (result) { //#TODO throw error if not? derapify array already throws errors
-
-                curClass.content.emplace_back(Config::rap_type::rap_var,
-                    Config::variable(rapType, std::move(valueName),
-                        Config::expression(rapType, std::move(*result))
-                    )
-                );
-            }
-
-
-        } else if (type == 3 || type == 4) { //3 is class 4 is delete class
-            fp_tmp = source.tellg();
-            source.read(buffer, sizeof(buffer));
-            source.seekg(fp_tmp + strlen(buffer) + 1);
-
-            Config::class_ subclass;
-            subclass.name = buffer;
-            subclass.is_delete = type == 4;
-
-            curClass.content.emplace_back(Config::rap_type::rap_class, std::move(subclass));
-        } else {
-            errorf("Unknown class entry type %i.\n", type);
-            return 2;
-        }
-    }
-
-    return 0;
-}
-
 
 int derapify_file(char *source, char *target) {
     /*
@@ -847,39 +668,26 @@ int derapify_file(char *source, char *target) {
     //    return -3;
     //}
 
-    Config x;
-
-    
     if (fromConsoleInput)
-        x = Config::fromBinarized(std::cin);
+        if (toConsoleOutput)
+         return derapify_file(std::cin, std::cout);
+        else
+            return derapify_file(std::cin, std::ofstream(target));
     else
-        x = Config::fromBinarized(std::ifstream(source, std::ifstream::binary));
-
-    if (!x.hasConfig()) {
-        errorf("Failed to derapify root class.\n");
-        return 1;
-    }
-
-    if (toConsoleOutput)
-        x.toPlainText(std::cout);
-    else
-        x.toPlainText(std::ofstream(target));
-
-    return 0;
+        if (toConsoleOutput)
+            return derapify_file(std::ifstream(source, std::ifstream::binary), std::cout);
+        else
+            return derapify_file(std::ifstream(source, std::ifstream::binary), std::ofstream(target));
 }
 int derapify_file(std::istream& source, std::ostream& target) {
+    auto cfg = Config::fromBinarized(source);
 
-    auto outClass = std::make_shared<Config::class_>();
-
-    auto success = derapify_class(source, *outClass, 0);
-
-    //#TODO write to file
-
-
-    if (success) {
+    if (!cfg.hasConfig()) {
         errorf("Failed to derapify root class.\n");
         return 1;
     }
+    cfg.toPlainText(target);
+
     return 0;
 }
 
@@ -897,6 +705,7 @@ int cmd_derapify() {
             errorf("File %s already exists and --force was not set.\n", args.positionals[2]);
             return 1;
         }
+        //#TODO check if source exists. else throw error
 
         success = derapify_file(args.positionals[1], args.positionals[2]);
     }

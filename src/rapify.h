@@ -65,6 +65,20 @@ public:
         expression(rap_type t, float x) : type(t), value(x) {}
         expression(rap_type t, std::string x) : type(t), value(std::move(x)) {}
         expression(rap_type t, std::vector<expression> x) : type(t), value(std::move(x)) {}
+        expression(rap_type t, expression x) : type(t) {
+            if (t == rap_type::rap_array && x.type == rap_type::rap_array) {
+                value = x.value;
+                return;
+            }
+            if (t == rap_type::rap_array) {
+                addArrayElement(x);
+                return;
+            }
+            __debugbreak();
+
+
+
+        }
         rap_type type;
         std::variant<int32_t, float, std::string, std::vector<expression>> value;
         void addArrayElement(expression exp) {
@@ -103,8 +117,6 @@ public:
     struct definition {
         definition(rap_type t, variable v) : type(t), content(std::move(v)) {}
         definition(rap_type t, class_ c) : type(t), content(std::move(c)) {}
-        definition(rap_type t, variable &&v) : type(t), content(std::move(v)) {}
-        definition(rap_type t, class_ &&c) : type(t), content(std::move(c)) {}
         rap_type type;
         std::variant<variable, class_> content;
     };
@@ -133,9 +145,9 @@ class Rapifier {
 
     static void rapify_class(Config::class_ &class_, std::ostream &f_target);
 
-    static bool isRapified(std::istream &input);
-public:
 
+public:
+    static bool isRapified(std::istream &input);
     static int rapify_file(const char* source, const char* target);
     static int rapify_file(std::istream &source, std::ostream &target, const char* sourceFileName);
 
