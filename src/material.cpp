@@ -156,34 +156,25 @@ int read_material(struct material *material) {
 
     current_target = temp;
 
-    std::ifstream inputFile(actual_path, std::ifstream::in | std::ifstream::binary);
-    std::stringstream rapifiedMaterial;
+    ;
 
-    strcpy(rapified_path, actual_path);
-    strcat(rapified_path, ".armake.bin"); // it is assumed that this doesn't exist
-
-    // Rapify file
-    if (Rapifier::rapify_file(inputFile, rapifiedMaterial, actual_path)) {
-        lwarningf(current_target, -1, "Failed to rapify %s.\n", actual_path);
-        return 2;
-    }
+    Preprocessor p;
+    std::stringstream buf;
+    p.preprocess(actual_path, std::ifstream(actual_path, std::ifstream::in | std::ifstream::binary), buf, std::list<constant>());
+    buf.seekg(0);
+    auto cfg = Config::fromPreprocessedText(buf, p.getLineref());
 
     current_target = material->path.c_str();
-
-
-    rapifiedMaterial.seekg(0);
-    FILE* f;
-    //#TODO continue here
-
     // Read colors
-    read_float_array(f, "emmisive", (float *)&material->emissive, 4); // "Did you mean: emissive?"
-    read_float_array(f, "ambient", (float *)&material->ambient, 4);
-    read_float_array(f, "diffuse", (float *)&material->diffuse, 4);
-    read_float_array(f, "forcedDiffuse", (float *)&material->forced_diffuse, 4);
-    read_float_array(f, "specular", (float *)&material->specular, 4);
+    material->emissive = cfg.getConfig().getArrayOfFloats({ "emmisive" }); //#TODO default values
+    material->ambient = cfg.getConfig().getArrayOfFloats({ "ambient" });
+    material->diffuse = cfg.getConfig().getArrayOfFloats({ "diffuse" });
+    material->forced_diffuse = cfg.getConfig().getArrayOfFloats({ "forcedDiffuse" });
+    material->specular = cfg.getConfig().getArrayOfFloats({ "specular" });
+   
     material->specular2 = material->specular;
+    material->specular_power = *cfg.getConfig().getFloat({ "specularPower" });
 
-    read_float(f, "specularPower", &material->specular_power);
 
     // Read shaders
     if (!read_string(f, "PixelShaderID", shader, sizeof(shader))) {

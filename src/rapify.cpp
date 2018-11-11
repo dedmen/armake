@@ -39,6 +39,7 @@
 #include <fstream>
 #include <iterator>
 #include <functional>
+#include <algorithm>
 //#include "rapify.tab.h"
 
 bool parse_file(std::istream& f, struct lineref &lineref, Config::class_ &result);
@@ -207,6 +208,198 @@ int derapify_class(std::istream &source, Config::class_ &curClass, int level) {
     return 0;
 }
 
+std::vector<std::reference_wrapper<Config::class_>> Config::class_::getParents(class_& scope, class_ &entry) {
+    auto& parName = entry.parent;
+    std::vector<std::reference_wrapper<Config::class_>> ret;
+
+    while (!parName.empty()) {
+        for (auto& it : scope.content) {
+            if (it.type != rap_type::rap_class) continue;
+            auto& c = std::get<Config::class_>(it.content);
+            if (c.name == parName) {
+                ret.emplace_back(c);
+                parName = c.parent;
+                break;
+            }
+        }
+    }
+    return ret;
+}
+
+bool iequals(std::string_view a, std::string_view b)
+{
+    return std::equal(a.begin(), a.end(),
+        b.begin(), b.end(),
+        [](char a, char b) {
+        return tolower(a) == tolower(b);
+    });
+}
+
+std::optional<std::reference_wrapper<Config::definition>> Config::class_::getEntry(class_& curClass, std::initializer_list<std::string_view> path) {
+
+    std::string_view subelement = *path.begin();
+
+    auto found = std::find_if(curClass.content.begin(), curClass.content.end(), [&subelement](const definition& def) {
+        if (def.type == rap_type::rap_var) {
+            auto& c = std::get<variable>(def.content);
+            if (iequals(c.name, subelement)) return true;
+        }
+        else if (def.type == rap_type::rap_class) {
+            auto& c = std::get<class_>(def.content);
+            if (iequals(c.name, subelement)) return true;
+        }
+        return false;
+    });
+    if (found == curClass.content.end()) {
+        return {};
+    }
+
+    if (path.size() > 1) {
+        if (found->type != rap_type::rap_class) return {}; //not at end and can't go further
+        auto& c = std::get<class_>(found->content);
+
+        auto parents = getParents(curClass, c);
+
+        for (auto& it : parents) {
+            auto subresult = it.get().getEntry(c, std::initializer_list<std::string_view>(path.begin() + 1, path.end()));
+            if (subresult)
+                return subresult;
+        }
+    }
+    return *found;
+}
+
+std::map<std::string, std::reference_wrapper<Config::variable>> Config::class_::getEntries(class_& scope, class_& entry) {
+    std::map<std::string, std::reference_wrapper<Config::variable>> ret;
+    auto parents = getParents(scope, entry);
+
+    for (auto& it : parents) {
+        for (auto& elem : it.get().content) {
+            if (elem.type != rap_type::rap_var) continue;
+            auto& c = std::get<Config::variable>(elem.content);
+            ret.insert_or_assign(c.name, c);
+        }
+    }
+
+    for (auto& elem : entry.content) {
+        if (elem.type != rap_type::rap_var) continue;
+        auto& c = std::get<Config::variable>(elem.content);
+        ret.insert_or_assign(c.name, c);
+    }
+    return ret;
+}
+std::map<std::string, std::reference_wrapper<Config::class_>> Config::class_::getSubclasses(class_& scope, class_& entry) {
+    std::map<std::string, std::reference_wrapper<Config::class_>> ret;
+    auto parents = getParents(scope, entry);
+
+    for (auto& it : parents) {
+        for (auto& elem : it.get().content) {
+            if (elem.type != rap_type::rap_class) continue;
+            auto& c = std::get<Config::class_>(elem.content);
+            ret.insert_or_assign(c.name, c);
+        }
+    }
+
+    for (auto& elem : entry.content) {
+        if (elem.type != rap_type::rap_class) continue;
+        auto& c = std::get<Config::class_>(elem.content);
+        ret.insert_or_assign(c.name, c);
+    }
+    return ret;
+}
+
+std::optional<std::reference_wrapper<Config::class_>> Config::class_::getClass(std::initializer_list<std::string_view> path) {
+    auto entry = getEntry(*this,path);
+    if (!entry) return {};
+    auto& def = *entry;
+    if (def.get().type == rap_type::rap_class)
+        return std::get<class_>(def.get().content);
+    return {};
+}
+
+std::vector<std::reference_wrapper<Config::class_>> Config::class_::getSubClasses() {
+    std::vector<std::reference_wrapper<Config::class_>> ret;
+    for (auto& it : content) {
+        if (it.type == rap_type::rap_class)
+            ret.emplace_back(it);
+    }
+    return ret;
+}
+
+std::optional<int32_t> Config::class_::getInt(std::initializer_list<std::string_view> path) {
+    auto entry = getEntry(*this, path);
+    if (!entry) return {};
+    auto& def = *entry;
+    if (def.get().type == rap_type::rap_var) {
+        auto& var = std::get<variable>(def.get().content);
+        if (var.type == rap_type::rap_int)
+            return std::get<int32_t>(var.expression.value);
+    }
+    return {};
+}
+std::optional<float> Config::class_::getFloat(std::initializer_list<std::string_view> path) {
+    auto entry = getEntry(*this, path);
+    if (!entry) return {};
+    auto& def = *entry;
+    if (def.get().type == rap_type::rap_var) {
+        auto& var = std::get<variable>(def.get().content);
+        if (var.type == rap_type::rap_int)
+            return std::get<float>(var.expression.value);
+    }
+    return {};
+}
+std::optional<std::string> Config::class_::getString(std::initializer_list<std::string_view> path) {
+    auto entry = getEntry(*this, path);
+    if (!entry) return {};
+    auto& def = *entry;
+    if (def.get().type == rap_type::rap_var) {
+        auto& var = std::get<variable>(def.get().content);
+        if (var.type == rap_type::rap_int)
+            return std::get<std::string>(var.expression.value);
+    }
+    return {};
+}
+
+std::vector<std::string> Config::class_::getArrayOfStrings(std::initializer_list<std::string_view> path) {
+    
+    auto entry = getEntry(*this, path);
+    if (!entry) return {};
+    auto& def = *entry;
+    if (def.get().type == rap_type::rap_var) {
+        auto& var = std::get<variable>(def.get().content);
+        if (var.type == rap_type::rap_array) {
+            auto& arr = std::get<std::vector<expression>>(var.expression.value);
+            std::vector<std::string> ret;
+            for (auto& it : arr) {
+                if (it.type != rap_type::rap_string) continue;
+                ret.push_back(std::get<std::string>(it.value));
+            }
+            return ret;
+        }
+    }
+    return {};
+
+}
+
+std::vector<float> Config::class_::getArrayOfFloats(std::initializer_list<std::string_view> path) {
+    auto entry = getEntry(*this, path);
+    if (!entry) return {};
+    auto& def = *entry;
+    if (def.get().type == rap_type::rap_var) {
+        auto& var = std::get<variable>(def.get().content);
+        if (var.type == rap_type::rap_array) {
+            auto& arr = std::get<std::vector<expression>>(var.expression.value);
+            std::vector<float> ret;
+            for (auto& it : arr) {
+                if (it.type != rap_type::rap_float) continue;
+                ret.push_back(std::get<float>(it.value));
+            }
+            return ret;
+        }
+    }
+    return {};
+}
+
 Config Config::fromPreprocessedText(std::istream &input, lineref& lineref) {
     Config output;
     output.config = std::make_shared<class_>();
@@ -246,17 +439,14 @@ void Config::toBinarized(std::ostream& output) {
     Rapifier::rapify(getConfig(), output);
 }
 
-#include "args.h"
-extern struct arguments args;
-
-void Config::toPlainText(std::ostream& output) {
+void Config::toPlainText(std::ostream& output, std::string_view indent) {
 
     uint8_t indentLevel = 0;
     if(!hasConfig()) return;
 
     auto pushIndent = [&]() {
         for (int i = 0; i < indentLevel; ++i) {
-            output << (args.indent ? args.indent : "    ");
+            output.write(indent.data(), indent.length());
         }
     };
 
@@ -347,11 +537,10 @@ void Config::toPlainText(std::ostream& output) {
 }
 
 void Rapifier::rapify_expression(Config::expression &expr, std::ostream &f_target) {
-    uint32_t num_entries;
 
     if (expr.type == Config::rap_type::rap_array) {
         auto& elements = std::get<std::vector<Config::expression>>(expr.value);
-        num_entries = elements.size();
+        uint32_t num_entries = elements.size();
 
         write_compressed_int(num_entries, f_target);
 

@@ -30,9 +30,11 @@
 #include "derapify.h"
 #include "model_config.h"
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 
 
-int read_animations(FILE *f, char *config_path, struct skeleton_ *skeleton) {
+int read_animations(Config::class_& cfg, char *config_path, struct skeleton_ *skeleton) {
     /*
      * Reads the animation subclasses of the given config path into the struct
      * array.
@@ -48,51 +50,17 @@ int read_animations(FILE *f, char *config_path, struct skeleton_ *skeleton) {
     char parent[2048];
     char containing[2048];
     char value_path[2048];
-    char value[2048];
+
 
     // Run the function for the parent class first
-    fseek(f, 16, SEEK_SET);
-    success = seek_config_path(f, config_path);
-    if (success > 0) {
-        return success;
-    } else if (success == 0) {
-        success = find_parent(f, config_path, parent, sizeof(parent));
-        if (success > 0) {
-            return 2;
-        } else if (success == 0) {
-            success = read_animations(f, parent, skeleton);
-            if (success > 0)
-                return success;
-        }
-    }
-
-    // Check parent CfgModels entry
-    strcpy(containing, config_path);
-    *(strrchr(containing, '>') - 2) = 0;
-    success = find_parent(f, containing, parent, sizeof(parent));
-    if (success > 0) {
-        return 2;
-    } else if (success == 0) {
-        strcat(parent, " >> Animations");
-        success = read_animations(f, parent, skeleton);
-        if (success > 0)
-            return success;
-    }
-
-    fseek(f, 16, SEEK_SET);
-    success = seek_config_path(f, config_path);
-    if (success < 0)
-        return -1;
 
     // Now go through all the animations
-    std::vector<std::string> anim_names;
+    auto subclasses = cfg.getSubClasses();
 
-    success = read_classes(f, config_path, anim_names, 512);
-    if (success)
-        return success;
     //#TODO is it an error if we have more animations than MAXANIMS?
 
-    for (auto& animName : anim_names) {
+    for (auto& anim : subclasses) {
+        auto animName = anim.get().name;
         //Check if a animation with same name already exists, if it does we want to overwrite.
         auto found = std::find_if(skeleton->animations.begin(), skeleton->animations.end(), [&animName](const animation& anim) {
             return anim.name == animName;
@@ -106,38 +74,40 @@ int read_animations(FILE *f, char *config_path, struct skeleton_ *skeleton) {
         newAnimation.name = animName;
 
         // Read anim type
+        auto type = anim.get().getString({ "type" }); //#TODO does this work?
         sprintf(value_path, "%s >> %s >> type", config_path, animName.c_str());
-        if (read_string(f, value_path, value, sizeof(value))) {
+        if (!type) {
             lwarningf(current_target, -1, "Animation type for %s could not be found.\n", animName.c_str());
             continue;
         }
 
-        lower_case(value);
+        std::transform(type->begin(), type->end(), type->begin(), ::tolower);
 
-        if (strcmp(value, "rotation") == 0) {
+        //#TODO anim name to enum func
+        if (*type == "rotation") {
             newAnimation.type = AnimationType::ROTATION;
-        } else if (strcmp(value, "rotationx") == 0) {
+        } else if (*type == "rotationx") {
             newAnimation.type = AnimationType::ROTATION_X;
-        } else if (strcmp(value, "rotationy") == 0) {
+        } else if (*type == "rotationy") {
             newAnimation.type = AnimationType::ROTATION_Y;
-        } else if (strcmp(value, "rotationz") == 0) {
+        } else if (*type == "rotationz") {
             newAnimation.type = AnimationType::ROTATION_Z;
-        } else if (strcmp(value, "translation") == 0) {
+        } else if (*type == "translation") {
             newAnimation.type = AnimationType::TRANSLATION;
-        } else if (strcmp(value, "translationx") == 0) {
+        } else if (*type == "translationx") {
             newAnimation.type = AnimationType::TRANSLATION_X;
-        } else if (strcmp(value, "translationy") == 0) {
+        } else if (*type == "translationy") {
             newAnimation.type = AnimationType::TRANSLATION_Y;
-        } else if (strcmp(value, "translationz") == 0) {
+        } else if (*type == "translationz") {
             newAnimation.type = AnimationType::TRANSLATION_Z;
-        } else if (strcmp(value, "direct") == 0) {
+        } else if (*type == "direct") {
             newAnimation.type = AnimationType::DIRECT;
             lwarningf(current_target, -1, "Direct animations aren't supported yet.\n");
             continue;
-        } else if (strcmp(value, "hide") == 0) {
+        } else if (*type == "hide") {
             newAnimation.type = AnimationType::HIDE;
         } else {
-            lwarningf(current_target, -1, "Unknown animation type: %s\n", value);
+            lwarningf(current_target, -1, "Unknown animation type: %s\n", *type);
             continue;
         }
 
@@ -161,88 +131,44 @@ int read_animations(FILE *f, char *config_path, struct skeleton_ *skeleton) {
         newAnimation.hide_value = 0.0f;
         newAnimation.unhide_value = -1.0f;
 
-#define ERROR_READING(key) lwarningf(current_target, -1, "Error reading %s for %s.\n", key, anim_names[i]);
-        char buffer[512];
-        sprintf(value_path, "%s >> %s >> source", config_path, anim_names[i]);
-        if (read_string(f, value_path, buffer, sizeof(buffer)) > 0)
-            ERROR_READING("source")
-        newAnimation.source = buffer;
+#define ERROR_READING(key) lwarningf(current_target, -1, "Error reading %s for %s.\n", key, animName)
 
-        sprintf(value_path, "%s >> %s >> selection", config_path, anim_names[i]);
-        if (read_string(f, value_path, buffer, sizeof(buffer)) > 0)
-            ERROR_READING("selection")
-        newAnimation.selection = buffer;
+#define TRY_GET_STRING(targ, key) auto key = anim.get().getString({ #key }); if (!key) ERROR_READING(#key); newAnimation.targ = *key;
+#define TRY_GET_FLOAT(targ, key) auto key = anim.get().getFloat({ #key }); if (!key) ERROR_READING(#key); newAnimation.targ = *key;
 
-        sprintf(value_path, "%s >> %s >> axis", config_path, anim_names[i]);
-        if (read_string(f, value_path, buffer, sizeof(buffer)) > 0)
-            ERROR_READING("axis")
-        newAnimation.axis = buffer;
 
-        sprintf(value_path, "%s >> %s >> begin", config_path, anim_names[i]);
-        if (read_string(f, value_path, buffer, sizeof(buffer)) > 0)
-            ERROR_READING("begin")
-        newAnimation.begin = buffer;
+        TRY_GET_STRING(source, source);
+        TRY_GET_STRING(selection, selection);
+        TRY_GET_STRING(axis, axis);
+        TRY_GET_STRING(begin, begin);
+        TRY_GET_STRING(end, end);
 
-        sprintf(value_path, "%s >> %s >> end", config_path, anim_names[i]);
-        if (read_string(f, value_path, buffer, sizeof(buffer)) > 0)
-            ERROR_READING("end")
-        newAnimation.end = buffer;
+        TRY_GET_FLOAT(min_value, minValue);
+        TRY_GET_FLOAT(max_value, maxValue);
+        TRY_GET_FLOAT(min_phase, minPhase);
+        TRY_GET_FLOAT(max_phase, maxPhase);
+        TRY_GET_FLOAT(angle0, angle0);
+        TRY_GET_FLOAT(angle1, angle1);
+        TRY_GET_FLOAT(offset0, offset0);
+        TRY_GET_FLOAT(offset1, offset1);
+        TRY_GET_FLOAT(hide_value, hideValue);
+        TRY_GET_FLOAT(unhide_value, unHideValue);
 
-        sprintf(value_path, "%s >> %s >> minValue", config_path, anim_names[i]);
-        if (read_float(f, value_path, &newAnimation.min_value) > 0)
-            ERROR_READING("minValue")
+        auto sourceAddress = anim.get().getString({ "sourceAddress" });
 
-        sprintf(value_path, "%s >> %s >> maxValue", config_path, anim_names[i]);
-        if (read_float(f, value_path, &newAnimation.max_value) > 0)
-            ERROR_READING("maxValue")
+        if (!sourceAddress) {
+            ERROR_READING("sourceAddress");
+        } else {
+            std::transform(sourceAddress->begin(), sourceAddress->end(), sourceAddress->begin(), ::tolower);
 
-        sprintf(value_path, "%s >> %s >> minPhase", config_path, anim_names[i]);
-        if (read_float(f, value_path, &newAnimation.min_phase) > 0)
-            ERROR_READING("minPhase")
-
-        sprintf(value_path, "%s >> %s >> maxPhase", config_path, anim_names[i]);
-        if (read_float(f, value_path, &newAnimation.max_phase) > 0)
-            ERROR_READING("maxPhase")
-
-        sprintf(value_path, "%s >> %s >> angle0", config_path, anim_names[i]);
-        if (read_float(f, value_path, &newAnimation.angle0) > 0)
-            ERROR_READING("angle0")
-
-        sprintf(value_path, "%s >> %s >> angle1", config_path, anim_names[i]);
-        if (read_float(f, value_path, &newAnimation.angle1) > 0)
-            ERROR_READING("angle1")
-
-        sprintf(value_path, "%s >> %s >> offset0", config_path, anim_names[i]);
-        if (read_float(f, value_path, &newAnimation.offset0) > 0)
-            ERROR_READING("offset0")
-
-        sprintf(value_path, "%s >> %s >> offset1", config_path, anim_names[i]);
-        if (read_float(f, value_path, &newAnimation.offset1) > 0)
-            ERROR_READING("offset1")
-
-        sprintf(value_path, "%s >> %s >> hideValue", config_path, anim_names[i]);
-        if (read_float(f, value_path, &newAnimation.hide_value) > 0)
-            ERROR_READING("hideValue")
-
-        sprintf(value_path, "%s >> %s >> unHideValue", config_path, anim_names[i]);
-        if (read_float(f, value_path, &newAnimation.unhide_value) > 0)
-            ERROR_READING("unHideValue")
-
-        sprintf(value_path, "%s >> %s >> sourceAddress", config_path, anim_names[i]);
-        success = read_string(f, value_path, value, sizeof(value));
-        if (success > 0) {
-            ERROR_READING("sourceAddress")
-        } else if (success == 0) {
-            lower_case(value);
-
-            if (strcmp(value, "clamp") == 0) {
+            if (*sourceAddress ==  "clamp") {
                 newAnimation.source_address = AnimationSourceAddress::clamp;
-            } else if (strcmp(value, "mirror") == 0) {
+            } else if (*sourceAddress == "mirror") {
                 newAnimation.source_address = AnimationSourceAddress::mirror;
-            } else if (strcmp(value, "loop") == 0) {
+            } else if (*sourceAddress == "loop") {
                 newAnimation.source_address = AnimationSourceAddress::loop;
             } else {
-                lwarningf(current_target, -1, "Unknown source address \"%s\" in \"%s\".\n", value, newAnimation.name.c_str());
+                lwarningf(current_target, -1, "Unknown source address \"%s\" in \"%s\".\n", sourceAddress, newAnimation.name.c_str());
                 continue;
             }
         }
@@ -329,11 +255,12 @@ int read_model_config(char *path, struct skeleton_ *skeleton) {
         return -1;
 
     // Rapify file
-    success = Rapifier::rapify_file(model_config_path, rapified_path);
-    if (success) {
-        errorf("Failed to rapify model config.\n");
-        return 1;
-    }
+
+    Preprocessor p;
+    std::stringstream buf;
+    p.preprocess(model_config_path, std::ifstream(model_config_path), buf, std::list<constant>());
+    buf.seekg(0);
+    auto cfg = Config::fromPreprocessedText(buf, p.getLineref());
 
     current_target = path;
 
@@ -346,68 +273,54 @@ int read_model_config(char *path, struct skeleton_ *skeleton) {
 
     lower_case(model_name);
 
-    // Open rapified file
-    f = fopen(rapified_path, "rb");
-    if (!f) {
-        errorf("Failed to open model config.\n");
-        return 2;
-    }
-
     // Check if model entry even exists
-    sprintf(config_path, "CfgModels >> %s", model_name);
-    fseek(f, 16, SEEK_SET);
-    success = seek_config_path(f, config_path);
-    if (success > 0) {
+    auto modelConfig = cfg.getConfig().getClass({ "CfgModels", model_name });
+    if (!modelConfig) {
         errorf("Failed to find model config entry.\n");
-        return success;
-    } else if (success < 0) {
-        goto clean_up;
-    }
+        return 1; //#TODO fix this error code. That's not the correct one
+    };
 
     if (strchr(model_name, '_') == NULL)
         lnwarningf(path, -1, "model-without-prefix", "Model has a model config entry but doesn't seem to have a prefix (missing _).\n");
 
     // Read name
-    sprintf(config_path, "CfgModels >> %s >> skeletonName", model_name);
-    success = read_string(f, config_path, buffer, sizeof(buffer));
-    if (success > 0) {
+    auto skeletonName = cfg.getConfig().getString({ "CfgModels", model_name , "skeletonName"});
+    if (!skeletonName) {
         errorf("Failed to read skeleton name.\n");
-        return success;
+        return 1;//#TODO fix this error code. That's not the correct one
     }
-    skeleton->name = buffer;
+    skeleton->name = *skeletonName;
 
     // Read bones
     if (!skeleton->name.empty()) {
-        sprintf(config_path, "CfgSkeletons >> %s >> skeletonInherit", skeleton->name.c_str());
-        success = read_string(f, config_path, buffer, sizeof(buffer));
-        if (success > 0) {
-            errorf("Failed to read bones.\n");
-            return success;
+        auto skeletonInherit = cfg.getConfig().getString({ "CfgSkeletons", skeleton->name , "skeletonInherit" });
+        if (!skeletonInherit) {
+            errorf("Failed to read bones.\n"); //#TODO fix this wrong error message
+            return success;//#TODO fix this error code. That's not the correct one
         }
 
-        int32_t temp;
-        sprintf(config_path, "CfgSkeletons >> %s >> isDiscrete", skeleton->name.c_str());
-        success = read_int(f, config_path, &temp);
-        if (success == 0)
-            skeleton->is_discrete = (temp > 0);
+        auto isDiscrete = cfg.getConfig().getInt({ "CfgSkeletons", skeleton->name, "isDiscrete" });
+        if (isDiscrete)
+            skeleton->is_discrete = (*isDiscrete > 0);
         else
             skeleton->is_discrete = false;
 
-        if (strlen(buffer) > 0) { // @todo: more than 1 parent
-            sprintf(config_path, "CfgSkeletons >> %s >> skeletonBones", buffer);
-            success = read_string_array(f, config_path,bones, 512);
-            if (success > 0) {
+        if (skeletonInherit->length() > 1) { // @todo: more than 1 parent
+            bones = cfg.getConfig().getArrayOfStrings({ "CfgSkeletons", *skeletonInherit , "skeletonInherit" });
+            if (bones.empty()) { //#TODO differentitate between empty and not found
                 errorf("Failed to read bones.\n");
-                return success;
-            } else if (success == 0) {
+                return success;//#TODO fix this error code. That's not the correct one
+            }
+            for (i = 0; i < bones.size(); i += 2) {
+                skeleton->bones.emplace_back(bones[i], bones[i + 1]);
+                skeleton->num_bones++;
             }
         }
 
-        sprintf(config_path, "CfgSkeletons >> %s >> skeletonBones", skeleton->name.c_str());
-        success = read_string_array(f, config_path, bones, 512);
-        if (success > 0) {
+        bones = cfg.getConfig().getArrayOfStrings({ "CfgSkeletons", skeleton->name , "skeletonInherit" });
+        if (bones.empty()) { //#TODO differentitate between empty and not found
             errorf("Failed to read bones.\n");
-            return success;
+            return success;//#TODO fix this error code. That's not the correct one
         }
 
         for (i = 0; i < bones.size(); i += 2) {
@@ -429,35 +342,35 @@ int read_model_config(char *path, struct skeleton_ *skeleton) {
     }
 
     // Read sections
-    sprintf(config_path, "CfgModels >> %s >> sectionsInherit", model_name);
-    success = read_string(f, config_path, buffer, sizeof(buffer));
-    if (success > 0) {
+    auto sectionsInherit = cfg.getConfig().getString({ "CfgModels", model_name, "sectionsInherit" });
+    if (!sectionsInherit) {
         errorf("Failed to read sections.\n");
         return success;
     }
 
-    if (strlen(buffer) > 0) {
-        sprintf(config_path, "CfgModels >> %s >> sections", buffer);
-        success = read_string_array(f, config_path, skeleton->sections, 512);
-        if (success > 0) {
+    if (sectionsInherit->length() > 0) {
+        auto sections = cfg.getConfig().getArrayOfStrings({ "CfgModels", *sectionsInherit, "sections" });
+        if (sections.empty()) { //#TODO differentiate between empty and not found
             errorf("Failed to read sections.\n");
             return success;
         }
+        skeleton->sections = sections;
     }
 
-    sprintf(config_path, "CfgModels >> %s >> sections", model_name);
-    success = read_string_array(f, config_path, skeleton->sections, 512);
-    if (success > 0) {
+    auto sections = cfg.getConfig().getArrayOfStrings({ "CfgModels", model_name, "sections" });
+    if (sections.empty()) {
         errorf("Failed to read sections.\n");
         return success;
     }
+    skeleton->sections.insert(skeleton->sections.end(), sections.begin(), sections.end());
 
     skeleton->num_sections = skeleton->sections.size();
 
     // Read animations
     skeleton->num_animations = 0;
     sprintf(config_path, "CfgModels >> %s >> Animations", model_name);
-    success = read_animations(f, config_path, skeleton);
+    //#TODO inheritance?
+    success = read_animations(cfg.getConfig().getClass({"CfgModels", model_name, "Animations"})->get(), config_path, skeleton);
     if (success > 0) {
         errorf("Failed to read animations.\n");
         return success;
@@ -467,26 +380,12 @@ int read_model_config(char *path, struct skeleton_ *skeleton) {
         lwarningf(path, -1, "animated-without-skeleton", "Model doesn't have a skeleton but is animated.\n");
 
     // Read thermal stuff
-    sprintf(config_path, "CfgModels >> %s >> htMin", model_name);
-    read_float(f, config_path, &skeleton->ht_min);
-    sprintf(config_path, "CfgModels >> %s >> htMax", model_name);
-    read_float(f, config_path, &skeleton->ht_max);
-    sprintf(config_path, "CfgModels >> %s >> afMax", model_name);
-    read_float(f, config_path, &skeleton->af_max);
-    sprintf(config_path, "CfgModels >> %s >> mfMax", model_name);
-    read_float(f, config_path, &skeleton->mf_max);
-    sprintf(config_path, "CfgModels >> %s >> mfAct", model_name);
-    read_float(f, config_path, &skeleton->mf_act);
-    sprintf(config_path, "CfgModels >> %s >> tBody", model_name);
-    read_float(f, config_path, &skeleton->t_body);
-
-clean_up:
-    // Clean up
-    fclose(f);
-    if (remove_file(rapified_path)) {
-        errorf("Failed to remove temporary model config.\n");
-        return 3;
-    }
+    skeleton->ht_min = *cfg.getConfig().getFloat({ "CfgModels",model_name, "htMin" }); //#TODO error checking. Should use exceptions
+    skeleton->ht_max = *cfg.getConfig().getFloat({ "CfgModels",model_name, "htMax" }); //#TODO error checking. Should use exceptions
+    skeleton->af_max = *cfg.getConfig().getFloat({ "CfgModels",model_name, "afMax" }); //#TODO error checking. Should use exceptions
+    skeleton->mf_max = *cfg.getConfig().getFloat({ "CfgModels",model_name, "mfMax" }); //#TODO error checking. Should use exceptions
+    skeleton->mf_act = *cfg.getConfig().getFloat({ "CfgModels",model_name, "mfAct" }); //#TODO error checking. Should use exceptions
+    skeleton->t_body = *cfg.getConfig().getFloat({ "CfgModels",model_name, "tBody" }); //#TODO error checking. Should use exceptions
 
     return 0;
 }

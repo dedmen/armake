@@ -24,7 +24,7 @@
 #include <variant>
 #include <vector>
 #include <memory>
-
+#include <map>
 
 #define MAXCLASSES 4096
 
@@ -41,24 +41,6 @@ public:
     };
 
     struct definition;
-
-    struct class_ {
-        class_() = default;
-        class_(std::string name, std::string parent, std::vector<definition> content, bool is_delete)
-            : name(std::move(name)), parent(std::move(parent)), is_delete(is_delete), content(std::move(content)) {}
-        class_(std::string name, std::vector<definition> content, bool is_delete)
-            : name(std::move(name)), parent(std::move(parent)), is_delete(is_delete), content(std::move(content)) {}
-        class_(std::vector<definition> content)
-            : content(std::move(content)) {}
-
-        std::string name;
-        std::string parent;
-        bool is_delete{ false };
-        bool is_definition{ false };
-        long offset_location{ 0 };
-        std::vector<definition> content;
-    };
-
     struct expression {
         expression() = default;
         expression(rap_type t, int32_t x) : type(t), value(x) {}
@@ -74,9 +56,7 @@ public:
                 addArrayElement(x);
                 return;
             }
-            __debugbreak();
-
-
+            __debugbreak(); //#TODO remove
 
         }
         rap_type type;
@@ -114,6 +94,38 @@ public:
         struct expression expression;
     };
 
+    struct class_ {
+        class_() = default;
+        class_(std::string name, std::string parent, std::vector<definition> content, bool is_delete)
+            : name(std::move(name)), parent(std::move(parent)), is_delete(is_delete), content(std::move(content)) {}
+        class_(std::string name, std::vector<definition> content, bool is_delete)
+            : name(std::move(name)), parent(std::move(parent)), is_delete(is_delete), content(std::move(content)) {}
+        class_(std::vector<definition> content)
+            : content(std::move(content)) {}
+
+        std::string name;
+        std::string parent;
+        bool is_delete{ false };
+        bool is_definition{ false };
+        long offset_location{ 0 };
+        std::vector<definition> content;
+
+
+        static std::vector<std::reference_wrapper<class_>> getParents(class_& scope, class_ &entry);
+        static std::optional<std::reference_wrapper<definition>> getEntry(class_& curClass, std::initializer_list<std::string_view> path);
+        static std::map<std::string, std::reference_wrapper<Config::variable>> getEntries(class_& scope, class_ &entry);
+        static std::map<std::string, std::reference_wrapper<Config::class_>> getSubclasses(class_& scope, class_ &entry);
+        std::optional<std::reference_wrapper<class_>> getClass(std::initializer_list<std::string_view> path);
+        std::vector<std::reference_wrapper<class_>> getSubClasses();
+        std::optional<int32_t> getInt(std::initializer_list<std::string_view> path);
+        std::optional<float> getFloat(std::initializer_list<std::string_view> path);
+        std::optional<std::string> getString(std::initializer_list<std::string_view> path);
+        std::vector<std::string> getArrayOfStrings(std::initializer_list<std::string_view> path);
+        std::vector<float> getArrayOfFloats(std::initializer_list<std::string_view> path);
+
+
+    };
+
     struct definition {
         definition(rap_type t, variable v) : type(t), content(std::move(v)) {}
         definition(rap_type t, class_ c) : type(t), content(std::move(c)) {}
@@ -124,10 +136,13 @@ public:
     static Config fromPreprocessedText(std::istream &input, struct lineref &lineref);
     static Config fromBinarized(std::istream &input);
     void toBinarized(std::ostream &output);
-    void toPlainText(std::ostream &output);
+    void toPlainText(std::ostream &output, std::string_view indent = "    ");
 
     bool hasConfig() { return static_cast<bool>(config); }
     class_& getConfig() { return *config; }
+
+    
+
 
     operator class_&(){
         return *config;

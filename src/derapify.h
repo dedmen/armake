@@ -24,26 +24,6 @@
 #include <vector>
 
 
-int seek_config_path(FILE *f, char *config_path);
-
-int find_parent(FILE *f, char *config_path, char *buffer, size_t buffsize);
-
-int seek_definition(FILE *f, char *config_path);
-
-int read_string(FILE *f, char *config_path, char *buffer, size_t buffsize);
-
-int read_int(FILE *f, char *config_path, int32_t *result);
-
-int read_float(FILE *f, char *config_path, float *result);
-
-int read_long_array(FILE *f, char *config_path, int32_t *array, int size);
-
-int read_float_array(FILE *f, char *config_path, float *array, int size);
-
-int read_string_array(FILE *f, char *config_path, std::vector<std::string> buffer, size_t buffsize);
-
-int read_classes(FILE *f, char *config_path, std::vector<std::string> output, size_t buffsize);
-
 int derapify_file(char *source, char *target);
 int derapify_file(std::istream& source, std::ostream& target);
 
