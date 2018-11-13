@@ -147,7 +147,7 @@ struct mlod_lod {
     std::vector<mlod_face> faces;
     std::vector<float> mass;
     std::vector<uint32_t> sharp_edges;
-    struct property properties[MAXPROPERTIES];
+    std::vector<property> properties;
     ComparableFloat<std::centi> resolution;
     uint32_t num_selections;
     std::vector<mlod_selection> selections;
@@ -244,7 +244,7 @@ struct odol_lod {
     uint32_t num_selections;
     std::vector<struct odol_selection> selections;
     uint32_t num_properties;
-    struct property properties[MAXPROPERTIES];
+    std::vector<property> properties;
     uint32_t num_frames;
     struct odol_frame *frames;
     uint32_t icon_color;

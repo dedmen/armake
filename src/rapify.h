@@ -120,7 +120,7 @@ public:
         std::optional<int32_t> getInt(std::initializer_list<std::string_view> path);
         std::optional<float> getFloat(std::initializer_list<std::string_view> path);
         std::optional<std::string> getString(std::initializer_list<std::string_view> path);
-        std::vector<std::string> getArrayOfStrings(std::initializer_list<std::string_view> path);
+        std::optional<std::vector<std::string>> getArrayOfStrings(std::initializer_list<std::string_view> path);
         std::vector<float> getArrayOfFloats(std::initializer_list<std::string_view> path);
 
 

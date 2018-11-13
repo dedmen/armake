@@ -35,6 +35,7 @@ struct shader_ref {
 struct color {
     color() {}
     color(std::vector<float> vec): r(vec[0]), g(vec[1]), b(vec[2]), a(vec[3]) {}
+    color(float r, float g, float b, float a): r(r), g(g), b(b), a(a) {}
     float r;
     float g;
     float b;

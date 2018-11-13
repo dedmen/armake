@@ -209,7 +209,7 @@ int derapify_class(std::istream &source, Config::class_ &curClass, int level) {
 }
 
 std::vector<std::reference_wrapper<Config::class_>> Config::class_::getParents(class_& scope, class_ &entry) {
-    auto& parName = entry.parent;
+    auto parName = entry.parent;
     std::vector<std::reference_wrapper<Config::class_>> ret;
 
     while (!parName.empty()) {
@@ -258,13 +258,18 @@ std::optional<std::reference_wrapper<Config::definition>> Config::class_::getEnt
         if (found->type != rap_type::rap_class) return {}; //not at end and can't go further
         auto& c = std::get<class_>(found->content);
 
+
+        auto level2 = getEntry(c, std::initializer_list<std::string_view>(path.begin() + 1, path.end()));
+        if (level2) return level2;
+
         auto parents = getParents(curClass, c);
 
         for (auto& it : parents) {
-            auto subresult = it.get().getEntry(c, std::initializer_list<std::string_view>(path.begin() + 1, path.end()));
+            auto subresult = it.get().getEntry(it, std::initializer_list<std::string_view>(path.begin() + 1, path.end()));
             if (subresult)
                 return subresult;
         }
+        return {};
     }
     return *found;
 }
@@ -321,7 +326,7 @@ std::vector<std::reference_wrapper<Config::class_>> Config::class_::getSubClasse
     std::vector<std::reference_wrapper<Config::class_>> ret;
     for (auto& it : content) {
         if (it.type == rap_type::rap_class)
-            ret.emplace_back(it);
+            ret.emplace_back(std::get<class_>(it.content));
     }
     return ret;
 }
@@ -354,13 +359,13 @@ std::optional<std::string> Config::class_::getString(std::initializer_list<std::
     auto& def = *entry;
     if (def.get().type == rap_type::rap_var) {
         auto& var = std::get<variable>(def.get().content);
-        if (var.type == rap_type::rap_int)
+        if (var.expression.type == rap_type::rap_string)
             return std::get<std::string>(var.expression.value);
     }
     return {};
 }
 
-std::vector<std::string> Config::class_::getArrayOfStrings(std::initializer_list<std::string_view> path) {
+std::optional<std::vector<std::string>> Config::class_::getArrayOfStrings(std::initializer_list<std::string_view> path) {
     
     auto entry = getEntry(*this, path);
     if (!entry) return {};

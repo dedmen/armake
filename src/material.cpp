@@ -101,12 +101,9 @@ int read_material(struct material *material) {
 
     extern const char *current_target;
     char actual_path[2048];
-    char rapified_path[2048];
-    char config_path[2048];
     char temp[2048];
-    char shader[2048];
     int i;
-    struct color default_color = { 0.0f, 0.0f, 0.0f, 1.0f };
+    const struct color default_color = { 0.0f, 0.0f, 0.0f, 1.0f };
 
     if (material->path[0] != '\\') {
         strcpy(temp, "\\");
@@ -177,25 +174,27 @@ int read_material(struct material *material) {
 
 
     // Read shaders
-    if (!read_string(f, "PixelShaderID", shader, sizeof(shader))) {
+    auto pixelShaderID = cfg.getConfig().getString({ "PixelShaderID" });
+    if (pixelShaderID) {
         for (i = 0; i < sizeof(pixelshaders) / sizeof(struct shader_ref); i++) {
-            if (stricmp((char *)pixelshaders[i].name.data(), shader) == 0)
+            if (pixelshaders[i].name == *pixelShaderID)
                 break;
         }
         if (i == sizeof(pixelshaders) / sizeof(struct shader_ref)) {
-            lwarningf(current_target, -1, "Unrecognized pixel shader: \"%s\", assuming \"Normal\".\n", shader);
+            lwarningf(current_target, -1, "Unrecognized pixel shader: \"%s\", assuming \"Normal\".\n", *pixelShaderID);
             i = 0;
         }
         material->pixelshader_id = pixelshaders[i].id;
     }
 
-    if (!read_string(f, "VertexShaderID", shader, sizeof(shader))) {
+    auto VertexShaderID = cfg.getConfig().getString({ "VertexShaderID" });
+    if (VertexShaderID) {
         for (i = 0; i < sizeof(vertexshaders) / sizeof(struct shader_ref); i++) {
-            if (stricmp((char *)vertexshaders[i].name.data(), shader) == 0)
+            if (vertexshaders[i].name == *VertexShaderID)
                 break;
         }
         if (i == sizeof(vertexshaders) / sizeof(struct shader_ref)) {
-            lwarningf(current_target, -1, "Unrecognized vertex shader: \"%s\", assuming \"Basic\".\n", shader);
+            lwarningf(current_target, -1, "Unrecognized vertex shader: \"%s\", assuming \"Basic\".\n", *VertexShaderID);
             i = 0;
         }
         material->vertexshader_id = vertexshaders[i].id;
@@ -203,8 +202,7 @@ int read_material(struct material *material) {
 
     // Read stages
     for (i = 1; i < MAXSTAGES; i++) {
-        snprintf(config_path, sizeof(config_path), "Stage%i >> texture", i);
-        if (read_string(f, config_path, temp, sizeof(temp)))
+        if (!cfg.getConfig().getString({ "Stage" + std::to_string(i), "texture" }))
             break;
         material->num_textures++;
         material->num_transforms++;
@@ -216,8 +214,8 @@ int read_material(struct material *material) {
         if (i == 0) {
             material->textures[i].path[0] = 0;
         } else {
-            snprintf(config_path, sizeof(config_path), "Stage%i >> texture", i);
-            //read_string(f, config_path, material->textures[i].path, sizeof(material->textures[i].path));
+            auto texture = cfg.getConfig().getString({ "Stage" + std::to_string(i), "texture" });
+            material->textures[i].path = *texture;
         }
 
         material->textures[i].texture_filter = 3;
@@ -229,28 +227,28 @@ int read_material(struct material *material) {
         memcpy(material->transforms[i].transform, &identity_matrix, sizeof(identity_matrix));
 
         if (i != 0) {
-            snprintf(config_path, sizeof(config_path), "Stage%i >> uvTransform >> aside", i + 1);
-            read_float_array(f, config_path, material->transforms[i].transform[0], 4);
+            //#TODO retrieve uvTransform entry. So we don't re-resolve the whole path everytime
 
-            snprintf(config_path, sizeof(config_path), "Stage%i >> uvTransform >> up", i + 1);
-            read_float_array(f, config_path, material->transforms[i].transform[1], 4);
-
-            snprintf(config_path, sizeof(config_path), "Stage%i >> uvTransform >> dir", i + 1);
-            read_float_array(f, config_path, material->transforms[i].transform[2], 4);
-
-            snprintf(config_path, sizeof(config_path), "Stage%i >> uvTransform >> pos", i + 1);
-            read_float_array(f, config_path, material->transforms[i].transform[3], 4);
+            auto aside = cfg.getConfig().getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "aside" });
+            material->transforms[i].transform[0][0] = aside[0]; //#TODO make this easier use a actual matrix. And then read the parts as vectors using a vector<float> constructor
+            material->transforms[i].transform[0][1] = aside[1];
+            material->transforms[i].transform[0][2] = aside[2];
+            auto up = cfg.getConfig().getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "up" });
+            material->transforms[i].transform[1][0] = up[0];
+            material->transforms[i].transform[1][1] = up[1];
+            material->transforms[i].transform[1][2] = up[2];
+            auto dir = cfg.getConfig().getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "dir" });
+            material->transforms[i].transform[2][0] = dir[0];
+            material->transforms[i].transform[2][1] = dir[1];
+            material->transforms[i].transform[2][2] = dir[2];
+            auto pos = cfg.getConfig().getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "pos" });
+            material->transforms[i].transform[3][0] = pos[0];
+            material->transforms[i].transform[3][1] = pos[1];
+            material->transforms[i].transform[3][2] = pos[2];
         }
     }
 
     //read_string(f, "StageTI >> texture", material->dummy_texture.path, sizeof(material->dummy_texture.path));
-
-    // Clean up
-    fclose(f);
-    if (remove_file(rapified_path)) {
-        lwarningf(current_target, -1, "Failed to remove temporary material.\n");
-        return 4;
-    }
 
     return 0;
 }

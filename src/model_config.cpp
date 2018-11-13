@@ -235,7 +235,6 @@ int read_model_config(char *path, struct skeleton_ *skeleton) {
     char rapified_path[2048];
     char config_path[2048];
     char model_name[512];
-    std::vector<std::string> bones;
     char buffer[512]; //#TODO use one buffer for all string reads and then save them into std::string
     struct bone *bones_tmp;
 
@@ -306,28 +305,27 @@ int read_model_config(char *path, struct skeleton_ *skeleton) {
             skeleton->is_discrete = false;
 
         if (skeletonInherit->length() > 1) { // @todo: more than 1 parent
-            bones = cfg.getConfig().getArrayOfStrings({ "CfgSkeletons", *skeletonInherit , "skeletonInherit" });
-            if (bones.empty()) { //#TODO differentitate between empty and not found
+            auto skeletonBones = cfg.getConfig().getArrayOfStrings({ "CfgSkeletons", *skeletonInherit , "skeletonBones" });
+            if (!skeletonBones) { //#TODO differentitate between empty and not found
                 errorf("Failed to read bones.\n");
                 return success;//#TODO fix this error code. That's not the correct one
             }
-            for (i = 0; i < bones.size(); i += 2) {
-                skeleton->bones.emplace_back(bones[i], bones[i + 1]);
+            for (i = 0; i < skeletonBones->size(); i += 2) {
+                skeleton->bones.emplace_back((*skeletonBones)[i], (*skeletonBones)[i + 1]);
                 skeleton->num_bones++;
             }
         }
 
-        bones = cfg.getConfig().getArrayOfStrings({ "CfgSkeletons", skeleton->name , "skeletonInherit" });
-        if (bones.empty()) { //#TODO differentitate between empty and not found
+        auto skeletonBones = cfg.getConfig().getArrayOfStrings({ "CfgSkeletons", skeleton->name , "skeletonBones" });
+        if (!skeletonBones) { //#TODO differentitate between empty and not found
             errorf("Failed to read bones.\n");
             return success;//#TODO fix this error code. That's not the correct one
         }
 
-        for (i = 0; i < bones.size(); i += 2) {
-            skeleton->bones.emplace_back(bones[i], bones[i + 1]);
+        for (i = 0; i < skeletonBones->size(); i += 2) {
+            skeleton->bones.emplace_back((*skeletonBones)[i], (*skeletonBones)[i + 1]);
             skeleton->num_bones++;
         }
-        bones.clear();
 
         // Sort bones by parent
         std::vector<bone> sortedBones;
@@ -350,31 +348,35 @@ int read_model_config(char *path, struct skeleton_ *skeleton) {
 
     if (sectionsInherit->length() > 0) {
         auto sections = cfg.getConfig().getArrayOfStrings({ "CfgModels", *sectionsInherit, "sections" });
-        if (sections.empty()) { //#TODO differentiate between empty and not found
+        if (!sections) { //#TODO differentiate between empty and not found
             errorf("Failed to read sections.\n");
             return success;
         }
-        skeleton->sections = sections;
+        skeleton->sections = *sections;
     }
 
     auto sections = cfg.getConfig().getArrayOfStrings({ "CfgModels", model_name, "sections" });
-    if (sections.empty()) {
+    if (!sections) {
         errorf("Failed to read sections.\n");
         return success;
     }
-    skeleton->sections.insert(skeleton->sections.end(), sections.begin(), sections.end());
+    if (!sections->empty())
+        skeleton->sections.insert(skeleton->sections.end(), sections->begin(), sections->end());
 
     skeleton->num_sections = skeleton->sections.size();
 
     // Read animations
     skeleton->num_animations = 0;
-    sprintf(config_path, "CfgModels >> %s >> Animations", model_name);
-    //#TODO inheritance?
-    success = read_animations(cfg.getConfig().getClass({"CfgModels", model_name, "Animations"})->get(), config_path, skeleton);
-    if (success > 0) {
-        errorf("Failed to read animations.\n");
-        return success;
+    auto animations = cfg.getConfig().getClass({ "CfgModels", model_name, "Animations" });
+    if (animations) {
+        //#TODO inheritance?
+        success = read_animations(*animations, config_path, skeleton);
+        if (success > 0) {
+            errorf("Failed to read animations.\n");
+            return success;
+        }
     }
+
 
     if (skeleton->name.empty() && skeleton->num_animations > 0)
         lwarningf(path, -1, "animated-without-skeleton", "Model doesn't have a skeleton but is animated.\n");

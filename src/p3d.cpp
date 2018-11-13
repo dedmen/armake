@@ -120,11 +120,7 @@ int read_lods(FILE *f_source, std::vector<mlod_lod> &mlod_lods, uint32_t num_lod
             return -2;
 
         mlod_lods[i].num_sharp_edges = 0;
-
-        for (j = 0; j < MAXPROPERTIES; j++) {
-            mlod_lods[i].properties[j].name.clear();
-            mlod_lods[i].properties[j].value.clear();
-        }
+        mlod_lods[i].properties.clear();
 
         fp_taggs = ftell(f_source);
 
@@ -197,23 +193,19 @@ int read_lods(FILE *f_source, std::vector<mlod_lod> &mlod_lods, uint32_t num_lod
 
             if (strcmp(buffer, "#SharpEdges#") == 0) {
                 mlod_lods[i].num_sharp_edges = tagg_len / (2 * sizeof(uint32_t));
-                mlod_lods[i].sharp_edges.resize(mlod_lods[i].num_sharp_edges);
+                mlod_lods[i].sharp_edges.resize(mlod_lods[i].num_sharp_edges*2);//one edge is 2 points
+                //#TODO make it a vec of a pair of uints. 2 points for an edge
                 fread(mlod_lods[i].sharp_edges.data(), tagg_len, 1, f_source);
             }
 
             if (strcmp(buffer, "#Property#") == 0) {
-                for (j = 0; j < MAXPROPERTIES; j++) {
-                    if (mlod_lods[i].properties[j].name.empty())
-                        break;
-                }
-                if (j == MAXPROPERTIES)
-                    return -3;
 
                 char buffer[64];
                 fread(buffer, 64, 1, f_source);
-                mlod_lods[i].properties[j].name = buffer;
+                std::string name = buffer;
                 fread(buffer, 64, 1, f_source);
-                mlod_lods[i].properties[j].value = buffer;
+                std::string value = buffer;
+                mlod_lods[i].properties.emplace_back(property{ std::move(name), std::move(value) });
             }
 
             fseek(f_source, fp_tmp, SEEK_SET);
@@ -378,14 +370,13 @@ void build_model_info(std::vector<mlod_lod> &mlod_lods, uint32_t num_lods, struc
     model_info->animated = false; // @todo
 
     for (i = 0; i < num_lods; i++) {
-        for (j = 0; j < MAXPROPERTIES; j++) {
-            if (mlod_lods[i].properties[j].name != "autocenter")
-                continue;
-            if (mlod_lods[i].properties[j].value == "1") {
-                model_info->autocenter = true;
-                break;
-            }
-        }
+        auto& properties = mlod_lods[i].properties;
+        auto found = std::find_if(properties.begin(), properties.end(), [](const auto& prop) {
+            return prop.name == "autocenter" && prop.value == "1";
+        });
+
+        if (found != properties.end())
+            model_info->autocenter = true;
     }
 
     // Bounding box & center
@@ -643,7 +634,6 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
     size_t size;
     char *ptr;
     std::vector<std::string> textures;
-    textures.resize(odol_lod->num_textures);
     vector3 normal;
     struct uv_pair uv_coords;
 
@@ -725,7 +715,7 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
             break;
         }
 
-        if (odol_lod->materials[j].path[0] != 0 || mlod_lod->faces[i].material_name[0] == 0)
+        if (mlod_lod->faces[i].material_name.empty() || (!odol_lod->materials.empty() && (odol_lod->materials[j].path[0] != 0)))
             continue;
 
         const char* temp = current_target;
@@ -806,7 +796,7 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
 
     for (i = 0; i < mlod_lod->num_selections; i++) {
         for (j = 0; j < model_info->skeleton->num_sections; j++) {
-            if (mlod_lod->selections[i].name.c_str() == model_info->skeleton->sections[j])
+            if (mlod_lod->selections[i].name == model_info->skeleton->sections[j])
                 break;
         }
         if (j < model_info->skeleton->num_sections) {
@@ -1115,12 +1105,8 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
     }
 
     // Properties
-    odol_lod->num_properties = 0;
-    for (i = 0; i < MAXPROPERTIES; i++) {
-        if (!mlod_lod->properties[i].name.empty())
-            odol_lod->num_properties++;
-    }
-    memcpy(odol_lod->properties, mlod_lod->properties, MAXPROPERTIES * sizeof(struct property));
+    odol_lod->num_properties = mlod_lod->properties.size();
+    odol_lod->properties = mlod_lod->properties;
 
     odol_lod->num_frames = 0; // @todo
     odol_lod->frames = 0;
@@ -1371,9 +1357,9 @@ void write_odol_lod(FILE *f_target, struct odol_lod *odol_lod) {
     }
 
     fwrite(&odol_lod->num_properties, sizeof(uint32_t), 1, f_target);
-    for (i = 0; i < odol_lod->num_properties; i++) {
-        fwrite(odol_lod->properties[i].name.c_str(), odol_lod->properties[i].name.length() + 1, 1, f_target);
-        fwrite(odol_lod->properties[i].value.c_str(), odol_lod->properties[i].value.length() + 1, 1, f_target);
+    for (auto& prop : odol_lod->properties) {
+        fwrite(prop.name.c_str(), prop.name.length() + 1, 1, f_target);
+        fwrite(prop.value.c_str(), prop.value.length() + 1, 1, f_target);
     }
 
     fwrite(&odol_lod->num_frames, sizeof(uint32_t), 1, f_target);
