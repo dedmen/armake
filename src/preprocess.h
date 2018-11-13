@@ -51,7 +51,7 @@ struct lineref {
 };
 
 struct constant_stack {
-    std::list<std::list<constant>::iterator> stack;
+    std::list<std::list<constant>::const_iterator> stack;
 };
 
 bool matches_includepath(const char *path, const char *includepath, const char *includefolder);
@@ -65,13 +65,10 @@ class Preprocessor {
     bool keepLineCount = true;
     struct lineref lineref;
 
-    bool constants_parse(std::list<constant> &constants, std::string_view definition, int line);
-    std::optional<std::string> constants_preprocess(std::list<constant> &constants, std::string_view source, int line, constant_stack & constant_stack);
-
-    std::optional<std::string> constant_value(std::list<constant> &constants, std::list<constant>::iterator constant,
+    static bool constants_parse(std::list<constant> &constants, std::string_view definition, int line);
+    static std::optional<std::string> constants_preprocess(const std::list<constant> &constants, std::string_view source, int line, constant_stack & constant_stack);
+    static std::optional<std::string> constant_value(const std::list<constant> &constants, std::list<constant>::const_iterator constant,
         int num_args, std::vector<std::string>& args, int value, constant_stack &constant_stack);
-    void constant_free(struct constant *constant);
-
 
     char * resolve_macros(char *string, size_t buffsize, std::list<constant> &constants);
 

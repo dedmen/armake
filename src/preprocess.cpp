@@ -39,6 +39,8 @@
 #include "utils.h"
 #include "preprocess.h"
 #include <fstream>
+#include <execution>
+#include <variant>
 
 
 #define IS_MACRO_CHAR(x) ( (x) == '_' || \
@@ -246,16 +248,53 @@ bool Preprocessor::constants_parse(std::list<constant> &constants, std::string_v
     return true;
 }
 
-std::optional<std::string> Preprocessor::constants_preprocess(std::list<constant> &constants, std::string_view source, int line, constant_stack &constant_stack) {
+std::optional<std::string> Preprocessor::constants_preprocess(const std::list<constant> &constants, std::string_view source, int line, constant_stack &constant_stack) {
     const char *ptr = source.data();
     const char *start;
-
-    int i;
-    int num_args;
     int level;
     char in_string;
 
-    std::string result;
+    struct constToProcess {
+        std::list<constant>::const_iterator constant;
+        std::vector<std::string> args;
+        std::string processed;
+    };
+
+    std::vector<std::variant<std::string_view, constToProcess>> result;
+
+    auto processConstants = [&line, &constant_stack, &result, &constants]() {
+        
+        std::for_each(std::execution::par_unseq, result.begin(), result.end(), [&](auto& element) {
+            if (element.index() == 0) return; //skip stringviews
+
+            auto& cnst = std::get<constToProcess>(element);
+
+            auto substack = constant_stack;
+            auto value = constant_value(constants, cnst.constant, cnst.args.size(), cnst.args, line, substack);
+            if (!value)
+                return; //#TODO exception
+            cnst.processed = *value;
+        });
+
+        auto finalSize = std::transform_reduce(std::execution::par_unseq, result.begin(), result.end(), static_cast<size_t>(0u),
+            [](size_t l, size_t r) {return l + r; },
+            [](const std::variant<std::string_view, constToProcess>& var) {
+
+            if (var.index() == 0) return std::get<std::string_view>(var).length();
+            return std::get<constToProcess>(var).processed.length();
+        });
+        std::string res;
+        res.reserve(finalSize);
+
+        for (auto& it : result) {
+            if (it.index() == 0)
+                res += std::get<std::string_view>(it);
+            else
+                res += std::get<constToProcess>(it).processed;
+        }
+        return res;
+    };
+
 
     while (true) {
         // Non-tokens
@@ -264,7 +303,7 @@ std::optional<std::string> Preprocessor::constants_preprocess(std::list<constant
             ptr++;
 
         if (ptr - start > 0) {
-            result += std::string_view(start, ptr - start);
+            result.emplace_back(std::string_view(start, ptr - start));
         }
 
         if (*ptr == 0)
@@ -281,7 +320,7 @@ std::optional<std::string> Preprocessor::constants_preprocess(std::list<constant
         });
 
         if (c == constants.end() || (c->num_args > 0 && *ptr != '(')) {
-            result += std::string_view(start, ptr - start);
+            result.emplace_back(std::string_view(start, ptr - start));
             continue;
         }
 
@@ -289,8 +328,9 @@ std::optional<std::string> Preprocessor::constants_preprocess(std::list<constant
         if (std::find(constant_stack.stack.begin(), constant_stack.stack.end(), c) != constant_stack.stack.end())
             continue;
 
-        std::vector<std::string> args;
-        num_args = 0;
+        constToProcess curConst;
+        auto& args = curConst.args;
+        curConst.constant = c;
         if (*ptr == '(') {
             ptr++;
             start = ptr;
@@ -310,7 +350,6 @@ std::optional<std::string> Preprocessor::constants_preprocess(std::list<constant
                 } else if (level == 0 && (*ptr == ',' || *ptr == ')')) {
 
                     args.emplace_back(start, ptr - start);
-                    num_args++;
                     if (*ptr == ')') {
                         break;
                     }
@@ -328,20 +367,20 @@ std::optional<std::string> Preprocessor::constants_preprocess(std::list<constant
             }
         }
 
-        auto value = constant_value(constants, c, num_args, args, line, constant_stack);
-        if (!value)
-            return {};
+        //auto value = constant_value(constants, c, num_args, args, line, constant_stack);
+        //if (!value)
+        //    return {};
 
-        result += *value;
+
+        result.emplace_back(std::move(curConst));
     }
 
-    return result;
+    return processConstants();
 }
 
-std::optional<std::string> Preprocessor::constant_value(std::list<constant> &constants, std::list<constant>::iterator constant,
+std::optional<std::string> Preprocessor::constant_value(const std::list<constant> &constants, std::list<constant>::const_iterator constant,
         int num_args, std::vector<std::string>& args, int line, constant_stack & constant_stack) {
     int i;
-    char *ptr;
     char *tmp;
 
     if (num_args != constant->num_args) {
@@ -364,7 +403,7 @@ std::optional<std::string> Preprocessor::constant_value(std::list<constant> &con
         result = constant->value;
     } else {
         result = "";
-        ptr = constant->value.data();
+        const char *ptr = constant->value.data();
         for (i = 0; i < constant->num_occurences; i++) {
             result += std::string_view(ptr, constant->occurrences[i].second - (ptr - constant->value.data()));
             result += args[constant->occurrences[i].first];
@@ -697,6 +736,46 @@ int Preprocessor::preprocess(const char* sourceFileName, std::istream &input, st
     // if (constants[3].value == 0)
     //     constants[3].value = (char *)safe_malloc(1);
 
+    std::vector<std::tuple<std::string, bool, int>> linesToProcess;
+
+
+
+
+    auto processLine = [&](const std::string& curLine, int line) -> std::string {
+        constant_stack c;
+        std::optional<std::string> preprocessedLine = constants_preprocess(constants, curLine, line, c);
+        if (!preprocessedLine) {
+            lerrorf(sourceFileName, line, "Failed to resolve macros.\n");
+            //return 1; 
+            //#TODO exceptions
+        }
+        return *preprocessedLine;
+    };
+
+
+
+    auto processLines = [&]() {
+        std::vector<std::string> ret;
+        ret.resize(linesToProcess.size());
+
+        std::transform(std::execution::par_unseq, linesToProcess.begin(),linesToProcess.end(), ret.begin(),[&](std::tuple<std::string, bool, int>& element) {
+            auto&[str, shouldPreproc, line] = element;
+            if (!shouldPreproc)
+                return std::move(str);
+            else
+                return processLine(str, line);
+        });
+
+        for (auto& it : ret)
+            output.write(it.c_str(), it.length());
+
+        linesToProcess.clear();
+
+    };
+
+
+
+
     while (true) {
         // get line and add next lines if line ends with a backslash
         std::string curLine;
@@ -781,7 +860,7 @@ int Preprocessor::preprocess(const char* sourceFileName, std::istream &input, st
         if (trimLeading == std::string::npos) {//This line is empty besides a couple spaces. Nothing to preprocess here.
             if (keepLineCount) {
                 //output.write("\n", 1);
-                output.write(curLine.c_str(), curLine.length());
+                linesToProcess.emplace_back(std::move(curLine), false, line);
 
                 lineref.file_index.push_back(file_index);
                 lineref.line_number.push_back(line);
@@ -807,6 +886,7 @@ int Preprocessor::preprocess(const char* sourceFileName, std::istream &input, st
         // sprintf(constants[1].value, "%i", line - 1);
 
         if (level_comment == 0 && curLine[0] == '#') {
+            processLines();
             const char *ptr = curLine.c_str() + 1;
             while (*ptr == ' ' || *ptr == '\t')
                 ptr++;
@@ -901,15 +981,9 @@ int Preprocessor::preprocess(const char* sourceFileName, std::istream &input, st
                 return 5;
             }
         } else if (curLine.length() > 1) {
-            constant_stack c;
-            std::optional<std::string> preprocessedLine = constants_preprocess(constants, curLine, line, c);
-            if (!preprocessedLine) {
-                lerrorf(sourceFileName, line, "Failed to resolve macros.\n");
-                return 1;
-            }
-
-            output.write(preprocessedLine->c_str(), preprocessedLine->length());
+            linesToProcess.emplace_back(std::move(curLine), true, line);
         }
     }
+    processLines();
     return 0;
 }
