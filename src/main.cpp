@@ -220,9 +220,9 @@ int main(int argc, char *argv[]) {
     int i;
     int success;
 
-    append(&args.includefolders, &args.num_includefolders, ".");
-
     success = read_args(argc, argv);
+
+    append(&args.includefolders, &args.num_includefolders, "."); //Always check CWD after having checked given include folders
 
     if (success < 0)
         return 0;

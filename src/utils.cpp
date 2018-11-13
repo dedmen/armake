@@ -178,6 +178,7 @@ void nwarningf(const char *name, const char *format, ...) {
 
 
 void lnwarningf(const char *file, int line, const char *name, const char *format, ...) {
+    return;
     char buffer[4096];
     va_list argptr;
 
@@ -401,6 +402,13 @@ std::string trim(std::string_view string) {
     auto begin = string.find_first_not_of("\t ");
     auto end = string.find_last_not_of("\t ");
     return std::string(string.substr(begin, end - begin + 1));
+}
+
+void trimRef(std::string& string) {
+    
+    auto begin = string.find_first_not_of("\t ");
+    auto end = string.find_last_not_of("\t ");
+    string = string.substr(begin, end - begin + 1);
 }
 
 void replace_string(char *string, size_t buffsize, char *search, char *replace, int max, bool macro) {

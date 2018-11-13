@@ -100,13 +100,12 @@ int read_material(struct material *material) {
      */
 
     extern const char *current_target;
-    char actual_path[2048];
     char temp[2048];
     int i;
     const struct color default_color = { 0.0f, 0.0f, 0.0f, 1.0f };
 
     if (material->path[0] != '\\') {
-        strcpy(temp, "\\");
+        strcpy(temp, "\\");//#TODO use std::filesystem::path
         strcat(temp, material->path.c_str());
     } else {
         strcpy(temp, material->path.c_str());
@@ -146,7 +145,8 @@ int read_material(struct material *material) {
     material->dummy_texture.transform_index = 0;
     material->dummy_texture.type11_bool = 0;
 
-    if (find_file(temp, "", actual_path)) {
+    auto foundFile = find_file(temp, "");
+    if (!foundFile) {
         lwarningf(current_target, -1, "Failed to find material \"%s\".\n", temp);
         return 1;
     }
@@ -157,7 +157,7 @@ int read_material(struct material *material) {
 
     Preprocessor p;
     std::stringstream buf;
-    p.preprocess(actual_path, std::ifstream(actual_path, std::ifstream::in | std::ifstream::binary), buf, std::map<std::string, constant, std::less<>>());
+    p.preprocess(foundFile->string(), std::ifstream(foundFile->string(), std::ifstream::in | std::ifstream::binary), buf, Preprocessor::ConstantMapType());
     buf.seekg(0);
     auto cfg = Config::fromPreprocessedText(buf, p.getLineref());
 

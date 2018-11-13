@@ -27,6 +27,8 @@
 #include <utility>
 #include <optional>
 #include <map>
+#include <unordered_map>
+#include <filesystem>
 
 
 #define MAXCONSTS 4096
@@ -36,14 +38,6 @@
 #define LINEINTERVAL 1024
 
 
-struct constant {
-    std::string name;
-    std::string value;
-    int num_args;
-    int num_occurences;
-    //offset, length
-    std::vector<std::pair<size_t, size_t>> occurrences;
-};
 
 struct lineref {
     std::vector<std::string> file_names;
@@ -51,33 +45,45 @@ struct lineref {
     std::vector<uint32_t> line_number;
 };
 
-struct constant_stack {
-    std::list<std::map<std::string, constant, std::less<>>::const_iterator> stack;
-};
-
-bool matches_includepath(const char *path, const char *includepath, const char *includefolder);
-int find_file_helper(const char *includepath, const char *origin, char *includefolder, char *actualpath, const char *cwd);
-int find_file(const char *includepath, const char *origin, char *actualpath);
+bool matches_includepath(std::filesystem::path path, std::string_view includepath, std::string_view includefolder);
+std::optional<std::filesystem::path> find_file_helper(std::string_view includepath, std::string_view origin, std::string_view includefolder);
+std::optional<std::filesystem::path> find_file(std::string_view includepath, std::string_view origin);
 
 
 class Preprocessor {
+public:
+    struct constant {
+        std::string name;
+        std::string value;
+        int num_args;
+        int num_occurences;
+        //offset, length
+        std::vector<std::pair<size_t, size_t>> occurrences;
+    };
+
+    using ConstantMapType = std::unordered_map<std::string, constant>;//, std::less<>
+
+    struct constant_stack {
+        std::list<ConstantMapType::const_iterator> stack;
+    };
+private:
     std::vector<std::string> include_stack;
     //Replace block comments by empty lines instead of ommiting them
     bool keepLineCount = true;
     struct lineref lineref;
-    using constantIterator = std::map<std::string, constant, std::less<>>::const_iterator;
-
-    static bool constants_parse(std::map<std::string,constant, std::less<>> &constants, std::string_view definition, int line);
-    static std::optional<std::string> constants_preprocess(const std::map<std::string, constant, std::less<>> &constants, std::string_view source, int line, constant_stack & constant_stack);
-    static std::optional<std::string> constant_value(const std::map<std::string, constant, std::less<>> &constants, constantIterator constant,
+    static bool constants_parse(ConstantMapType &constants, std::string_view definition, int line);
+    static std::optional<std::string> constants_preprocess(const ConstantMapType &constants, std::string_view source, int line, constant_stack & constant_stack);
+    static std::optional<std::string> constant_value(const ConstantMapType &constants, ConstantMapType::const_iterator constant,
         int num_args, std::vector<std::string>& args, int value, constant_stack &constant_stack);
 
-    char * resolve_macros(char *string, size_t buffsize, std::map<std::string, constant, std::less<>> &constants);
+    char * resolve_macros(char *string, size_t buffsize, ConstantMapType &constants);
 
 public:
 
-    int preprocess(char *source, std::ostream &f_target, std::map<std::string, constant, std::less<>> &constants);
-    int preprocess(const char* sourceFileName, std::istream &input, std::ostream &output, std::map<std::string, constant, std::less<>> &constants);
+
+
+    int preprocess(char *source, std::ostream &f_target, ConstantMapType &constants);
+    int preprocess(std::string_view sourceFileName, std::istream &input, std::ostream &output, ConstantMapType &constants);
     struct lineref& getLineref() { return lineref; }
 
 };

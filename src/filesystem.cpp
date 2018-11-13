@@ -246,13 +246,13 @@ int remove_folder(char *folder) {
 }
 
 
-int copy_file(char *source, const char *target) {
+int copy_file(const char *source, const char *target) {
     /*
      * Copy the file from the source to the target. Overwrites if the target
      * already exists.
      * Returns a negative integer on failure and 0 on success.
      */
-
+    //#TODO std::filesystem
     // Create the containing folder
     //char containing[strlen(target) + 1];
     int lastsep = 0;

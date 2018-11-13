@@ -246,7 +246,8 @@ int attempt_bis_binarize(char *source, char *target) {
                 strcpy(filename, "\\");
             strcat(filename, dependencies[i]);
 
-            if (find_file(filename, "", temp)) {
+            auto fileFound = find_file(filename, "");
+            if (!fileFound) {
                 lwarningf(source, -1, "Failed to find file %s.\n", filename);
                 free(dependencies[i]);
                 continue;
@@ -255,7 +256,7 @@ int attempt_bis_binarize(char *source, char *target) {
             strcpy(filename, tempfolder);
             strcat(filename, dependencies[i]);
 
-            if (copy_file(temp, filename)) {
+            if (copy_file(fileFound->string().c_str(), filename)) {
                 errorf("Failed to copy %s to temp folder.\n", temp);
                 return 3;
             }

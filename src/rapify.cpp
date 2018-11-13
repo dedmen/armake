@@ -684,14 +684,14 @@ int Rapifier::rapify_file(std::istream &source, std::ostream &target, const char
             std::ostream_iterator<char>(target));
         return 0;
     }
-    Preprocessor preproc;
 
-    std::map<std::string, constant, std::less<>> constants;
+    Preprocessor preproc;
+    Preprocessor::ConstantMapType constants;
     std::stringstream fileToPreprocess;
     int success = preproc.preprocess(sourceFileName, source, fileToPreprocess, constants);
 
     current_target = sourceFileName;
-    exit(1);
+
     if (success) {
         errorf("Failed to preprocess %s.\n", sourceFileName);
         return success;

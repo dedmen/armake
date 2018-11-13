@@ -58,7 +58,7 @@ char *strchrnul(const char *s, int c) {
 }
 #endif
 
-bool Preprocessor::constants_parse(std::map<std::string, constant, std::less<>> &constants, std::string_view  definition, int line) {
+bool Preprocessor::constants_parse(ConstantMapType &constants, std::string_view  definition, int line) {
     
     char *argstr;
     char *tok;
@@ -246,14 +246,12 @@ bool Preprocessor::constants_parse(std::map<std::string, constant, std::less<>> 
     return true;
 }
 
-std::optional<std::string> Preprocessor::constants_preprocess(const std::map<std::string, constant, std::less<>> &constants, std::string_view source, int line, constant_stack &constant_stack) {
+std::optional<std::string> Preprocessor::constants_preprocess(const ConstantMapType &constants, std::string_view source, int line, constant_stack &constant_stack) {
     const char *ptr = source.data();
     const char *start;
-    int level;
-    char in_string;
 
     struct constToProcess {
-        std::map<std::string, constant, std::less<>>::const_iterator constant;
+        ConstantMapType::const_iterator constant;
         std::vector<std::string> args;
         std::string processed;
     };
@@ -261,26 +259,26 @@ std::optional<std::string> Preprocessor::constants_preprocess(const std::map<std
     std::vector<std::variant<std::string_view, constToProcess>> result;
 
     auto processConstants = [&line, &constant_stack, &result, &constants]() {
-        
-        std::for_each(std::execution::par_unseq, result.begin(), result.end(), [&](auto& element) {
-            if (element.index() == 0) return; //skip stringviews
+        const auto processConst = 
+            [&](std::variant<std::string_view, constToProcess>& var) {
 
-            auto& cnst = std::get<constToProcess>(element);
+
+            if (var.index() == 0) return std::get<std::string_view>(var).length();
+
+            auto& cnst = std::get<constToProcess>(var);
 
             auto substack = constant_stack;
             auto value = constant_value(constants, cnst.constant, cnst.args.size(), cnst.args, line, substack);
             if (!value)
-                return; //#TODO exception
+                return static_cast<size_t>(0u); //#TODO exception
             cnst.processed = *value;
-        });
+            return value->length();
+        };
 
-        auto finalSize = std::transform_reduce(std::execution::par_unseq, result.begin(), result.end(), static_cast<size_t>(0u),
-            [](size_t l, size_t r) {return l + r; },
-            [](const std::variant<std::string_view, constToProcess>& var) {
-
-            if (var.index() == 0) return std::get<std::string_view>(var).length();
-            return std::get<constToProcess>(var).processed.length();
-        });
+        auto finalSize = (result.size() > 5) ?
+            std::transform_reduce(std::execution::par_unseq, result.begin(), result.end(), static_cast<size_t>(0u), [](size_t l, size_t r) {return l + r; }, processConst)
+            :
+            std::transform_reduce(std::execution::seq, result.begin(), result.end(), static_cast<size_t>(0u), [](size_t l, size_t r) {return l + r; }, processConst);
         std::string res;
         res.reserve(finalSize);
 
@@ -312,8 +310,8 @@ std::optional<std::string> Preprocessor::constants_preprocess(const std::map<std
         while (IS_MACRO_CHAR(*ptr))
             ptr++;
 
-        
-        auto found = constants.find(std::string_view(start, ptr - start));
+        std::string_view src(start, ptr - start);
+        auto found = constants.find(std::string(src));
 
         if (found == constants.end() || (found->second.num_args > 0 && *ptr != '(')) {
             result.emplace_back(std::string_view(start, ptr - start));
@@ -334,8 +332,8 @@ std::optional<std::string> Preprocessor::constants_preprocess(const std::map<std
             ptr++;
             start = ptr;
 
-            in_string = 0;
-            level = 0;
+            char in_string = 0;
+            int level = 0;
             while (*ptr != 0) {
                 if (in_string) {
                     if (*ptr == in_string)
@@ -359,7 +357,7 @@ std::optional<std::string> Preprocessor::constants_preprocess(const std::map<std
 
             if (*ptr == 0) {
                 lerrorf(current_target, line,
-                        "Incomplete argument list for macro \"%s\".\n", c.name);
+                        "Incomplete argument list for macro \"%s\".\n", c.name.c_str());
                 return {};
             } else {
                 ptr++;
@@ -377,7 +375,7 @@ std::optional<std::string> Preprocessor::constants_preprocess(const std::map<std
     return processConstants();
 }
 
-std::optional<std::string> Preprocessor::constant_value(const std::map<std::string, constant, std::less<>> &constants, std::map<std::string, constant, std::less<>>::const_iterator constantIter,
+std::optional<std::string> Preprocessor::constant_value(const ConstantMapType &constants, ConstantMapType::const_iterator constantIter,
         int num_args, std::vector<std::string>& args, int line, constant_stack & constant_stack) {
     int i;
     char *tmp;
@@ -388,7 +386,7 @@ std::optional<std::string> Preprocessor::constant_value(const std::map<std::stri
     if (num_args != constant.num_args) {
         if (num_args)
             lerrorf(current_target, line,
-                    "Macro \"%s\" expects %i arguments, %i given.\n", constant.name, constant.num_args, num_args);
+                    "Macro \"%s\" expects %i arguments, %i given.\n", constant.name.c_str(), constant.num_args, num_args);
         return {};
     }
 
@@ -404,7 +402,7 @@ std::optional<std::string> Preprocessor::constant_value(const std::map<std::stri
     if (num_args == 0) {
         result = constant.value;
     } else {
-        result = "";
+        result.reserve(constant.num_occurences * 16);
         const char *ptr = constant.value.data();
         for (i = 0; i < constant.num_occurences; i++) {
             result += std::string_view(ptr, constant.occurrences[i].second - (ptr - constant.value.data()));
@@ -428,66 +426,52 @@ std::optional<std::string> Preprocessor::constant_value(const std::map<std::stri
     return res;
 }
 
-bool matches_includepath(const char *path, const char *includepath, const char *includefolder) {
+bool matches_includepath(std::filesystem::path startPath, std::string_view includepath, std::string_view includefolder) {
     /*
      * Checks if a given file can be matched to an include path by traversing
      * backwards through the filesystem until a $PBOPREFIX$ file is found.
      * If the prefix file, together with the diretory strucure, matches the
      * included path, true is returned.
      */
+    auto path = startPath;
 
-    int i;
-    char cwd[2048];
-    char prefixpath[2048];
-    char prefixedpath[2048];
-    char *ptr;
-    FILE *f_prefix;
 
-    strncpy(cwd, path, 2048);
-    ptr = cwd + strlen(cwd);
 
-    while (strcmp(includefolder, cwd) != 0) {
-        while (*ptr != PATHSEP)
-            ptr--;
-        *ptr = 0;
 
-        strncpy(prefixpath, cwd, 2048);
-        strcat(prefixpath, PATHSEP_STR);
-        strcat(prefixpath, "$PBOPREFIX$");
+    while (path.has_relative_path()) {
+        path = path.parent_path();
+        if (!std::filesystem::exists(path / "$PBOPREFIX$")) continue;
+        if (path.string().length() < includefolder.length()) break; //We had to leave includefolder to find it. Probably not correct.
 
-        f_prefix = fopen(prefixpath, "rb");
-        if (!f_prefix)
-            continue;
+        std::ifstream prefixFile(path / "$PBOPREFIX$");
+        std::string prefix;
+        std::getline(prefixFile, prefix);
+        prefixFile.close();
 
-        fgets(prefixedpath, sizeof(prefixedpath), f_prefix);
-        fclose(f_prefix);
+        if (prefix.back() == '\r') prefix.pop_back();
+        if (prefix.back() == '\\') prefix.pop_back();
 
-        if (prefixedpath[strlen(prefixedpath) - 1] == '\n')
-            prefixedpath[strlen(prefixedpath) - 1] = 0;
-        if (prefixedpath[strlen(prefixedpath) - 1] == '\r')
-            prefixedpath[strlen(prefixedpath) - 1] = 0;
-        if (prefixedpath[strlen(prefixedpath) - 1] == '\\')
-            prefixedpath[strlen(prefixedpath) - 1] = 0;
+        prefix += startPath.string().substr(path.string().length());
 
-        strcat(prefixedpath, path + strlen(cwd));
-
-        for (i = 0; i < strlen(prefixedpath); i++) {
-            if (prefixedpath[i] == '/')
-                prefixedpath[i] = '\\';
+        for (char& i : prefix) {
+            if (i == '/')
+                i = '\\';
         }
 
         // compensate for missing leading slash in PBOPREFIX
-        if (prefixedpath[0] != '\\')
-            return (strcmp(prefixedpath, includepath+1) == 0);
+        if (prefix[0] != '\\')
+            return (strcmp(prefix.data(), includepath.data() +1) == 0);
         else
-            return (strcmp(prefixedpath, includepath) == 0);
+            return (strcmp(prefix.data(), includepath.data()) == 0);
     }
 
-    return false;
+    //if the path contains the searchpath plus full prefix. It's probably correct. (unpacked modfolder in include directory, without pboprefix)
+    if (includepath.size() > startPath.string().size()) return false;
+    return std::equal(includepath.rbegin(), includepath.rend(), startPath.string().rbegin());
 }
 
 
-int find_file_helper(const char *includepath, const char *origin, char *includefolder, char *actualpath, const char *cwd) {
+std::optional<std::filesystem::path> find_file_helper(std::string_view includepath, std::string_view origin, std::string_view includefolder) {
     /*
      * Finds the file referenced in includepath in the includefolder. origin
      * describes the file in which the include is used (used for relative
@@ -500,129 +484,58 @@ int find_file_helper(const char *includepath, const char *origin, char *includef
      * file does not exist.
      */
 
+    std::filesystem::path incPath(includepath);
+    auto filename = incPath.filename();
+
     // relative include, this shit is easy
     if (includepath[0] != '\\') {
-        strncpy(actualpath, origin, 2048);
-        char *target = actualpath + strlen(actualpath) - 1;
-        while (*target != PATHSEP && target >= actualpath)
-            target--;
-        strncpy(target + 1, includepath, 2046 - (target - actualpath));
-
-#ifndef _WIN32
-        int i;
-        for (i = 0; i < strlen(actualpath); i++) {
-            if (actualpath[i] == '\\')
-                actualpath[i] = '/';
-        }
-#endif
-
-        return 0;
+        std::filesystem::path originPath(origin);
+        auto result = originPath.parent_path() / includepath;
+        if (std::filesystem::exists(result))
+            return result;
     }
 
-    char filename[2048];
-    const char *ptr = includepath + strlen(includepath);
+    const std::filesystem::path ignoreGit(".git");
+    const std::filesystem::path ignoreSvn(".git");
 
-    while (*ptr != '\\')
-        ptr--;
-    ptr++;
+    //recrusively search in directory
 
-    strncpy(filename, ptr, 2048);
-
-#ifdef _WIN32
-    if (cwd == NULL)
-        return find_file_helper(includepath, origin, includefolder, actualpath, includefolder);
-
-    WIN32_FIND_DATA file;
-    HANDLE handle = NULL;
-    char mask[2048];
-
-    GetFullPathName(includefolder, 2048, includefolder, NULL);
-
-    GetFullPathName(cwd, 2048, mask, NULL);
-    sprintf(mask, "%s\\*", mask);
-
-    handle = FindFirstFile(mask, &file);
-    if (handle == INVALID_HANDLE_VALUE)
-        return 1;
-
-    do {
-        if (strcmp(file.cFileName, ".") == 0 || strcmp(file.cFileName, "..") == 0)
+    for (auto i = std::filesystem::recursive_directory_iterator(includefolder, std::filesystem::directory_options::skip_permission_denied);
+        i != std::filesystem::recursive_directory_iterator();
+        ++i) {
+        if (i->is_directory() && (i->path().filename() == ignoreGit || i->path().filename() == ignoreSvn)) {
+            i.disable_recursion_pending(); //Don't recurse into that directory
             continue;
-
-        if (strcmp(file.cFileName, ".git") == 0)
-            continue;
-
-        GetFullPathName(cwd, 2048, mask, NULL);
-        sprintf(mask, "%s\\%s", mask, file.cFileName);
-        if (file.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-            if (!find_file_helper(includepath, origin, includefolder, actualpath, mask)) {
-                FindClose(handle);
-                return 0;
-            }
-        } else {
-            if (strcmp(filename, file.cFileName) == 0 && matches_includepath(mask, includepath, includefolder)) {
-                strncpy(actualpath, mask, 2048);
-                FindClose(handle);
-                return 0;
-            }
         }
-    } while (FindNextFile(handle, &file));
+        if (!i->is_regular_file()) continue;
 
-    FindClose(handle);
-#else
-    FTS *tree;
-    FTSENT *f;
-    char *argv[] = { includefolder, NULL };
-
-    tree = fts_open(argv, FTS_LOGICAL | FTS_NOSTAT, NULL);
-    if (tree == NULL)
-        return 1;
-
-    while ((f = fts_read(tree))) {
-        if (!strcmp(f->fts_name, ".git"))
-            fts_set(tree, f, FTS_SKIP);
-
-        switch (f->fts_info) {
-            case FTS_DNR:
-            case FTS_ERR:
-                fts_close(tree);
-                return 2;
-            case FTS_NS: continue;
-            case FTS_DP: continue;
-            case FTS_D: continue;
-            case FTS_DC: continue;
-        }
-
-        if (strcmp(filename, f->fts_name) == 0 && matches_includepath(f->fts_path, includepath, includefolder)) {
-            strncpy(actualpath, f->fts_path, 2048);
-            fts_close(tree);
-            return 0;
+        if (i->path().filename() == filename && matches_includepath(i->path(), includepath, includefolder)) {
+            return *i;
         }
     }
-
-    fts_close(tree);
-#endif
 
     // check for file without pboprefix
-    strncpy(filename, includefolder, sizeof(filename));
-    strncat(filename, includepath, sizeof(filename) - strlen(filename) - 1);
-#ifndef _WIN32
-    int i;
-    for (i = 0; i < strlen(filename); i++) {
-        if (filename[i] == '\\')
-            filename[i] = '/';
-    }
-#endif
-    if (std::filesystem::exists(filename)) {
-        strcpy(actualpath, filename);
-        return 0;
-    }
 
-    return 2;
+//    char filename2[2048];
+//    strncpy(filename2, includefolder.data(), sizeof(filename2));
+//    strncat(filename2, includepath.data(), sizeof(filename2) - strlen(filename2) - 1);
+//#ifndef _WIN32
+//    int i;
+//    for (i = 0; i < strlen(filename); i++) {
+//        if (filename[i] == '\\')
+//            filename[i] = '/';
+//    }
+//#endif
+    //if (std::filesystem::exists(filename)) {
+    //    strcpy(actualpath, filename);
+    //    return 0;
+    //}
+
+    return {};
 }
 
 
-int find_file(const char *includepath, const char *origin, char *actualpath) {
+std::optional<std::filesystem::path> find_file(std::string_view includepath, std::string_view origin) {
     /*
      * Finds the file referenced in includepath in the includefolder. origin
      * describes the file in which the include is used (used for relative
@@ -636,23 +549,13 @@ int find_file(const char *includepath, const char *origin, char *actualpath) {
      */
 
     extern struct arguments args;
-    int i;
-    int success;
-    char *temp = (char *)malloc(2048);
+    for (int i = 0; i < args.num_includefolders; i++) {
+        auto result = find_file_helper(includepath, origin, args.includefolders[i]);
 
-    for (i = 0; i < args.num_includefolders; i++) {
-        strcpy(temp, args.includefolders[i]);
-        success = find_file_helper(includepath, origin, temp, actualpath, NULL);
-
-        if (success != 2) {
-            free(temp);
-            return success;
-        }
+        if (result) return result;
     }
 
-    free(temp);
-
-    return 2;
+    return {};
 }
 
 //To make reverse iterating the include_stack easier
@@ -669,7 +572,7 @@ template <typename T>
 reversion_wrapper<T> reverse(T&& iterable) { return { iterable }; }
 
 
-int Preprocessor::preprocess(char *source, std::ostream &f_target, std::map<std::string, constant, std::less<>> &constants) {
+int Preprocessor::preprocess(char *source, std::ostream &f_target, ConstantMapType &constants) {
     /*
      * Writes the contents of source into the target file pointer, while
      * recursively resolving constants and includes using the includefolder
@@ -689,18 +592,18 @@ int Preprocessor::preprocess(char *source, std::ostream &f_target, std::map<std:
 }
 
 
-int Preprocessor::preprocess(const char* sourceFileName, std::istream &input, std::ostream &output, std::map<std::string, constant, std::less<>> &constants) {
+int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &input, std::ostream &output, ConstantMapType &constants) {
     int line = 0;
     int level = 0;
     int level_true = 0;
     int level_comment = 0;
 
-    current_target = sourceFileName;
+    current_target = sourceFileName.data();
 
     if (std::find(include_stack.begin(), include_stack.end(), std::string(sourceFileName)) != include_stack.end()) {
 
         errorf("Circular dependency detected, printing include stack:\n", sourceFileName);
-        fprintf(stderr, "    !!! %s\n", sourceFileName);
+        fprintf(stderr, "    !!! %s\n", sourceFileName.data());
         for (auto& it : reverse(include_stack)) {
             fprintf(stderr, "        %s\n", it.c_str()); //#TODO don't print to stderr. Make a global config thingy that contains the error stream (might be file or even network)
         }
@@ -713,11 +616,12 @@ int Preprocessor::preprocess(const char* sourceFileName, std::istream &input, st
     if (input.peek() == 0x3f)
         input.seekg(3, std::ifstream::beg);
 
+    //#TODO use fileystem::path to get filename here
     int file_index = lineref.file_names.size();
-    if (strchr(sourceFileName, PATHSEP) == NULL)
+    if (strchr(sourceFileName.data(), PATHSEP) == NULL)
         lineref.file_names.emplace_back(sourceFileName);
     else
-        lineref.file_names.emplace_back(strrchr(sourceFileName, PATHSEP) + 1);
+        lineref.file_names.emplace_back(strrchr(sourceFileName.data(), PATHSEP) + 1);
 
 
 
@@ -747,7 +651,7 @@ int Preprocessor::preprocess(const char* sourceFileName, std::istream &input, st
         constant_stack c;
         std::optional<std::string> preprocessedLine = constants_preprocess(constants, curLine, line, c);
         if (!preprocessedLine) {
-            lerrorf(sourceFileName, line, "Failed to resolve macros.\n");
+            lerrorf(sourceFileName.data(), line, "Failed to resolve macros.\n");
             //return 1; 
             //#TODO exceptions
         }
@@ -904,42 +808,42 @@ int Preprocessor::preprocess(const char* sourceFileName, std::istream &input, st
 
                 auto firstQuote = directive_args.find_first_of('"');
                 if (firstQuote == std::string::npos) { //No quotes around path
-                    lerrorf(sourceFileName, line, "Failed to parse #include.\n");
+                    lerrorf(sourceFileName.data(), line, "Failed to parse #include.\n");
                     return 5;
                 }
                 auto lastQuote = directive_args.find_last_of('"');
 
                 if (lastQuote == std::string::npos) {
-                    lerrorf(sourceFileName, line, "Failed to parse #include.\n");
+                    lerrorf(sourceFileName.data(), line, "Failed to parse #include.\n");
                     return 6;
                 }
 
                 directive_args = directive_args.substr(firstQuote + 1, lastQuote - firstQuote - 1);
 
-                char actualpath[2048];
-                if (find_file(directive_args.c_str(), sourceFileName, actualpath)) {
-                    lerrorf(sourceFileName, line, "Failed to find %s.\n", directive_args.c_str());
+                auto fileFound = find_file(directive_args.c_str(), sourceFileName);
+                if (!fileFound) {
+                    lerrorf(sourceFileName.data(), line, "Failed to find %s.\n", directive_args.c_str());
                     return 7;
                 }
 
-                std::ifstream includefile(actualpath);
+                std::ifstream includefile(fileFound->string());
 
                 if (!includefile.is_open() || includefile.fail()) {
-                    errorf("Failed to open %s.\n", actualpath);
+                    errorf("Failed to open %s.\n", fileFound->string().c_str());
                     return 1;
                 }
 
-                int success = preprocess(actualpath, includefile, output, constants);
+                int success = preprocess(fileFound->string(), includefile, output, constants);
 
                 include_stack.pop_back();
 
-                current_target = sourceFileName;
+                current_target = sourceFileName.data();
 
                 if (success)
                     return success;
             } else if (directive == "define") { //#TODO directive string to enum
                 if (!constants_parse(constants, directive_args, line)) {
-                    lerrorf(sourceFileName, line, "Failed to parse macro definition.\n");
+                    lerrorf(sourceFileName.data(), line, "Failed to parse macro definition.\n");
                     return 3;
                 }
             } else if (directive == "undef") {
@@ -962,14 +866,14 @@ int Preprocessor::preprocess(const char* sourceFileName, std::istream &input, st
                     level_true = level;
             } else if (directive == "endif") {
                 if (level == 0) {
-                    lerrorf(sourceFileName, line, "Unexpected #endif.\n");
+                    lerrorf(sourceFileName.data(), line, "Unexpected #endif.\n");
                     return 4;
                 }
                 if (level == level_true)
                     level_true--;
                 level--;
             } else {
-                lerrorf(sourceFileName, line, "Unknown preprocessor directive \"%s\".\n", directive);
+                lerrorf(sourceFileName.data(), line, "Unknown preprocessor directive \"%s\".\n", directive);
                 return 5;
             }
         } else if (curLine.length() > 1) {

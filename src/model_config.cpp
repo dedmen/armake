@@ -257,7 +257,7 @@ int read_model_config(char *path, struct skeleton_ *skeleton) {
 
     Preprocessor p;
     std::stringstream buf;
-    p.preprocess(model_config_path, std::ifstream(model_config_path), buf, std::map<std::string, constant, std::less<>>());
+    p.preprocess(model_config_path, std::ifstream(model_config_path), buf, Preprocessor::ConstantMapType());
     buf.seekg(0);
     auto cfg = Config::fromPreprocessedText(buf, p.getLineref());
 
