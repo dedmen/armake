@@ -702,15 +702,16 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
 
         while (curLine.back() == '\\') {
             curLine.pop_back(); //remove backslash
-            if (curLine.back() != '\n')
-                curLine += '\n';
+            //if (curLine.back() != '\n')
+            //    curLine += '\n';
 
             std::string nextLine;
             std::getline(input, nextLine);
             // fix windows line endings
             if (nextLine.back() == '\r')
                 nextLine.pop_back(); //remove the \r so that we hit the backslash in the while condition
-            
+            TODO lineref should be map<uint32_t, pair<file_index, line_number>>
+            where key is current line. aka number of \n's that were written to output so far
             line++;
             lineref.file_index.push_back(file_index);
             lineref.line_number.push_back(line);
