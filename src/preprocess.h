@@ -26,6 +26,7 @@
 #include <vector>
 #include <utility>
 #include <optional>
+#include <map>
 
 
 #define MAXCONSTS 4096
@@ -51,7 +52,7 @@ struct lineref {
 };
 
 struct constant_stack {
-    std::list<std::list<constant>::const_iterator> stack;
+    std::list<std::map<std::string, constant, std::less<>>::const_iterator> stack;
 };
 
 bool matches_includepath(const char *path, const char *includepath, const char *includefolder);
@@ -64,18 +65,19 @@ class Preprocessor {
     //Replace block comments by empty lines instead of ommiting them
     bool keepLineCount = true;
     struct lineref lineref;
+    using constantIterator = std::map<std::string, constant, std::less<>>::const_iterator;
 
-    static bool constants_parse(std::list<constant> &constants, std::string_view definition, int line);
-    static std::optional<std::string> constants_preprocess(const std::list<constant> &constants, std::string_view source, int line, constant_stack & constant_stack);
-    static std::optional<std::string> constant_value(const std::list<constant> &constants, std::list<constant>::const_iterator constant,
+    static bool constants_parse(std::map<std::string,constant, std::less<>> &constants, std::string_view definition, int line);
+    static std::optional<std::string> constants_preprocess(const std::map<std::string, constant, std::less<>> &constants, std::string_view source, int line, constant_stack & constant_stack);
+    static std::optional<std::string> constant_value(const std::map<std::string, constant, std::less<>> &constants, constantIterator constant,
         int num_args, std::vector<std::string>& args, int value, constant_stack &constant_stack);
 
-    char * resolve_macros(char *string, size_t buffsize, std::list<constant> &constants);
+    char * resolve_macros(char *string, size_t buffsize, std::map<std::string, constant, std::less<>> &constants);
 
 public:
 
-    int preprocess(char *source, std::ostream &f_target, std::list<constant> &constants);
-    int preprocess(const char* sourceFileName, std::istream &input, std::ostream &output, std::list<constant> &constants);
+    int preprocess(char *source, std::ostream &f_target, std::map<std::string, constant, std::less<>> &constants);
+    int preprocess(const char* sourceFileName, std::istream &input, std::ostream &output, std::map<std::string, constant, std::less<>> &constants);
     struct lineref& getLineref() { return lineref; }
 
 };

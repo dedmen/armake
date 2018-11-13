@@ -157,7 +157,7 @@ int read_material(struct material *material) {
 
     Preprocessor p;
     std::stringstream buf;
-    p.preprocess(actual_path, std::ifstream(actual_path, std::ifstream::in | std::ifstream::binary), buf, std::list<constant>());
+    p.preprocess(actual_path, std::ifstream(actual_path, std::ifstream::in | std::ifstream::binary), buf, std::map<std::string, constant, std::less<>>());
     buf.seekg(0);
     auto cfg = Config::fromPreprocessedText(buf, p.getLineref());
 

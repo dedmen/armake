@@ -58,7 +58,7 @@ char *strchrnul(const char *s, int c) {
 }
 #endif
 
-bool Preprocessor::constants_parse(std::list<constant> &constants, std::string_view  definition, int line) {
+bool Preprocessor::constants_parse(std::map<std::string, constant, std::less<>> &constants, std::string_view  definition, int line) {
     
     char *argstr;
     char *tok;
@@ -77,24 +77,22 @@ bool Preprocessor::constants_parse(std::list<constant> &constants, std::string_v
 
 
 
-    auto found = std::find_if(constants.begin(), constants.end(), [name](const constant& cnst) {
-        return cnst.name == name;
-    });
+    auto found = constants.find(std::string(name)); //#TODO string_view comparions
     if (found != constants.end()) {
         constants.erase(found);
         lnwarningf(current_target, line, "redefinition-wo-undef",
             "Constant \"%s\" is being redefined without an #undef.\n", name.data());
     }
 
-    auto& c = constants.emplace_back();
-    c.name = name;
+    auto iter = constants.emplace(name, constant());
+    constant& c = iter.first->second;
 
     c.num_args = 0;
     if (*ptr == '(') {
         argstr = safe_strdup(ptr + 1);
         if (strchr(argstr, ')') == NULL) {
             lerrorf(current_target, line,
-                    "Missing ) in argument list of \"%s\".\n", c.name);
+                    "Missing ) in argument list of \"%s\".\n", name);
             return false;
         }
         *strchr(argstr, ')') = 0;
@@ -248,14 +246,14 @@ bool Preprocessor::constants_parse(std::list<constant> &constants, std::string_v
     return true;
 }
 
-std::optional<std::string> Preprocessor::constants_preprocess(const std::list<constant> &constants, std::string_view source, int line, constant_stack &constant_stack) {
+std::optional<std::string> Preprocessor::constants_preprocess(const std::map<std::string, constant, std::less<>> &constants, std::string_view source, int line, constant_stack &constant_stack) {
     const char *ptr = source.data();
     const char *start;
     int level;
     char in_string;
 
     struct constToProcess {
-        std::list<constant>::const_iterator constant;
+        std::map<std::string, constant, std::less<>>::const_iterator constant;
         std::vector<std::string> args;
         std::string processed;
     };
@@ -314,23 +312,24 @@ std::optional<std::string> Preprocessor::constants_preprocess(const std::list<co
         while (IS_MACRO_CHAR(*ptr))
             ptr++;
 
+        
+        auto found = constants.find(std::string_view(start, ptr - start));
 
-        auto c = std::find_if(constants.begin(), constants.end(), [name = std::string_view(start, ptr - start)](const constant& cnst) {
-            return cnst.name == name;
-        });
-
-        if (c == constants.end() || (c->num_args > 0 && *ptr != '(')) {
+        if (found == constants.end() || (found->second.num_args > 0 && *ptr != '(')) {
             result.emplace_back(std::string_view(start, ptr - start));
             continue;
         }
 
         // prevent infinite loop
-        if (std::find(constant_stack.stack.begin(), constant_stack.stack.end(), c) != constant_stack.stack.end())
+        if (std::find(constant_stack.stack.begin(), constant_stack.stack.end(), found) != constant_stack.stack.end())
             continue;
+
+        const constant& c = found->second;
+
 
         constToProcess curConst;
         auto& args = curConst.args;
-        curConst.constant = c;
+        curConst.constant = found;
         if (*ptr == '(') {
             ptr++;
             start = ptr;
@@ -360,7 +359,7 @@ std::optional<std::string> Preprocessor::constants_preprocess(const std::list<co
 
             if (*ptr == 0) {
                 lerrorf(current_target, line,
-                        "Incomplete argument list for macro \"%s\".\n", c->name);
+                        "Incomplete argument list for macro \"%s\".\n", c.name);
                 return {};
             } else {
                 ptr++;
@@ -378,15 +377,18 @@ std::optional<std::string> Preprocessor::constants_preprocess(const std::list<co
     return processConstants();
 }
 
-std::optional<std::string> Preprocessor::constant_value(const std::list<constant> &constants, std::list<constant>::const_iterator constant,
+std::optional<std::string> Preprocessor::constant_value(const std::map<std::string, constant, std::less<>> &constants, std::map<std::string, constant, std::less<>>::const_iterator constantIter,
         int num_args, std::vector<std::string>& args, int line, constant_stack & constant_stack) {
     int i;
     char *tmp;
 
-    if (num_args != constant->num_args) {
+    auto& constant = constantIter->second;
+
+
+    if (num_args != constant.num_args) {
         if (num_args)
             lerrorf(current_target, line,
-                    "Macro \"%s\" expects %i arguments, %i given.\n", constant->name, constant->num_args, num_args);
+                    "Macro \"%s\" expects %i arguments, %i given.\n", constant.name, constant.num_args, num_args);
         return {};
     }
 
@@ -400,19 +402,19 @@ std::optional<std::string> Preprocessor::constant_value(const std::list<constant
 
     std::string result;
     if (num_args == 0) {
-        result = constant->value;
+        result = constant.value;
     } else {
         result = "";
-        const char *ptr = constant->value.data();
-        for (i = 0; i < constant->num_occurences; i++) {
-            result += std::string_view(ptr, constant->occurrences[i].second - (ptr - constant->value.data()));
-            result += args[constant->occurrences[i].first];
-            ptr = constant->value.data() + constant->occurrences[i].second;
+        const char *ptr = constant.value.data();
+        for (i = 0; i < constant.num_occurences; i++) {
+            result += std::string_view(ptr, constant.occurrences[i].second - (ptr - constant.value.data()));
+            result += args[constant.occurrences[i].first];
+            ptr = constant.value.data() + constant.occurrences[i].second;
         }
         result += ptr;
     }
 
-    constant_stack.stack.push_back(constant);
+    constant_stack.stack.push_back(constantIter);
 
     auto res = constants_preprocess(constants, result, line, constant_stack);
 
@@ -667,7 +669,7 @@ template <typename T>
 reversion_wrapper<T> reverse(T&& iterable) { return { iterable }; }
 
 
-int Preprocessor::preprocess(char *source, std::ostream &f_target, std::list<constant> &constants) {
+int Preprocessor::preprocess(char *source, std::ostream &f_target, std::map<std::string, constant, std::less<>> &constants) {
     /*
      * Writes the contents of source into the target file pointer, while
      * recursively resolving constants and includes using the includefolder
@@ -687,7 +689,7 @@ int Preprocessor::preprocess(char *source, std::ostream &f_target, std::list<con
 }
 
 
-int Preprocessor::preprocess(const char* sourceFileName, std::istream &input, std::ostream &output, std::list<constant> &constants) {
+int Preprocessor::preprocess(const char* sourceFileName, std::istream &input, std::ostream &output, std::map<std::string, constant, std::less<>> &constants) {
     int line = 0;
     int level = 0;
     int level_true = 0;
@@ -941,26 +943,16 @@ int Preprocessor::preprocess(const char* sourceFileName, std::istream &input, st
                     return 3;
                 }
             } else if (directive == "undef") {
-
-                auto found = std::find_if(constants.begin(), constants.end(), [directive_args](const constant& cnst) {
-                    return cnst.name == directive_args;
-                });
-                if (found != constants.end())
-                    constants.erase(found);
-
+                constants.erase(directive_args);
             } else if (directive == "ifdef") {
                 level++;
 
-                auto found = std::find_if(constants.begin(), constants.end(), [directive_args](const constant& cnst) {
-                    return cnst.name == directive_args;
-                });
+                auto found = constants.find(directive_args);
                 if (found != constants.end())
                     level_true++;
             } else if (directive == "ifndef") {
                 level++;
-                auto found = std::find_if(constants.begin(), constants.end(), [directive_args](const constant& cnst) {
-                    return cnst.name == directive_args;
-                });
+                auto found = constants.find(directive_args);
                 if (found == constants.end())
                     level_true++;
             } else if (directive == "else") {
