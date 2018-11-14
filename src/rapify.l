@@ -92,13 +92,13 @@
     return T_STRING;
 }
 
-\"(\\.|\"\"|[^"])*\"    {
+\"(\"\"|[^"])*?\" {
     RESET_VARS;
     yylval->string_value = unescape_string({yytext, static_cast<size_t>(yyleng)});
     return T_STRING;
 }
 
-'(\\.|''|[^'])*' {
+'(''|[^'])*?' {
     RESET_VARS;
     yylval->string_value = unescape_string({yytext, static_cast<size_t>(yyleng)});
     return T_STRING;
