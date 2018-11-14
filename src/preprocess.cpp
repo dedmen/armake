@@ -503,12 +503,16 @@ std::optional<std::filesystem::path> find_file_helper(std::string_view includepa
             return result;
     }
 
+    //Check if includefolder is a pdrive
+    auto subf = std::filesystem::path(includefolder) / includepath;
+    if (std::filesystem::exists(subf) && matches_includepath(subf, includepath, includefolder))
+        return subf;
+
     const std::filesystem::path ignoreGit(".git");
     const std::filesystem::path ignoreSvn(".git");
 
     //recrusively search in directory
-
-    for (auto i = std::filesystem::recursive_directory_iterator(includefolder, std::filesystem::directory_options::skip_permission_denied);
+    for (auto i = std::filesystem::recursive_directory_iterator(includefolder, std::filesystem::directory_options::follow_directory_symlink);
         i != std::filesystem::recursive_directory_iterator();
         ++i) {
         if (i->is_directory() && (i->path().filename() == ignoreGit || i->path().filename() == ignoreSvn)) {
@@ -699,12 +703,9 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
 
 
 
-
-    while (true) {
-        // get line and add next lines if line ends with a backslash
-        std::string curLine;
-        std::getline(input, curLine);
-        if (curLine.empty() && input.eof()) break;
+    std::string curLine;
+    while (std::getline(input, curLine)) {// get line and add next lines if line ends with a backslash
+        
         // fix windows line endings
         if (!curLine.empty() && curLine.back() == '\r')
             curLine.pop_back();
@@ -714,9 +715,6 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
         lineref.line_number.push_back(line);
 
         if (curLine.empty()) continue;
-
-        if (strncmp(curLine.c_str(), "TEST_SUCCESS", strlen("TEST_SUCCESS")) == 0)
-            __debugbreak();
 
         while (curLine.back() == '\\') {
             curLine.pop_back(); //remove backslash
