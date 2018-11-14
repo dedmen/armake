@@ -104,7 +104,7 @@
     return T_STRING;
 }
 
-[^;{"' \t\n][^;{\n]*/[ \t\n]*; {
+[^;,{"' \t\n][^;{\n]*/[ \t\n]*; {
     if (!staticData.allow_val)
         REJECT;
 
