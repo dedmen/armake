@@ -297,8 +297,14 @@ std::optional<std::string> Preprocessor::constants_preprocess(const ConstantMapT
     while (true) {
         // Non-tokens
         start = ptr;
-        while (*ptr != 0 && !IS_MACRO_CHAR(*ptr))
-            ptr++;
+        while (*ptr != 0 && !IS_MACRO_CHAR(*ptr)) {
+            if (*ptr == '"') {
+                ptr++;
+                while (*ptr != 0 && *ptr != '"')
+                    ptr++;
+            }
+            ptr++; //also skips ending "
+        }
 
         if (ptr - start > 0) {
             result.emplace_back(std::string_view(start, ptr - start));
