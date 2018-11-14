@@ -486,9 +486,9 @@ static const yytype_uint8 yytranslate[] =
   /* YYRLINE[YYN] -- Source line where rule number YYN was defined.  */
 static const yytype_uint8 yyrline[] =
 {
-       0,    80,    80,    82,    83,    84,    87,    88,    89,    90,
-      91,    94,    95,    96,    99,   100,   101,   102,   103,   104,
-     107,   108
+       0,    81,    81,    83,    84,    85,    88,    89,    90,    91,
+      92,    95,    96,    97,   100,   101,   102,   103,   104,   105,
+     108,   109
 };
 #endif
 
@@ -1179,7 +1179,6 @@ YYLTYPE yylloc = yyloc_default;
   int yytoken = 0;
   /* The variables used to return semantic value and location from the
      action routines.  */
-  YYSTYPE yyval;
   YYLTYPE yyloc;
 
 #if YYERROR_VERBOSE
@@ -1384,7 +1383,7 @@ yyreduce:
      users should not rely upon it.  Assigning to YYVAL
      unconditionally makes the parser a bit smaller, and it avoids a
      GCC warning that YYVAL may be used uninitialized.  */
-  yyval = yyvsp[1-yylen];
+  YYSTYPE& yyval = yyvsp[1-yylen];
 
   /* Default location. */
   YYLLOC_DEFAULT (yyloc, (yylsp - yylen), yylen);
@@ -1394,7 +1393,7 @@ yyreduce:
     {
         case 2:
 
-    { result = Config::class_((yyvsp[0].definitions_value)); }
+    { result = Config::class_(std::move((yyvsp[0].definitions_value))); }
 
     break;
 
@@ -1406,25 +1405,25 @@ yyreduce:
 
   case 4:
 
-    { (yyval.definitions_value).emplace_back(Config::rap_type::rap_class, (yyvsp[0].class_value)); }
+    { (yyval.definitions_value).emplace_back(Config::rap_type::rap_class, std::move((yyvsp[0].class_value))); }
 
     break;
 
   case 5:
 
-    { (yyval.definitions_value).emplace_back(Config::rap_type::rap_var, (yyvsp[0].variable_value)); }
+    { (yyval.definitions_value).emplace_back(Config::rap_type::rap_var, std::move((yyvsp[0].variable_value))); }
 
     break;
 
   case 6:
 
-    { (yyval.class_value) = Config::class_((yyvsp[-4].string_value), (yyvsp[-2].definitions_value), false); }
+    { (yyval.class_value) = Config::class_((yyvsp[-4].string_value), std::move((yyvsp[-2].definitions_value)), false); }
 
     break;
 
   case 7:
 
-    { (yyval.class_value) = Config::class_((yyvsp[-6].string_value), (yyvsp[-4].string_value), (yyvsp[-2].definitions_value), false); }
+    { (yyval.class_value) = Config::class_((yyvsp[-6].string_value), (yyvsp[-4].string_value), std::move((yyvsp[-2].definitions_value)), false); }
 
     break;
 

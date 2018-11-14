@@ -315,9 +315,9 @@ void reverse_endianness(void *ptr, size_t buffsize) {
 }
 
 
-bool matches_glob(char *string, char *pattern) {
-    char *ptr1 = string;
-    char *ptr2 = pattern;
+bool matches_glob(const char *string, const char *pattern) {
+    const char *ptr1 = string;
+    const char *ptr2 = pattern;
 
     while (*ptr1 != 0 && *ptr2 != 0) {
         if (*ptr2 == '*') {

@@ -42,6 +42,8 @@
 #include <execution>
 #include <variant>
 
+__itt_domain* preprocDomain = __itt_domain_create("armake.preproc");
+
 
 #define IS_MACRO_CHAR(x) ( (x) == '_' || \
     ((x) >= 'a' && (x) <= 'z') || \
@@ -534,8 +536,11 @@ std::optional<std::filesystem::path> find_file_helper(std::string_view includepa
     return {};
 }
 
-
+__itt_string_handle* handle_find_file = __itt_string_handle_create("find_file");
 std::optional<std::filesystem::path> find_file(std::string_view includepath, std::string_view origin) {
+    __itt_task_begin(preprocDomain, __itt_null, __itt_null, handle_find_file);
+
+
     /*
      * Finds the file referenced in includepath in the includefolder. origin
      * describes the file in which the include is used (used for relative
@@ -552,9 +557,12 @@ std::optional<std::filesystem::path> find_file(std::string_view includepath, std
     for (int i = 0; i < args.num_includefolders; i++) {
         auto result = find_file_helper(includepath, origin, args.includefolders[i]);
 
-        if (result) return result;
+        if (result) {
+            __itt_task_end(preprocDomain);
+            return result;
+        }
     }
-
+    __itt_task_end(preprocDomain);
     return {};
 }
 
@@ -593,6 +601,9 @@ int Preprocessor::preprocess(char *source, std::ostream &f_target, ConstantMapTy
 
 
 int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &input, std::ostream &output, ConstantMapType &constants) {
+    __itt_string_handle* handle_preprocess = __itt_string_handle_create(sourceFileName.data());
+    __itt_task_begin(preprocDomain, __itt_null, __itt_null, handle_preprocess);
+
     int line = 0;
     int level = 0;
     int level_true = 0;
@@ -607,6 +618,7 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
         for (auto& it : reverse(include_stack)) {
             fprintf(stderr, "        %s\n", it.c_str()); //#TODO don't print to stderr. Make a global config thingy that contains the error stream (might be file or even network)
         }
+        __itt_task_end(preprocDomain);
         return 1;
     }
 
@@ -710,8 +722,12 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
             // fix windows line endings
             if (nextLine.back() == '\r')
                 nextLine.pop_back(); //remove the \r so that we hit the backslash in the while condition
-            TODO lineref should be map<uint32_t, pair<file_index, line_number>>
-            where key is current line. aka number of \n's that were written to output so far
+
+
+            //#TODO lineref should be map<uint32_t, pair<file_index, line_number>>
+            //where key is current line. aka number of \n's that were written to output so far
+
+
             line++;
             lineref.file_index.push_back(file_index);
             lineref.line_number.push_back(line);
@@ -810,12 +826,14 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
                 auto firstQuote = directive_args.find_first_of('"');
                 if (firstQuote == std::string::npos) { //No quotes around path
                     lerrorf(sourceFileName.data(), line, "Failed to parse #include.\n");
+                    __itt_task_end(preprocDomain);
                     return 5;
                 }
                 auto lastQuote = directive_args.find_last_of('"');
 
                 if (lastQuote == std::string::npos) {
                     lerrorf(sourceFileName.data(), line, "Failed to parse #include.\n");
+                    __itt_task_end(preprocDomain);
                     return 6;
                 }
 
@@ -824,6 +842,7 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
                 auto fileFound = find_file(directive_args.c_str(), sourceFileName);
                 if (!fileFound) {
                     lerrorf(sourceFileName.data(), line, "Failed to find %s.\n", directive_args.c_str());
+                    __itt_task_end(preprocDomain);
                     return 7;
                 }
 
@@ -831,6 +850,7 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
 
                 if (!includefile.is_open() || includefile.fail()) {
                     errorf("Failed to open %s.\n", fileFound->string().c_str());
+                    __itt_task_end(preprocDomain);
                     return 1;
                 }
 
@@ -840,11 +860,15 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
 
                 current_target = sourceFileName.data();
 
-                if (success)
+                if (success) {
+                    __itt_task_end(preprocDomain);
                     return success;
+                }
+                   
             } else if (directive == "define") { //#TODO directive string to enum
                 if (!constants_parse(constants, directive_args, line)) {
                     lerrorf(sourceFileName.data(), line, "Failed to parse macro definition.\n");
+                    __itt_task_end(preprocDomain);
                     return 3;
                 }
             } else if (directive == "undef") {
@@ -868,6 +892,7 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
             } else if (directive == "endif") {
                 if (level == 0) {
                     lerrorf(sourceFileName.data(), line, "Unexpected #endif.\n");
+                    __itt_task_end(preprocDomain);
                     return 4;
                 }
                 if (level == level_true)
@@ -875,6 +900,7 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
                 level--;
             } else {
                 lerrorf(sourceFileName.data(), line, "Unknown preprocessor directive \"%s\".\n", directive);
+                __itt_task_end(preprocDomain);
                 return 5;
             }
         } else if (curLine.length() > 1) {
@@ -882,5 +908,6 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
         }
     }
     processLines();
+    __itt_task_end(preprocDomain);
     return 0;
 }

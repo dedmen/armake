@@ -21,6 +21,7 @@
 %option nodebug
 %option reentrant
 %option bison-bridge
+%option never-interactive
 
 %{
 #define YY_DECL int yylex(YYTypeStruct* yylval_param, YYLTYPE* yylloc, Config::class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner)

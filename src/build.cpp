@@ -37,9 +37,12 @@ extern "C" {
 #include "utils.h"
 #include "sign.h"
 #include "build.h"
+#include "utils.h"
+
+__itt_domain* buildDomain = __itt_domain_create("armake.build");
 
 
-bool file_allowed(char *filename) {
+bool file_allowed(const char *filename) {
     int i;
     extern struct arguments args;
 
@@ -54,6 +57,7 @@ bool file_allowed(char *filename) {
     return true;
 }
 
+std::vector<std::pair<std::filesystem::path, size_t>> files_sizes;
 
 int binarize_callback(char *root, char *source, char *junk) {
     int success;
@@ -74,6 +78,8 @@ int binarize_callback(char *root, char *source, char *junk) {
     }
 
     success = binarize(source, target);
+
+    files_sizes.emplace_back(target, std::filesystem::file_size(target));
 
     if (success > 0)
         return success * -1;
@@ -182,8 +188,9 @@ int write_data_to_pbo(char *root, char *source, char *target) {
     return 0;
 }
 
-
+__itt_string_handle* handle_hash_file = __itt_string_handle_create("hash_file");
 int hash_file(char *path, unsigned char *hash) {
+    __itt_task_begin(buildDomain, __itt_null, __itt_null, handle_hash_file);
     SHA1Context sha;
     FILE *file;
     int filesize, i;
@@ -220,6 +227,7 @@ int hash_file(char *path, unsigned char *hash) {
 
     memcpy(hash, sha.Message_Digest, 20);
 
+    __itt_task_end(buildDomain);
     return 0;
 }
 
@@ -413,13 +421,61 @@ int cmd_build() {
     fputc(0, f_target);
     fclose(f_target);
 
-    // write headers to file
-    if (traverse_directory(tempfolder, write_header_to_pbo, args.positionals[2])) {
-        errorf("Failed to write some file header(s) to PBO.\n");
-        remove_file(args.positionals[2]);
-        remove_folder(tempfolder);
-        return 7;
+
+    f_target = fopen(args.positionals[2], "ab");
+    if (!f_target)
+        return -1;
+    auto tmpFolderLen = strlen(tempfolder)+1;
+    for (auto& [path, filesize] : files_sizes) {
+
+        std::string filename = path.string().substr(tmpFolderLen);
+
+        if (!file_allowed(filename.c_str()))
+            return 0;
+
+        struct {
+            uint32_t method;
+            uint32_t originalsize;
+            uint32_t reserved;
+            uint32_t timestamp;
+            uint32_t datasize;
+        } header;
+        header.method = 0;
+        header.reserved = 0;
+        header.timestamp = 0;
+
+
+        header.datasize = filesize;
+        header.originalsize = filesize;
+
+        // replace pathseps on linux
+#ifndef _WIN32
+        int i;
+        for (i = 0; i < strlen(filename); i++) {
+            if (filename[i] == '/')
+                filename[i] = '\\';
+        }
+#endif
+
+        // replace .p3do ending
+        std::string_view p3do(".p3do");
+        if (std::equal(p3do.rbegin(), p3do.rend(), filename.rbegin()))
+            filename.pop_back();
+
+        fwrite(filename.c_str(), filename.length(), 1, f_target);
+        fputc(0, f_target);
+
+        fwrite(&header, sizeof(header), 1, f_target);
     }
+    fclose(f_target);
+
+    // write headers to file
+    //if (traverse_directory(tempfolder, write_header_to_pbo, args.positionals[2])) {
+    //    errorf("Failed to write some file header(s) to PBO.\n");
+    //    remove_file(args.positionals[2]);
+    //    remove_folder(tempfolder);
+    //    return 7;
+    //}
 
     // header boundary
     f_target = fopen(args.positionals[2], "ab");

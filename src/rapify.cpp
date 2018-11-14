@@ -42,6 +42,9 @@
 #include <algorithm>
 //#include "rapify.tab.h"
 
+__itt_domain* configDomain = __itt_domain_create("armake.config");
+
+
 bool parse_file(std::istream& f, struct lineref &lineref, Config::class_ &result);
 
 std::optional<std::vector<Config::expression>> derapify_array(std::istream &source) {
@@ -405,7 +408,9 @@ std::vector<float> Config::class_::getArrayOfFloats(std::initializer_list<std::s
     return {};
 }
 
+__itt_string_handle* handle_fromPreprocessedText = __itt_string_handle_create("Config::fromPreprocessedText");
 Config Config::fromPreprocessedText(std::istream &input, lineref& lineref) {
+    __itt_task_begin(configDomain, __itt_null, __itt_null, handle_fromPreprocessedText);
     Config output;
     output.config = std::make_shared<class_>();
     input.seekg(0);
@@ -413,17 +418,20 @@ Config Config::fromPreprocessedText(std::istream &input, lineref& lineref) {
 
     if (!result) {
         errorf("Failed to parse config.\n");
+        __itt_task_end(configDomain);
         return {};
     }
+    __itt_task_end(configDomain);
     return output;
 }
 
+__itt_string_handle* handle_fromBinarized = __itt_string_handle_create("Config::fromBinarized");
 Config Config::fromBinarized(std::istream & input) {
     if (!Rapifier::isRapified(input)) {
         errorf("Source file is not a rapified config.\n");
         return {};
     }
-
+    __itt_task_begin(configDomain, __itt_null, __itt_null, handle_fromBinarized);
     Config output;
     output.config = std::make_shared<class_>();
     input.seekg(0);
@@ -433,15 +441,19 @@ Config Config::fromBinarized(std::istream & input) {
 
     if (success) {
         errorf("Failed to parse config.\n");
+        __itt_task_end(configDomain);
         return {};
     }
+    __itt_task_end(configDomain);
     return output;
 }
 
+__itt_string_handle* handle_toBinarized = __itt_string_handle_create("Config::toBinarized");
 void Config::toBinarized(std::ostream& output) {
     if (!hasConfig()) return;
-
+    __itt_task_begin(configDomain, __itt_null, __itt_null, handle_toBinarized);
     Rapifier::rapify(getConfig(), output);
+    __itt_task_end(configDomain);
 }
 
 void Config::toPlainText(std::ostream& output, std::string_view indent) {
@@ -718,8 +730,10 @@ int Rapifier::rapify_file(std::istream &source, std::ostream &target, const char
     return 0;
 }
 
+
+__itt_string_handle* handle_rapify = __itt_string_handle_create("Rapifier::rapify");
 int Rapifier::rapify(Config::class_& cls, std::ostream& output) {
-    
+    __itt_task_begin(configDomain, __itt_null, __itt_null, handle_rapify);
     uint32_t enum_offset = 0;
     output.write("\0raP", 4);
     output.write("\0\0\0\0\x08\0\0\0", 8);
@@ -731,5 +745,6 @@ int Rapifier::rapify(Config::class_& cls, std::ostream& output) {
     output.write("\0\0\0\0", 4); // fuck enums
     output.seekp(12);
     output.write(reinterpret_cast<char*>(&enum_offset), 4);
+    __itt_task_end(configDomain);
     return 0; //#TODO this can't fail...
 }

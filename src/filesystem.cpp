@@ -42,6 +42,9 @@
 #include <string>
 #include <filesystem>
 
+__itt_domain* fsDomain = __itt_domain_create("armake.filesystem");
+
+
 
 #ifdef _WIN32
 size_t getdelim(char **buf, size_t *bufsiz, int delimiter, FILE *fp) {
@@ -217,7 +220,7 @@ int remove_file(char *path) {
 #endif
 }
 
-
+__itt_string_handle* handle_remove_folder = __itt_string_handle_create("remove_folder");
 int remove_folder(char *folder) {
     /*
      * Recursively removes a folder tree. Returns a negative integer on
@@ -225,13 +228,13 @@ int remove_folder(char *folder) {
      */
 
 #ifdef _WIN32
-
+    __itt_task_begin(fsDomain, __itt_null, __itt_null, handle_remove_folder);
     // MASSIVE @todo
     char cmd[512];
     sprintf(cmd, "rmdir %s /s /q", folder);
     if (system(cmd))
         return -1;
-
+    __itt_task_end(fsDomain);
 #else
 
     // ALSO MASSIVE @todo
@@ -432,7 +435,7 @@ cleanup:
 #endif
 }
 
-
+__itt_string_handle* handle_traverse_directory = __itt_string_handle_create("traverse_directory");
 int traverse_directory(char *root, int (*callback)(char *, char *, char *), char *third_arg) {
     /*
      * Traverse the given path and call the callback with the root folder as
@@ -445,8 +448,10 @@ int traverse_directory(char *root, int (*callback)(char *, char *, char *), char
      * This function returns 0 on success, a positive integer on a traversal
      * error and the last callback return value should the callback fail.
      */
-
-    return traverse_directory_recursive(root, root, callback, third_arg);
+    __itt_task_begin(fsDomain, __itt_null, __itt_null, handle_traverse_directory);
+    auto res = traverse_directory_recursive(root, root, callback, third_arg);
+    __itt_task_end(fsDomain);
+    return res;
 }
 
 
@@ -469,12 +474,14 @@ int copy_callback(char *source_root, char *source, char *target_root) {
     return copy_file(source, target.c_str());
 }
 
-
+__itt_string_handle* handle_copy_directory = __itt_string_handle_create("copy_directory");
 int copy_directory(char *source, char *target) {
     /*
      * Copy the entire directory given with source to the target folder.
      * Returns 0 on success and a non-zero integer on failure.
      */
+
+    __itt_task_begin(fsDomain, __itt_null, __itt_null, handle_copy_directory);
 
     // Remove trailing path seperators
     if (source[strlen(source) - 1] == PATHSEP)
@@ -482,5 +489,7 @@ int copy_directory(char *source, char *target) {
     if (target[strlen(target) - 1] == PATHSEP)
         target[strlen(target) - 1] = 0;
 
-    return traverse_directory(source, copy_callback, target);
+    auto res = traverse_directory(source, copy_callback, target);
+    __itt_task_end(fsDomain);
+    return res;
 }

@@ -19,10 +19,9 @@
 #pragma once
 
 
-#include <stdlib.h>
-#include <stdint.h>
-#include <stdbool.h>
+#include <cstdint>
 #include <list>
+#include <string>
 #include <vector>
 #include <utility>
 #include <optional>

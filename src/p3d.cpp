@@ -1644,6 +1644,9 @@ void write_animations(FILE *f_target, uint32_t num_lods, std::vector<mlod_lod> &
 }
 
 
+__itt_domain* p3dDomain = __itt_domain_create("armake.p3d");
+__itt_string_handle* handle_mlod2odol = __itt_string_handle_create("mlod2odol");
+
 int mlod2odol(char *source, char *target) {
     /*
      * Converts the MLOD P3D to ODOL. Overwrites the target if it already
@@ -1651,6 +1654,8 @@ int mlod2odol(char *source, char *target) {
      *
      * Returns 0 on success and a positive integer on failure.
      */
+
+    __itt_task_begin(p3dDomain, __itt_null, __itt_null, handle_mlod2odol);
 
     extern struct arguments args;
     extern const char *current_target;
@@ -1828,6 +1833,6 @@ int mlod2odol(char *source, char *target) {
 #ifdef _WIN32
     DeleteFile(temp_name);
 #endif
-
+    __itt_task_end(p3dDomain);
     return 0;
 }

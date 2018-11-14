@@ -55,6 +55,7 @@ void yyerror(YYLTYPE* yylloc, Config::class_ &result, struct lineref &lineref, p
 }
 
 %define api.value.type {YYTypeStruct}
+//%define api.value.automove true
 %pure-parser
 
 %token<string_value> T_NAME
@@ -77,15 +78,15 @@ void yyerror(YYLTYPE* yylloc, Config::class_ &result, struct lineref &lineref, p
 %locations
 
 %%
-start: definitions { result = Config::class_($1); }
+start: definitions { result = Config::class_(std::move($1)); }
 
 definitions:  /* empty */ { $$ = std::vector<Config::definition>(); }
-            | definitions class_ { $$.emplace_back(Config::rap_type::rap_class, $2); }
-            | definitions variable { $$.emplace_back(Config::rap_type::rap_var, $2); }
+            | definitions class_ { $$.emplace_back(Config::rap_type::rap_class, std::move($2)); }
+            | definitions variable { $$.emplace_back(Config::rap_type::rap_var, std::move($2)); }
 ;
 
-class_:        T_CLASS T_NAME T_LBRACE definitions T_RBRACE T_SEMICOLON { $$ = Config::class_($2, $4, false); }
-            | T_CLASS T_NAME T_COLON T_NAME T_LBRACE definitions T_RBRACE T_SEMICOLON { $$ = Config::class_($2, $4, $6, false); }
+class_:        T_CLASS T_NAME T_LBRACE definitions T_RBRACE T_SEMICOLON { $$ = Config::class_($2, std::move($4), false); }
+            | T_CLASS T_NAME T_COLON T_NAME T_LBRACE definitions T_RBRACE T_SEMICOLON { $$ = Config::class_($2, $4, std::move($6), false); }
             | T_CLASS T_NAME T_SEMICOLON { $$ = Config::class_($2, {}, false); $$.is_definition = true; }
             | T_CLASS T_NAME T_COLON T_NAME T_SEMICOLON { $$ = Config::class_($2, $4, {}, false); }
             | T_DELETE T_NAME T_SEMICOLON { $$ = Config::class_($2, {}, true); }
