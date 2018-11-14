@@ -399,8 +399,8 @@ std::vector<float> Config::class_::getArrayOfFloats(std::initializer_list<std::s
             auto& arr = std::get<std::vector<expression>>(var.expression.value);
             std::vector<float> ret;
             for (auto& it : arr) {
-                if (it.type != rap_type::rap_float) continue;
-                ret.push_back(std::get<float>(it.value));
+                if (it.type == rap_type::rap_float) ret.push_back(std::get<float>(it.value));
+                if (it.type == rap_type::rap_int) ret.push_back(std::get<int32_t>(it.value));
             }
             return ret;
         }
