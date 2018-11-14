@@ -495,14 +495,6 @@ std::optional<std::filesystem::path> find_file_helper(std::string_view includepa
     std::filesystem::path incPath(includepath);
     auto filename = incPath.filename();
 
-    // relative include, this shit is easy
-    if (includepath[0] != '\\') {
-        std::filesystem::path originPath(origin);
-        auto result = originPath.parent_path() / includepath;
-        if (std::filesystem::exists(result))
-            return result;
-    }
-
     //Check if includefolder is a pdrive
     auto subf = std::filesystem::path(includefolder) / includepath;
     if (std::filesystem::exists(subf) && matches_includepath(subf, includepath, includefolder))
@@ -562,6 +554,14 @@ std::optional<std::filesystem::path> find_file(std::string_view includepath, std
      * Please note that relative includes always return a path, even if that
      * file does not exist.
      */
+
+    // relative include, this shit is easy
+    if (includepath[0] != '\\') {
+        std::filesystem::path originPath(origin);
+        auto result = originPath.parent_path() / includepath;
+        if (std::filesystem::exists(result))
+            return result;
+    }
 
     extern struct arguments args;
     for (int i = 0; i < args.num_includefolders; i++) {
