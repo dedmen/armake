@@ -163,18 +163,18 @@ int read_material(struct material *material) {
 
     current_target = material->path.c_str();
     // Read colors
-    material->emissive = cfg.getConfig().getArrayOfFloats({ "emmisive" }); //#TODO default values
-    material->ambient = cfg.getConfig().getArrayOfFloats({ "ambient" });
-    material->diffuse = cfg.getConfig().getArrayOfFloats({ "diffuse" });
-    material->forced_diffuse = cfg.getConfig().getArrayOfFloats({ "forcedDiffuse" });
-    material->specular = cfg.getConfig().getArrayOfFloats({ "specular" });
+    material->emissive = cfg->getArrayOfFloats({ "emmisive" }); //#TODO default values
+    material->ambient = cfg->getArrayOfFloats({ "ambient" });
+    material->diffuse = cfg->getArrayOfFloats({ "diffuse" });
+    material->forced_diffuse = cfg->getArrayOfFloats({ "forcedDiffuse" });
+    material->specular = cfg->getArrayOfFloats({ "specular" });
    
     material->specular2 = material->specular;
-    material->specular_power = *cfg.getConfig().getFloat({ "specularPower" });
+    material->specular_power = *cfg->getFloat({ "specularPower" });
 
 
     // Read shaders
-    auto pixelShaderID = cfg.getConfig().getString({ "PixelShaderID" });
+    auto pixelShaderID = cfg->getString({ "PixelShaderID" });
     if (pixelShaderID) {
         for (i = 0; i < sizeof(pixelshaders) / sizeof(struct shader_ref); i++) {
             if (pixelshaders[i].name == *pixelShaderID)
@@ -187,7 +187,7 @@ int read_material(struct material *material) {
         material->pixelshader_id = pixelshaders[i].id;
     }
 
-    auto VertexShaderID = cfg.getConfig().getString({ "VertexShaderID" });
+    auto VertexShaderID = cfg->getString({ "VertexShaderID" });
     if (VertexShaderID) {
         for (i = 0; i < sizeof(vertexshaders) / sizeof(struct shader_ref); i++) {
             if (vertexshaders[i].name == *VertexShaderID)
@@ -202,7 +202,7 @@ int read_material(struct material *material) {
 
     // Read stages
     for (i = 1; i < MAXSTAGES; i++) {
-        if (!cfg.getConfig().getString({ "Stage" + std::to_string(i), "texture" }))
+        if (!cfg->getString({ "Stage" + std::to_string(i), "texture" }))
             break;
         material->num_textures++;
         material->num_transforms++;
@@ -214,7 +214,7 @@ int read_material(struct material *material) {
         if (i == 0) {
             material->textures[i].path[0] = 0;
         } else {
-            auto texture = cfg.getConfig().getString({ "Stage" + std::to_string(i), "texture" });
+            auto texture = cfg->getString({ "Stage" + std::to_string(i), "texture" });
             material->textures[i].path = *texture;
         }
 
@@ -229,19 +229,19 @@ int read_material(struct material *material) {
         if (i != 0) {
             //#TODO retrieve uvTransform entry. So we don't re-resolve the whole path everytime
 
-            auto aside = cfg.getConfig().getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "aside" });
+            auto aside = cfg->getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "aside" });
             material->transforms[i].transform[0][0] = aside[0]; //#TODO make this easier use a actual matrix. And then read the parts as vectors using a vector<float> constructor
             material->transforms[i].transform[0][1] = aside[1];
             material->transforms[i].transform[0][2] = aside[2];
-            auto up = cfg.getConfig().getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "up" });
+            auto up = cfg->getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "up" });
             material->transforms[i].transform[1][0] = up[0];
             material->transforms[i].transform[1][1] = up[1];
             material->transforms[i].transform[1][2] = up[2];
-            auto dir = cfg.getConfig().getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "dir" });
+            auto dir = cfg->getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "dir" });
             material->transforms[i].transform[2][0] = dir[0];
             material->transforms[i].transform[2][1] = dir[1];
             material->transforms[i].transform[2][2] = dir[2];
-            auto pos = cfg.getConfig().getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "pos" });
+            auto pos = cfg->getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "pos" });
             material->transforms[i].transform[3][0] = pos[0];
             material->transforms[i].transform[3][1] = pos[1];
             material->transforms[i].transform[3][2] = pos[2];

@@ -116,19 +116,19 @@ struct parserStaticData {
 };
 
 struct YYTypeStruct {
-    std::vector<Config::definition> definitions_value;
-    Config::class_ class_value;
-    Config::variable variable_value;
-    Config::expression expression_value;
+    std::vector<ConfigClassEntry> definitions_value;
+    std::shared_ptr<ConfigClass> class_value;
+    ConfigEntry variable_value;
+    ConfigValue expression_value;
     int32_t int_value;
     float float_value;
     std::string string_value;
 };
 
 struct YYLTYPE;
-extern int yylex(YYTypeStruct* yylval_param, YYLTYPE* yylloc, Config::class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner);
+extern int yylex(YYTypeStruct* yylval_param, YYLTYPE* yylloc, ConfigClass &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner);
 extern int yyparse();
-void yyerror(YYLTYPE* yylloc, Config::class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner, const char* s);
+void yyerror(YYLTYPE* yylloc, ConfigClass &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner, const char* s);
 
 
 
@@ -179,7 +179,7 @@ struct YYLTYPE
 
 
 
-int yyparse (Config::class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner);
+int yyparse (ConfigClass &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner);
 
 #endif /* !YY_YY_RAPIFY_TAB_HPP_INCLUDED  */
 
@@ -748,7 +748,7 @@ do {                                                                      \
 `----------------------------------------*/
 
 static void
-yy_symbol_value_print (FILE *yyoutput, int yytype, YYSTYPE const * const yyvaluep, YYLTYPE const * const yylocationp, Config::class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner)
+yy_symbol_value_print (FILE *yyoutput, int yytype, YYSTYPE const * const yyvaluep, YYLTYPE const * const yylocationp, ConfigClass &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner)
 {
   FILE *yyo = yyoutput;
   YYUSE (yyo);
@@ -772,7 +772,7 @@ yy_symbol_value_print (FILE *yyoutput, int yytype, YYSTYPE const * const yyvalue
 `--------------------------------*/
 
 static void
-yy_symbol_print (FILE *yyoutput, int yytype, YYSTYPE const * const yyvaluep, YYLTYPE const * const yylocationp, Config::class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner)
+yy_symbol_print (FILE *yyoutput, int yytype, YYSTYPE const * const yyvaluep, YYLTYPE const * const yylocationp, ConfigClass &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner)
 {
   YYFPRINTF (yyoutput, "%s %s (",
              yytype < YYNTOKENS ? "token" : "nterm", yytname[yytype]);
@@ -812,7 +812,7 @@ do {                                                            \
 `------------------------------------------------*/
 
 static void
-yy_reduce_print (yytype_int16 *yyssp, YYSTYPE *yyvsp, YYLTYPE *yylsp, int yyrule, Config::class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner)
+yy_reduce_print (yytype_int16 *yyssp, YYSTYPE *yyvsp, YYLTYPE *yylsp, int yyrule, ConfigClass &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner)
 {
   unsigned long yylno = yyrline[yyrule];
   int yynrhs = yyr2[yyrule];
@@ -1093,7 +1093,7 @@ yysyntax_error (YYSIZE_T *yymsg_alloc, char **yymsg,
 `-----------------------------------------------*/
 
 static void
-yydestruct (const char *yymsg, int yytype, YYSTYPE *yyvaluep, YYLTYPE *yylocationp, Config::class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner)
+yydestruct (const char *yymsg, int yytype, YYSTYPE *yyvaluep, YYLTYPE *yylocationp, ConfigClass &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner)
 {
   YYUSE (yyvaluep);
   YYUSE (yylocationp);
@@ -1118,7 +1118,7 @@ yydestruct (const char *yymsg, int yytype, YYSTYPE *yyvaluep, YYLTYPE *yylocatio
 `----------*/
 
 int
-yyparse (Config::class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner)
+yyparse (ConfigClass &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner)
 {
 /* The lookahead symbol.  */
 int yychar;
@@ -1179,6 +1179,7 @@ YYLTYPE yylloc = yyloc_default;
   int yytoken = 0;
   /* The variables used to return semantic value and location from the
      action routines.  */
+  YYSTYPE yyval;
   YYLTYPE yyloc;
 
 #if YYERROR_VERBOSE
@@ -1383,7 +1384,7 @@ yyreduce:
      users should not rely upon it.  Assigning to YYVAL
      unconditionally makes the parser a bit smaller, and it avoids a
      GCC warning that YYVAL may be used uninitialized.  */
-  YYSTYPE& yyval = yyvsp[1-yylen];
+  yyval = yyvsp[1-yylen];
 
   /* Default location. */
   YYLLOC_DEFAULT (yyloc, (yylsp - yylen), yylen);
@@ -1393,109 +1394,109 @@ yyreduce:
     {
         case 2:
 
-    { result = Config::class_(std::move((yyvsp[0].definitions_value))); }
+    { result = ConfigClass(std::move((yyvsp[0].definitions_value))); }
 
     break;
 
   case 3:
 
-    { (yyval.definitions_value) = std::vector<Config::definition>(); }
+    { (yyval.definitions_value) = std::vector<ConfigClassEntry>(); }
 
     break;
 
   case 4:
 
-    { (yyval.definitions_value).emplace_back(Config::rap_type::rap_class, std::move((yyvsp[0].class_value))); }
+    { (yyval.definitions_value).emplace_back(std::move((yyvsp[0].class_value))); }
 
     break;
 
   case 5:
 
-    { (yyval.definitions_value).emplace_back(Config::rap_type::rap_var, std::move((yyvsp[0].variable_value))); }
+    { (yyval.definitions_value).emplace_back(std::move((yyvsp[0].variable_value))); }
 
     break;
 
   case 6:
 
-    { (yyval.class_value) = Config::class_((yyvsp[-4].string_value), std::move((yyvsp[-2].definitions_value)), false); }
+    { (yyval.class_value) = std::make_shared<ConfigClass>((yyvsp[-4].string_value), std::move((yyvsp[-2].definitions_value))); }
 
     break;
 
   case 7:
 
-    { (yyval.class_value) = Config::class_((yyvsp[-6].string_value), (yyvsp[-4].string_value), std::move((yyvsp[-2].definitions_value)), false); }
+    { (yyval.class_value) = std::make_shared<ConfigClass>((yyvsp[-6].string_value), (yyvsp[-4].string_value), std::move((yyvsp[-2].definitions_value))); }
 
     break;
 
   case 8:
 
-    { (yyval.class_value) = Config::class_((yyvsp[-1].string_value), {}, false); (yyval.class_value).is_definition = true; }
+    { (yyval.class_value) = std::make_shared<ConfigClass>((yyvsp[-1].string_value), ConfigClass::definitionT()); }
 
     break;
 
   case 9:
 
-    { (yyval.class_value) = Config::class_((yyvsp[-3].string_value), (yyvsp[-1].string_value), {}, false); }
+    { (yyval.class_value) = std::make_shared<ConfigClass>((yyvsp[-3].string_value), (yyvsp[-1].string_value)); }
 
     break;
 
   case 10:
 
-    { (yyval.class_value) = Config::class_((yyvsp[-1].string_value), {}, true); }
+    { (yyval.class_value) = std::make_shared<ConfigClass>((yyvsp[-1].string_value), ConfigClass::deleteT()); }
 
     break;
 
   case 11:
 
-    { (yyval.variable_value) = Config::variable(Config::rap_type::rap_var, (yyvsp[-3].string_value), (yyvsp[-1].expression_value)); }
+    { (yyval.variable_value) = ConfigEntry(rap_type::rap_var, (yyvsp[-3].string_value), (yyvsp[-1].expression_value)); }
 
     break;
 
   case 12:
 
-    { (yyval.variable_value) = Config::variable(Config::rap_type::rap_array, (yyvsp[-5].string_value), (yyvsp[-1].expression_value)); }
+    { (yyval.variable_value) = ConfigEntry(rap_type::rap_array, (yyvsp[-5].string_value), (yyvsp[-1].expression_value)); }
 
     break;
 
   case 13:
 
-    { (yyval.variable_value) = Config::variable(Config::rap_type::rap_array_expansion, (yyvsp[-6].string_value), (yyvsp[-1].expression_value)); }
+    { (yyval.variable_value) = ConfigEntry(rap_type::rap_array_expansion, (yyvsp[-6].string_value), (yyvsp[-1].expression_value)); }
 
     break;
 
   case 14:
 
-    { (yyval.expression_value) = Config::expression(Config::rap_type::rap_int, (yyvsp[0].int_value)); }
+    { (yyval.expression_value) = ConfigValue(rap_type::rap_int, (yyvsp[0].int_value)); }
 
     break;
 
   case 15:
 
-    { (yyval.expression_value) = Config::expression(Config::rap_type::rap_float, (yyvsp[0].float_value)); }
+    { (yyval.expression_value) = ConfigValue(rap_type::rap_float, (yyvsp[0].float_value)); }
 
     break;
 
   case 16:
 
-    { (yyval.expression_value) = Config::expression(Config::rap_type::rap_string, (yyvsp[0].string_value)); }
+    { (yyval.expression_value) = ConfigValue(rap_type::rap_string, (yyvsp[0].string_value)); }
 
     break;
 
   case 17:
 
-    { (yyval.expression_value) = Config::expression(Config::rap_type::rap_array, (yyvsp[-1].expression_value)); }
+    { (yyval.expression_value) = ConfigValue(rap_type::rap_array, (yyvsp[-1].expression_value)); }
 
     break;
 
   case 18:
 
-    { (yyval.expression_value) = Config::expression(Config::rap_type::rap_array, (yyvsp[-2].expression_value)); }
+    { (yyval.expression_value) = ConfigValue(rap_type::rap_array, (yyvsp[-2].expression_value)); }
 
     break;
 
   case 19:
 
-    { (yyval.expression_value) = Config::expression(Config::rap_type::rap_array, std::vector<Config::expression>{}); }
+    { (yyval.expression_value) = ConfigValue(rap_type::rap_array, std::vector<ConfigValue>{}); }
 
     break;
 
@@ -1755,7 +1756,7 @@ void* yyget_extra(void* yyscanner);
 int yylex_init(void** ptr_yy_globals);
 int yylex_destroy(void* yyscanner);
 
-bool parse_file(std::istream& f, struct lineref &lineref, Config::class_ &result) {
+bool parse_file(std::istream& f, struct lineref &lineref, ConfigClass &result) {
 #if YYDEBUG == 1
     yydebug = 1;
 #endif
@@ -1776,7 +1777,7 @@ bool parse_file(std::istream& f, struct lineref &lineref, Config::class_ &result
     return true;
 }
 
-void yyerror(YYLTYPE* yylloc, Config::class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner, const char* s) {
+void yyerror(YYLTYPE* yylloc, ConfigClass &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner, const char* s) {
     int line = 0;
 
     auto& inputStream = *static_cast<std::istream*>(yyget_extra(yyscanner));

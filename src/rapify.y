@@ -38,19 +38,19 @@ struct parserStaticData {
 };
 
 struct YYTypeStruct {
-    std::vector<Config::definition> definitions_value;
-    Config::class_ class_value;
-    Config::variable variable_value;
-    Config::expression expression_value;
+    std::vector<ConfigClassEntry> definitions_value;
+    std::shared_ptr<ConfigClass> class_value;
+    ConfigEntry variable_value;
+    ConfigValue expression_value;
     int32_t int_value;
     float float_value;
     std::string string_value;
 };
 
 struct YYLTYPE;
-extern int yylex(YYTypeStruct* yylval_param, YYLTYPE* yylloc, Config::class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner);
+extern int yylex(YYTypeStruct* yylval_param, YYLTYPE* yylloc, ConfigClass &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner);
 extern int yyparse();
-void yyerror(YYLTYPE* yylloc, Config::class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner, const char* s);
+void yyerror(YYLTYPE* yylloc, ConfigClass &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner, const char* s);
 
 }
 
@@ -74,35 +74,35 @@ void yyerror(YYLTYPE* yylloc, Config::class_ &result, struct lineref &lineref, p
 
 %start start
 
-%param {Config::class_ &result} {struct lineref &lineref} {parserStaticData& staticData} {void* yyscanner}
+%param {ConfigClass &result} {struct lineref &lineref} {parserStaticData& staticData} {void* yyscanner}
 %locations
 
 %%
-start: definitions { result = Config::class_(std::move($1)); }
+start: definitions { result = ConfigClass(std::move($1)); }
 
-definitions:  /* empty */ { $$ = std::vector<Config::definition>(); }
-            | definitions class_ { $$.emplace_back(Config::rap_type::rap_class, std::move($2)); }
-            | definitions variable { $$.emplace_back(Config::rap_type::rap_var, std::move($2)); }
+definitions:  /* empty */ { $$ = std::vector<ConfigClassEntry>(); }
+            | definitions class_ { $$.emplace_back(std::move($2)); }
+            | definitions variable { $$.emplace_back(std::move($2)); }
 ;
 
-class_:        T_CLASS T_NAME T_LBRACE definitions T_RBRACE T_SEMICOLON { $$ = Config::class_($2, std::move($4), false); }
-            | T_CLASS T_NAME T_COLON T_NAME T_LBRACE definitions T_RBRACE T_SEMICOLON { $$ = Config::class_($2, $4, std::move($6), false); }
-            | T_CLASS T_NAME T_SEMICOLON { $$ = Config::class_($2, {}, false); $$.is_definition = true; }
-            | T_CLASS T_NAME T_COLON T_NAME T_SEMICOLON { $$ = Config::class_($2, $4, {}, false); }
-            | T_DELETE T_NAME T_SEMICOLON { $$ = Config::class_($2, {}, true); }
+class_:        T_CLASS T_NAME T_LBRACE definitions T_RBRACE T_SEMICOLON { $$ = std::make_shared<ConfigClass>($2, std::move($4)); }
+            | T_CLASS T_NAME T_COLON T_NAME T_LBRACE definitions T_RBRACE T_SEMICOLON { $$ = std::make_shared<ConfigClass>($2, $4, std::move($6)); }
+            | T_CLASS T_NAME T_SEMICOLON { $$ = std::make_shared<ConfigClass>($2, ConfigClass::definitionT()); }
+            | T_CLASS T_NAME T_COLON T_NAME T_SEMICOLON { $$ = std::make_shared<ConfigClass>($2, $4); }
+            | T_DELETE T_NAME T_SEMICOLON { $$ = std::make_shared<ConfigClass>($2, ConfigClass::deleteT()); }
 ;
 
-variable:     T_NAME T_EQUALS expression T_SEMICOLON { $$ = Config::variable(Config::rap_type::rap_var, $1, $3); }
-            | T_NAME T_LBRACKET T_RBRACKET T_EQUALS expression T_SEMICOLON { $$ = Config::variable(Config::rap_type::rap_array, $1, $5); }
-            | T_NAME T_LBRACKET T_RBRACKET T_PLUS T_EQUALS expression T_SEMICOLON { $$ = Config::variable(Config::rap_type::rap_array_expansion, $1, $6); }
+variable:     T_NAME T_EQUALS expression T_SEMICOLON { $$ = ConfigEntry(rap_type::rap_var, $1, $3); }
+            | T_NAME T_LBRACKET T_RBRACKET T_EQUALS expression T_SEMICOLON { $$ = ConfigEntry(rap_type::rap_array, $1, $5); }
+            | T_NAME T_LBRACKET T_RBRACKET T_PLUS T_EQUALS expression T_SEMICOLON { $$ = ConfigEntry(rap_type::rap_array_expansion, $1, $6); }
 ;
 
-expression:   T_INT { $$ = Config::expression(Config::rap_type::rap_int, $1); }
-            | T_FLOAT { $$ = Config::expression(Config::rap_type::rap_float, $1); }
-            | T_STRING { $$ = Config::expression(Config::rap_type::rap_string, $1); }
-            | T_LBRACE expressions T_RBRACE { $$ = Config::expression(Config::rap_type::rap_array, $2); }
-            | T_LBRACE expressions T_COMMA T_RBRACE { $$ = Config::expression(Config::rap_type::rap_array, $2); }
-            | T_LBRACE T_RBRACE { $$ = Config::expression(Config::rap_type::rap_array, std::vector<Config::expression>{}); }
+expression:   T_INT { $$ = ConfigValue(rap_type::rap_int, $1); }
+            | T_FLOAT { $$ = ConfigValue(rap_type::rap_float, $1); }
+            | T_STRING { $$ = ConfigValue(rap_type::rap_string, $1); }
+            | T_LBRACE expressions T_RBRACE { $$ = ConfigValue(rap_type::rap_array, $2); }
+            | T_LBRACE expressions T_COMMA T_RBRACE { $$ = ConfigValue(rap_type::rap_array, $2); }
+            | T_LBRACE T_RBRACE { $$ = ConfigValue(rap_type::rap_array, std::vector<ConfigValue>{}); }
 ;
 
 expressions:  expression { $$ = $1; }
@@ -116,7 +116,7 @@ void* yyget_extra(void* yyscanner);
 int yylex_init(void** ptr_yy_globals);
 int yylex_destroy(void* yyscanner);
 
-bool parse_file(std::istream& f, struct lineref &lineref, Config::class_ &result) {
+bool parse_file(std::istream& f, struct lineref &lineref, ConfigClass &result) {
 #if YYDEBUG == 1
     yydebug = 1;
 #endif
@@ -137,7 +137,7 @@ bool parse_file(std::istream& f, struct lineref &lineref, Config::class_ &result
     return true;
 }
 
-void yyerror(YYLTYPE* yylloc, Config::class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner, const char* s) {
+void yyerror(YYLTYPE* yylloc, ConfigClass &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner, const char* s) {
     int line = 0;
 
     auto& inputStream = *static_cast<std::istream*>(yyget_extra(yyscanner));

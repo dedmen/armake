@@ -63,19 +63,19 @@ struct parserStaticData {
 };
 
 struct YYTypeStruct {
-    std::vector<Config::definition> definitions_value;
-    Config::class_ class_value;
-    Config::variable variable_value;
-    Config::expression expression_value;
+    std::vector<ConfigClassEntry> definitions_value;
+    std::shared_ptr<ConfigClass> class_value;
+    ConfigEntry variable_value;
+    ConfigValue expression_value;
     int32_t int_value;
     float float_value;
     std::string string_value;
 };
 
 struct YYLTYPE;
-extern int yylex(YYTypeStruct* yylval_param, YYLTYPE* yylloc, Config::class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner);
+extern int yylex(YYTypeStruct* yylval_param, YYLTYPE* yylloc, ConfigClass &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner);
 extern int yyparse();
-void yyerror(YYLTYPE* yylloc, Config::class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner, const char* s);
+void yyerror(YYLTYPE* yylloc, ConfigClass &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner, const char* s);
 
 
 
@@ -126,6 +126,6 @@ struct YYLTYPE
 
 
 
-int yyparse (Config::class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner);
+int yyparse (ConfigClass &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner);
 
 #endif /* !YY_YY_RAPIFY_TAB_HPP_INCLUDED  */

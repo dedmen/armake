@@ -44,375 +44,243 @@
 
 __itt_domain* configDomain = __itt_domain_create("armake.config");
 
+__itt_string_handle* handle_buildParentTree = __itt_string_handle_create("ConfigClass::buildParentTree");
+__itt_string_handle* handle_buildParentTreeRec = __itt_string_handle_create("ConfigClass::buildParentTreeRec");
 
-bool parse_file(std::istream& f, struct lineref &lineref, Config::class_ &result);
-
-std::optional<std::vector<Config::expression>> derapify_array(std::istream &source) {
-    std::vector<Config::expression> output;
-    uint32_t num_entries = read_compressed_int(source);
-
-    for (int i = 0; i < num_entries; i++) {
-        uint8_t type = source.get();
-
-        if (type == 0) {
-            std::string value;
-            std::getline(source, value, '\0');
-
-            output.emplace_back(Config::rap_type::rap_string, escape_string(value));
-        }
-        else if (type == 1) {
-            float float_value;
-            source.read(reinterpret_cast<char*>(&float_value), sizeof(float_value));
-
-            output.emplace_back(Config::rap_type::rap_float, float_value);
-        }
-        else if (type == 2) {
-            int32_t long_value;
-            source.read(reinterpret_cast<char*>(&long_value), sizeof(long_value));
-
-            output.emplace_back(Config::rap_type::rap_int, long_value);
-        }
-        else if (type == 3) {
-            auto result = derapify_array(source);
-
-            if (!result) {
-                errorf("Failed to derapify subarray.\n");
-                return {};
-            }
-            output.emplace_back(Config::rap_type::rap_array, std::move(*result));
-        }
-        else {
-            errorf("Unknown array element type %i.\n", type);
-            return {};
-        }
-    }
-
-    return output;
+std::string_view ConfigClassEntry::getName() const {
+    if (isClass())
+        return getAsClass()->getName();
+    if (isEntry())
+        return getAsEntry().getName();
+    return std::get<2>(value);
 }
 
-int derapify_class(std::istream &source, Config::class_ &curClass, int level) {
-    if (curClass.name.empty()) {
-        source.seekg(16);
-    }
+void ConfigClass::buildParentTree() {
+    __itt_task_begin(configDomain, __itt_null, __itt_null, handle_buildParentTree);
+    std::for_each(std::execution::seq, entries.begin(), entries.end(), [this](const ConfigClassEntry& it) {
+        if (!it.isClass()) return;
+        auto& c = it.getAsClass();
+        c->treeParent = shared_from_this();
+        if (c->inheritedParent.index() == 0) return; //doesn't have parent
+        if (c->inheritedParent.index() == 2) return; //already resolved
+        auto& parentName = std::get<std::string>(c->inheritedParent);
 
-    uint32_t fp_tmp = source.tellg();
-    std::string inherited;
-    std::getline(source, inherited, '\0');
+        if (auto par = c->treeParent.lock()->findInheritedParent(ConfigClassEntry(parentName)))
+            c->inheritedParent = par;
+        else
+            __debugbreak();
+    });
+    __itt_task_end(configDomain);
 
-    uint32_t num_entries = read_compressed_int(source);
-
-    if (!curClass.name.empty()) {
-        curClass.parent = inherited;
-    }
-
-    for (int i = 0; i < num_entries; i++) {
-        uint8_t type = source.get();
-
-        if (type == 0) { //class definition
-            Config::class_ subclass;
-
-
-            std::getline(source, subclass.name, '\0');
-
-            uint32_t fp_class;
-            source.read(reinterpret_cast<char*>(&fp_class), sizeof(uint32_t));
-            fp_tmp = source.tellg();
-            source.seekg(fp_class);
-
-            auto success = derapify_class(source, subclass, level + 1);
-
-            if (success) {
-                errorf("Failed to derapify class \"%s\".\n", subclass.name.c_str());
-                return success;
-            }
-
-            curClass.content.emplace_back(Config::rap_type::rap_class, std::move(subclass));
-            source.seekg(fp_tmp);
-        }
-        else if (type == 1) { //value
-         //#TODO make enums for these
-         //Var has special type
-         //0 string
-         //1 float
-         //2 int
-
-            type = source.get();
-
-            std::string valueName;
-            std::getline(source, valueName, '\0');
-
-            Config::rap_type valueType;
-            Config::expression valueContent;
-
-            if (type == 0) {
-                std::string value;
-                std::getline(source, value, '\0');
-
-                valueType = valueContent.type = Config::rap_type::rap_string;
-                valueContent.value = escape_string(value);
-            } else if (type == 1) {
-                float float_value;
-                source.read((char*)&float_value, sizeof(float_value));
-
-                valueType = valueContent.type = Config::rap_type::rap_float;
-                valueContent.value = float_value;
-            } else if (type == 2) {
-                int32_t long_value;
-                source.read((char*)&long_value, sizeof(long_value));
-
-                valueType = valueContent.type = Config::rap_type::rap_int;
-                valueContent.value = long_value;
-            } else {
-                errorf("Unknown token type %i.\n", type);
-                return 1;
-            }
-
-            curClass.content.emplace_back(Config::rap_type::rap_var, Config::variable(valueType, std::move(valueName), std::move(valueContent)));
-
-        }
-        else if (type == 2 || type == 5) { //array or array append
-            if (type == 5)
-                source.seekg(4, std::istream::_Seekcur);
-
-            std::string valueName;
-            std::getline(source, valueName, '\0');
-
-            auto rapType = type == 2 ? Config::rap_type::rap_array : Config::rap_type::rap_array_expansion;
-
-            auto result = derapify_array(source);
-            if (result) { //#TODO throw error if not? derapify array already throws errors
-
-                curClass.content.emplace_back(Config::rap_type::rap_var,
-                    Config::variable(rapType, std::move(valueName),
-                        Config::expression(rapType, std::move(*result))
-                    )
-                );
-            }
-
-
-        }
-        else if (type == 3 || type == 4) { //3 is class 4 is delete class
-            std::string className;
-            std::getline(source, className, '\0');
-
-            Config::class_ subclass;
-            subclass.name = className;
-            subclass.is_delete = type == 4;
-            subclass.is_definition = true;
-
-            curClass.content.emplace_back(Config::rap_type::rap_class, std::move(subclass));
-        }
-        else {
-            errorf("Unknown class entry type %i.\n", type);
-            return 2;
-        }
-    }
-
-    return 0;
+    __itt_task_begin(configDomain, __itt_null, __itt_null, handle_buildParentTreeRec);
+    std::for_each(std::execution::par_unseq, entries.begin(), entries.end(), [](const ConfigClassEntry& it) {
+        if (!it.isClass()) return;
+        it.getAsClass()->buildParentTree();
+    });
+    __itt_task_end(configDomain);
 }
 
-std::vector<std::reference_wrapper<Config::class_>> Config::class_::getParents(class_& scope, class_ &entry) {
-    auto parName = entry.parent;
-    std::vector<std::reference_wrapper<Config::class_>> ret;
+std::vector<std::shared_ptr<ConfigClass>> ConfigClass::getParents() const {
+    auto parName = inheritedParent;
+    std::vector<std::shared_ptr<ConfigClass>> ret;
 
-    while (!parName.empty()) {
-        for (auto& it : scope.content) {
-            if (it.type != rap_type::rap_class) continue;
-            auto& c = std::get<Config::class_>(it.content);
-            if (c.name == parName) {
-                ret.emplace_back(c);
-                parName = c.parent;
-                break;
-            }
+    std::shared_ptr<const ConfigClass> curScope = shared_from_this();
+
+    //While variant is not empty value
+    while (curScope->inheritedParent.index() != 0) {
+        if (parName.index() == 2) {
+            auto parent = std::get<std::weak_ptr<ConfigClass>>(parName).lock();
+            ret.emplace_back(parent);
+            curScope = std::move(parent);
         }
+        else
+            __debugbreak();
     }
     return ret;
 }
 
-bool iequals(std::string_view a, std::string_view b)
-{
-    return std::equal(a.begin(), a.end(),
-        b.begin(), b.end(),
-        [](char a, char b) {
-        return tolower(a) == tolower(b);
-    });
-}
+std::map<std::string_view, std::reference_wrapper<const ConfigEntry>> ConfigClass::getEntries() const {
+    std::map<std::string_view, std::reference_wrapper<const ConfigEntry>> ret;
 
-std::optional<std::reference_wrapper<Config::definition>> Config::class_::getEntry(class_& curClass, std::initializer_list<std::string_view> path) {
-
-    std::string_view subelement = *path.begin();
-
-    auto found = std::find_if(curClass.content.begin(), curClass.content.end(), [&subelement](const definition& def) {
-        if (def.type == rap_type::rap_var) {
-            auto& c = std::get<variable>(def.content);
-            if (iequals(c.name, subelement)) return true;
-        }
-        else if (def.type == rap_type::rap_class) {
-            auto& c = std::get<class_>(def.content);
-            if (iequals(c.name, subelement)) return true;
-        }
-        return false;
-    });
-    if (found == curClass.content.end()) {
-        return {};
+    for (auto& elem : entries) {
+        if (elem.isEntry())
+            ret.insert_or_assign(elem.getAsEntry().getName(), elem.getAsEntry());
     }
 
-    if (path.size() > 1) {
-        if (found->type != rap_type::rap_class) return {}; //not at end and can't go further
-        auto& c = std::get<class_>(found->content);
+    for (auto& it : getParents()) {
+        for (auto& elem : it->entries) {
+            if (elem.isEntry() && ret.lower_bound(elem.getAsEntry().getName()) == ret.end())
+                ret.insert_or_assign(elem.getAsEntry().getName(), elem.getAsEntry());
+        }
+    }
+
+    return ret;
+}
+
+std::map<std::string_view, std::shared_ptr<ConfigClass>> ConfigClass::getSubclasses() const {
+    std::map<std::string_view, std::shared_ptr<ConfigClass>> ret;
 
 
-        auto level2 = getEntry(c, std::initializer_list<std::string_view>(path.begin() + 1, path.end()));
-        if (level2) return level2;
+    //Yes, we are constantly overwriting the entries that are replaced by subclasses
+    //But the output needs to be sorted such that the topmost class's entries come first
+    for (auto& it : getParents()) {
+        for (auto& elem : it->entries) {
+            if (elem.isClass())
+                ret.insert_or_assign(elem.getAsClass()->getName(), elem.getAsClass());
+        }
+    }
 
-        auto parents = getParents(curClass, c);
+    for (auto& elem : entries) {
+        if (elem.isClass())
+            ret.insert_or_assign(elem.getAsClass()->getName(), elem.getAsClass());
+    }
 
-        for (auto& it : parents) {
-            auto subresult = it.get().getEntry(it, std::initializer_list<std::string_view>(path.begin() + 1, path.end()));
+
+    return ret;
+}
+
+std::optional<ConfigClassEntry> ConfigClass::getEntry(ConfigPath path) const {
+    const std::string_view subelement = *path.begin();
+
+    auto found = entries.find(ConfigClassEntry(subelement));
+
+    if (found == entries.end()) { //We don't have that value, maybe a parent has?
+        if (inheritedParent.index() == 2) {
+            auto subresult = std::get<2>(inheritedParent).lock()->getEntry(path);
             if (subresult)
                 return subresult;
         }
-        return {};
+        return {}; //Nope, no parent has it
     }
-    return *found;
+
+    if (path.size() == 1 && found != entries.end())  //we are at end of path and have found the value
+        return *found; //Found it!
+
+    //We are not at end of path, so we must descent into the Tree
+
+    if (found->isEntry()) return {}; //The value we found is not a class, we cannot descent into it
+
+    return found->getAsClass()->getEntry(std::initializer_list<std::string_view>(path.begin() + 1, path.end()));
 }
 
-std::map<std::string, std::reference_wrapper<Config::variable>> Config::class_::getEntries(class_& scope, class_& entry) {
-    std::map<std::string, std::reference_wrapper<Config::variable>> ret;
-    auto parents = getParents(scope, entry);
+std::shared_ptr<ConfigClass> ConfigClass::getClass(ConfigPath path) const {
+    auto entry = getEntry(path);
+    if (!entry) return {};
+    auto& def = *entry;
 
-    for (auto& it : parents) {
-        for (auto& elem : it.get().content) {
-            if (elem.type != rap_type::rap_var) continue;
-            auto& c = std::get<Config::variable>(elem.content);
-            ret.insert_or_assign(c.name, c);
+    if (entry->isClass())
+        return entry->getAsClass();
+    return {};
+}
+
+std::optional<int32_t> ConfigClass::getInt(ConfigPath path) const {
+    auto entry = getEntry(path);
+    if (!entry) return {};
+    auto& def = *entry;
+    if (!entry->isEntry()) return {}; //entry is not a value
+
+    auto& var = entry->getAsEntry();
+    if (var.getType() == rap_type::rap_int || var.getType() == rap_type::rap_float)
+        return var.getValue().getAsInt();  //getAsInt automatically converts float to int
+
+    return {};
+}
+
+std::optional<float> ConfigClass::getFloat(ConfigPath path) const {
+    auto entry = getEntry(path);
+    if (!entry) return {};
+    auto& def = *entry;
+    if (!entry->isEntry()) return {}; //entry is not a value
+
+    auto& var = entry->getAsEntry();
+    if (var.getType() == rap_type::rap_int || var.getType() == rap_type::rap_float)
+        return var.getValue().getAsFloat();  //getAsFloat automatically converts int to float
+
+    return {};
+}
+
+std::optional<std::string> ConfigClass::getString(ConfigPath path) const {
+    auto entry = getEntry(path);
+    if (!entry) return {};
+    auto& def = *entry;
+    if (!entry->isEntry()) return {}; //entry is not a value
+
+    auto& var = entry->getAsEntry();
+    if (var.getType() == rap_type::rap_string)
+        return var.getValue().getAsString();
+
+    return {};
+}
+
+std::optional<std::vector<std::string>> ConfigClass::getArrayOfStrings(ConfigPath path) const {
+    auto entry = getEntry(path);
+    if (!entry) return {};
+    auto& def = *entry;
+    if (!entry->isEntry()) return {}; //entry is not a value
+
+    auto& var = entry->getAsEntry();
+    if (var.getType() == rap_type::rap_array) {
+        auto& arr = var.getValue().getAsArray();
+        std::vector<std::string> ret;
+        for (auto& it : arr) {
+            if (it.getType() != rap_type::rap_string) continue;
+            ret.push_back(it.getAsString());
         }
+        return ret;
     }
 
-    for (auto& elem : entry.content) {
-        if (elem.type != rap_type::rap_var) continue;
-        auto& c = std::get<Config::variable>(elem.content);
-        ret.insert_or_assign(c.name, c);
-    }
-    return ret;
+    return {};
 }
-std::map<std::string, std::reference_wrapper<Config::class_>> Config::class_::getSubclasses(class_& scope, class_& entry) {
-    std::map<std::string, std::reference_wrapper<Config::class_>> ret;
-    auto parents = getParents(scope, entry);
 
-    for (auto& it : parents) {
-        for (auto& elem : it.get().content) {
-            if (elem.type != rap_type::rap_class) continue;
-            auto& c = std::get<Config::class_>(elem.content);
-            ret.insert_or_assign(c.name, c);
+std::optional<std::vector<std::string_view>> ConfigClass::getArrayOfStringViews(ConfigPath path) const {
+    auto entry = getEntry(path);
+    if (!entry) return {};
+    auto& def = *entry;
+    if (!entry->isEntry()) return {}; //entry is not a value
+
+    auto& var = entry->getAsEntry();
+    if (var.getType() == rap_type::rap_array) {
+        auto& arr = var.getValue().getAsArray();
+        std::vector<std::string_view> ret;
+        for (auto& it : arr) {
+            if (it.getType() != rap_type::rap_string) continue;
+            ret.push_back(it.getAsString());
         }
+        return ret;
     }
 
-    for (auto& elem : entry.content) {
-        if (elem.type != rap_type::rap_class) continue;
-        auto& c = std::get<Config::class_>(elem.content);
-        ret.insert_or_assign(c.name, c);
-    }
-    return ret;
-}
-
-std::optional<std::reference_wrapper<Config::class_>> Config::class_::getClass(std::initializer_list<std::string_view> path) {
-    auto entry = getEntry(*this,path);
-    if (!entry) return {};
-    auto& def = *entry;
-    if (def.get().type == rap_type::rap_class)
-        return std::get<class_>(def.get().content);
     return {};
 }
 
-std::vector<std::reference_wrapper<Config::class_>> Config::class_::getSubClasses() {
-    std::vector<std::reference_wrapper<Config::class_>> ret;
-    for (auto& it : content) {
-        if (it.type == rap_type::rap_class)
-            ret.emplace_back(std::get<class_>(it.content));
-    }
-    return ret;
-}
+std::vector<float> ConfigClass::getArrayOfFloats(ConfigPath path) const {
+    auto entry = getEntry(path);
+    if (!entry) return {};
+    auto& def = *entry;
+    if (!entry->isEntry()) return {}; //entry is not a value
 
-std::optional<int32_t> Config::class_::getInt(std::initializer_list<std::string_view> path) {
-    auto entry = getEntry(*this, path);
-    if (!entry) return {};
-    auto& def = *entry;
-    if (def.get().type == rap_type::rap_var) {
-        auto& var = std::get<variable>(def.get().content);
-        if (var.type == rap_type::rap_int)
-            return std::get<int32_t>(var.expression.value);
-    }
-    return {};
-}
-std::optional<float> Config::class_::getFloat(std::initializer_list<std::string_view> path) {
-    auto entry = getEntry(*this, path);
-    if (!entry) return {};
-    auto& def = *entry;
-    if (def.get().type == rap_type::rap_var) {
-        auto& var = std::get<variable>(def.get().content);
-        if (var.type == rap_type::rap_int)
-            return std::get<float>(var.expression.value);
-    }
-    return {};
-}
-std::optional<std::string> Config::class_::getString(std::initializer_list<std::string_view> path) {
-    auto entry = getEntry(*this, path);
-    if (!entry) return {};
-    auto& def = *entry;
-    if (def.get().type == rap_type::rap_var) {
-        auto& var = std::get<variable>(def.get().content);
-        if (var.expression.type == rap_type::rap_string)
-            return std::get<std::string>(var.expression.value);
-    }
-    return {};
-}
 
-std::optional<std::vector<std::string>> Config::class_::getArrayOfStrings(std::initializer_list<std::string_view> path) {
-    
-    auto entry = getEntry(*this, path);
-    if (!entry) return {};
-    auto& def = *entry;
-    if (def.get().type == rap_type::rap_var) {
-        auto& var = std::get<variable>(def.get().content);
-        if (var.type == rap_type::rap_array) {
-            auto& arr = std::get<std::vector<expression>>(var.expression.value);
-            std::vector<std::string> ret;
-            for (auto& it : arr) {
-                if (it.type != rap_type::rap_string) continue;
-                ret.push_back(std::get<std::string>(it.value));
-            }
-            return ret;
+    auto& var = entry->getAsEntry();
+    if (var.getType() == rap_type::rap_array) {
+        auto& arr = var.getValue().getAsArray();
+        std::vector<float> ret;
+        for (auto& it : arr) {
+            if (it.getType() != rap_type::rap_float && it.getType() != rap_type::rap_int) continue;
+            ret.push_back(it.getAsFloat()); //getAsFloat automatically converts int to float
         }
+        return ret;
     }
-    return {};
 
-}
-
-std::vector<float> Config::class_::getArrayOfFloats(std::initializer_list<std::string_view> path) {
-    auto entry = getEntry(*this, path);
-    if (!entry) return {};
-    auto& def = *entry;
-    if (def.get().type == rap_type::rap_var) {
-        auto& var = std::get<variable>(def.get().content);
-        if (var.type == rap_type::rap_array) {
-            auto& arr = std::get<std::vector<expression>>(var.expression.value);
-            std::vector<float> ret;
-            for (auto& it : arr) {
-                if (it.type == rap_type::rap_float) ret.push_back(std::get<float>(it.value));
-                if (it.type == rap_type::rap_int) ret.push_back(std::get<int32_t>(it.value));
-            }
-            return ret;
-        }
-    }
     return {};
 }
+
+
+bool parse_file(std::istream& f, struct lineref &lineref, ConfigClass &result);
 
 __itt_string_handle* handle_fromPreprocessedText = __itt_string_handle_create("Config::fromPreprocessedText");
 Config Config::fromPreprocessedText(std::istream &input, lineref& lineref) {
     __itt_task_begin(configDomain, __itt_null, __itt_null, handle_fromPreprocessedText);
     Config output;
-    output.config = std::make_shared<class_>();
+    output.config = std::make_shared<ConfigClass>();
     input.seekg(0);
     auto result = parse_file(input, lineref, *output.config);
 
@@ -422,6 +290,7 @@ Config Config::fromPreprocessedText(std::istream &input, lineref& lineref) {
         return {};
     }
     __itt_task_end(configDomain);
+    output.config->buildParentTree();
     return output;
 }
 
@@ -433,11 +302,11 @@ Config Config::fromBinarized(std::istream & input) {
     }
     __itt_task_begin(configDomain, __itt_null, __itt_null, handle_fromBinarized);
     Config output;
-    output.config = std::make_shared<class_>();
+    output.config = std::make_shared<ConfigClass>();
     input.seekg(0);
 
 
-    auto success = derapify_class(input, *output.config, 0);
+    auto success = Rapifier::derapify_class(input, *output.config, 0);
 
     if (success) {
         errorf("Failed to parse config.\n");
@@ -452,7 +321,7 @@ __itt_string_handle* handle_toBinarized = __itt_string_handle_create("Config::to
 void Config::toBinarized(std::ostream& output) {
     if (!hasConfig()) return;
     __itt_task_begin(configDomain, __itt_null, __itt_null, handle_toBinarized);
-    Rapifier::rapify(getConfig(), output);
+    Rapifier::rapify(*getConfig(), output);
     __itt_task_end(configDomain);
 }
 
@@ -467,7 +336,7 @@ void Config::toPlainText(std::ostream& output, std::string_view indent) {
         }
     };
 
-    std::function<void(std::vector<Config::expression>&)> printArray = [&](std::vector<Config::expression>& data) {
+    std::function<void(const std::vector<ConfigValue>&)> printArray = [&](const std::vector<ConfigValue>& data) {
         if (data.empty()) {
             output << "{}";
             return;
@@ -475,185 +344,357 @@ void Config::toPlainText(std::ostream& output, std::string_view indent) {
 
         output << "{";
         for (auto& it : data) {
-            switch (it.type) {
-            case Config::rap_type::rap_string:
-                output << "\"" << std::get<std::string>(it.value) << "\", ";
+            switch (it.getType()) {
+            case rap_type::rap_string:
+                output << "\"" << it.getAsString() << "\", ";
                 break;
-            case Config::rap_type::rap_int:
-                output << std::get<int>(it.value) << ", ";
+            case rap_type::rap_int:
+                output << it.getAsInt() << ", ";
                 break;
-            case Config::rap_type::rap_float:
-                output << std::get<float>(it.value) << ", ";
+            case rap_type::rap_float:
+                output << it.getAsFloat() << ", ";
                 break;
-            case Config::rap_type::rap_array:
-                printArray(std::get<std::vector<Config::expression>>(it.value));
+            case rap_type::rap_array:
+                printArray(it.getAsArray());
                 output << ", ";
                 break;
             default:
-                errorf("Unknown array element type %i.\n", (int)it.type);
+                errorf("Unknown array element type %i.\n", (int)it.getType());
             }
         }
         output.seekp(-2, std::ostream::_Seekcur); //remove last ,
         output << "}";
     };
 
-    std::function<void(std::vector<Config::definition>&)> printClass = [&](std::vector<Config::definition>& data) {
-        for (auto& it : data) {
-            switch (it.type) {
-            case Config::rap_type::rap_class: {
-                auto& c = std::get<Config::class_>(it.content);
+    std::function<void(const std::shared_ptr<ConfigClass>&)> printClass = [&](const std::shared_ptr<ConfigClass>& data) {
+        for (auto& it : data->getEntriesNoParent()) {
+            if (it.isClass()) {
+                auto& c = it.getAsClass();
                 pushIndent();
-                if (c.is_delete || c.is_definition) {
-                    if (c.is_delete)
-                        output << "delete " << c.name << ";\n";
+                if (c->isDelete() || c->isDefinition()) {
+                    if (c->isDelete())
+                        output << "delete " << c->getName() << ";\n";
                     else
-                        output << "class " << c.name << ";\n";
+                        output << "class " << c->getName() << ";\n";
                 } else {
-                    output << "class " << c.name;
-                    if (!c.parent.empty())
-                        output << ": " << c.parent << " {\n";
+                    output << "class " << c->getName();
+                    if (c->hasParent())
+                        output << ": " << c->getInheritedParentName() << " {\n";
                     else
                         output << " {\n";
                     indentLevel++;
-                    printClass(c.content);
+                    printClass(c);
                     indentLevel--;
                     pushIndent();
                     output << "};\n";
                     if (indentLevel == 0)
                         output << "\n"; //Seperate classes on root level. Just for fancyness
                 }
-            } break;
-            case Config::rap_type::rap_var: {
-                auto& var = std::get<Config::variable>(it.content);
-                auto& exp = var.expression;
+            } else if (it.isEntry()) {
+                auto& var = it.getAsEntry();
                 pushIndent();
-                switch (exp.type) {
-                case Config::rap_type::rap_string:
-                    output << var.name << " = \"" << std::get<std::string>(exp.value) << "\";\n";
+                switch (var.getType()) {
+                case rap_type::rap_string:
+                    output << var.getName() << " = \"" << var.getAsString() << "\";\n";
                     break;
-                case Config::rap_type::rap_int:
-                    output << var.name << " = " << std::get<int>(exp.value) << ";\n";
+                case rap_type::rap_int:
+                    output << var.getName() << " = " << var.getAsInt() << ";\n";
                     break;
-                case Config::rap_type::rap_float:
-                    output << var.name << " = " << std::get<float>(exp.value) << ";\n";
+                case rap_type::rap_float:
+                    output << var.getName() << " = " << var.getAsFloat() << ";\n";
                     break;
-                case Config::rap_type::rap_array:
-                case Config::rap_type::rap_array_expansion:
-                    output << var.name << (exp.type == Config::rap_type::rap_array_expansion ? "[] += ": "[] = ");
-                    printArray(std::get<std::vector<Config::expression>>(exp.value));
+                case rap_type::rap_array:
+                case rap_type::rap_array_expansion:
+                    output << var.getName() << (var.getType() == rap_type::rap_array_expansion ? "[] += " : "[] = ");
+                    printArray(var.getAsArray());
                     output << ";\n";
                     break;
                 }
-            } break;
-            default:
-                errorf("Unknown class entry type %i.\n", (int)it.type);
             }
-        };
+
+
+
+        }
+
     };
-    printClass(getConfig().content);
+    printClass(getConfig());
 }
 
-void Rapifier::rapify_expression(Config::expression &expr, std::ostream &f_target) {
 
-    if (expr.type == Config::rap_type::rap_array) {
-        auto& elements = std::get<std::vector<Config::expression>>(expr.value);
-        uint32_t num_entries = elements.size();
+
+
+std::optional<std::vector<ConfigValue>> Rapifier::derapify_array(std::istream &source) {
+    std::vector<ConfigValue> output;
+    uint32_t num_entries = read_compressed_int(source);
+
+    for (int i = 0; i < num_entries; i++) {
+        uint8_t type = source.get();
+
+        if (type == 0) {
+            std::string value;
+            std::getline(source, value, '\0');
+
+            output.emplace_back(rap_type::rap_string, escape_string(value));
+        }
+        else if (type == 1) {
+            float float_value;
+            source.read(reinterpret_cast<char*>(&float_value), sizeof(float_value));
+
+            output.emplace_back(rap_type::rap_float, float_value);
+        }
+        else if (type == 2) {
+            int32_t long_value;
+            source.read(reinterpret_cast<char*>(&long_value), sizeof(long_value));
+
+            output.emplace_back(rap_type::rap_int, long_value);
+        }
+        else if (type == 3) {
+            auto result = derapify_array(source);
+
+            if (!result) {
+                errorf("Failed to derapify subarray.\n");
+                return {};
+            }
+            output.emplace_back(rap_type::rap_array, std::move(*result));
+        }
+        else {
+            errorf("Unknown array element type %i.\n", type);
+            return {};
+        }
+    }
+
+    return output;
+}
+
+int Rapifier::derapify_class(std::istream &source, ConfigClass &curClass, int level) {
+    if (curClass.getName().empty()) {
+        source.seekg(16);
+    }
+
+    uint32_t fp_tmp = source.tellg();
+    std::string inherited;
+    std::getline(source, inherited, '\0');
+
+    uint32_t num_entries = read_compressed_int(source);
+
+    if (!curClass.getName().empty()) {
+        curClass.inheritedParent = inherited;
+    }
+
+    for (int i = 0; i < num_entries; i++) {
+        uint8_t type = source.get();
+
+        if (type == 0) { //class definition
+            auto subclass = std::make_shared<ConfigClass>();
+
+
+            std::getline(source, subclass->name, '\0');
+
+            uint32_t fp_class;
+            source.read(reinterpret_cast<char*>(&fp_class), sizeof(uint32_t));
+            fp_tmp = source.tellg();
+            source.seekg(fp_class);
+
+            auto success = derapify_class(source, *subclass, level + 1);
+
+            if (success) {
+                errorf("Failed to derapify class \"%s\".\n", subclass->getName().data());
+                return success;
+            }
+
+            curClass.entries.emplace(std::move(subclass));
+            source.seekg(fp_tmp);
+        }
+        else if (type == 1) { //value
+         //#TODO make enums for these
+         //Var has special type
+         //0 string
+         //1 float
+         //2 int
+
+            type = source.get();
+
+            std::string valueName;
+            std::getline(source, valueName, '\0');
+
+            rap_type valueType;
+            ConfigValue valueContent;
+
+            if (type == 0) {
+                std::string value;
+                std::getline(source, value, '\0');
+
+                valueType = valueContent.type = rap_type::rap_string;
+                valueContent.value = escape_string(value);
+            }
+            else if (type == 1) {
+                float float_value;
+                source.read(reinterpret_cast<char*>(&float_value), sizeof(float_value));
+
+                valueType = valueContent.type = rap_type::rap_float;
+                valueContent.value = float_value;
+            }
+            else if (type == 2) {
+                int32_t long_value;
+                source.read(reinterpret_cast<char*>(&long_value), sizeof(long_value));
+
+                valueType = valueContent.type = rap_type::rap_int;
+                valueContent.value = long_value;
+            }
+            else {
+                errorf("Unknown token type %i.\n", type);
+                return 1;
+            }
+
+            curClass.entries.emplace(ConfigEntry(valueType, std::move(valueName), std::move(valueContent)));
+
+        }
+        else if (type == 2 || type == 5) { //array or array append
+            if (type == 5)
+                source.seekg(4, std::istream::_Seekcur);
+
+            std::string valueName;
+            std::getline(source, valueName, '\0');
+
+            auto rapType = type == 2 ? rap_type::rap_array : rap_type::rap_array_expansion;
+
+            auto result = derapify_array(source);
+            if (result) { //#TODO throw error if not? derapify array already throws errors
+
+                curClass.entries.emplace(
+                    ConfigEntry(rapType, std::move(valueName),
+                        ConfigValue(rapType, std::move(*result))
+                    )
+                );
+            }
+
+
+        }
+        else if (type == 3 || type == 4) { //3 is class 4 is delete class
+            std::string classname;
+            std::getline(source, classname, '\0');
+
+            auto subclass = std::make_shared<ConfigClass>(std::move(classname));
+            subclass->is_delete = type == 4;
+            subclass->is_definition = true;
+
+            curClass.entries.emplace(std::move(subclass));
+        }
+        else {
+            errorf("Unknown class entry type %i.\n", type);
+            return 2;
+        }
+    }
+
+    return 0;
+}
+
+
+void Rapifier::rapify_expression(const ConfigValue &expr, std::ostream &f_target) {
+
+    if (expr.getType() == rap_type::rap_array) {
+        auto& elements = expr.getAsArray();
+        const uint32_t num_entries = elements.size();
 
         write_compressed_int(num_entries, f_target);
 
         for (auto& exp : elements) {
-            switch (exp.type) {
-                case Config::rap_type::rap_string: f_target.put(0); break;
-                case Config::rap_type::rap_float: f_target.put(1); break;
-                case Config::rap_type::rap_int: f_target.put(2); break;
-                case Config::rap_type::rap_array: f_target.put(3); break;
+            switch (exp.getType()) {
+                case rap_type::rap_string: f_target.put(0); break;
+                case rap_type::rap_float: f_target.put(1); break;
+                case rap_type::rap_int: f_target.put(2); break;
+                case rap_type::rap_array: f_target.put(3); break;
+                default: __debugbreak();
             }
             rapify_expression(exp, f_target);
         }
-    } else if (expr.type == Config::rap_type::rap_int) {
-        f_target.write(reinterpret_cast<char*>(&std::get<int>(expr.value)), 4);
-    } else if (expr.type == Config::rap_type::rap_float) {
-        f_target.write(reinterpret_cast<char*>(&std::get<float>(expr.value)), 4);
+    } else if (expr.getType() == rap_type::rap_int) {
+        auto val = expr.getAsInt();
+        f_target.write(reinterpret_cast<char*>(&val), 4);
+    } else if (expr.getType() == rap_type::rap_float) {
+        auto val = expr.getAsFloat();
+        f_target.write(reinterpret_cast<char*>(&val), 4);
     } else {
         f_target.write(
-            std::get<std::string>(expr.value).c_str(),
-            std::get<std::string>(expr.value).length() + 1
+            expr.getAsString().c_str(),
+            expr.getAsString().length() + 1
         );
     }
 }
 
-void Rapifier::rapify_variable(Config::variable &var, std::ostream &f_target) {
-    if (var.type == Config::rap_type::rap_var) {
+void Rapifier::rapify_variable(const ConfigEntry &var, std::ostream &f_target) {
+    if (var.getType() == rap_type::rap_var) {
         f_target.put(1);
-        switch (var.expression.type) {
-            case Config::rap_type::rap_string: f_target.put(0); break;
-            case Config::rap_type::rap_float: f_target.put(1); break;
-            case Config::rap_type::rap_int: f_target.put(2); break;
+        switch (var.getValue().getType()) {
+            case rap_type::rap_string: f_target.put(0); break;
+            case rap_type::rap_float: f_target.put(1); break;
+            case rap_type::rap_int: f_target.put(2); break;
         }
     } else {
-        switch (var.type) {
-            case Config::rap_type::rap_array: f_target.put(2); break;
-            case Config::rap_type::rap_array_expansion: 
+        switch (var.getType()) {
+            case rap_type::rap_array: f_target.put(2); break;
+            case rap_type::rap_array_expansion: 
                 f_target.put(5);
                 f_target.write("\x01\0\0\0", 4);//last 3 bytes are unused by engine
                 break;
         }
     }
 
-    f_target.write(var.name.c_str(), var.name.length() + 1);
-    rapify_expression(var.expression, f_target);
+    f_target.write(var.getName().c_str(), var.getName().length() + 1);
+    rapify_expression(var.getValue(), f_target);
 }
 
-void Rapifier::rapify_class(Config::class_ &class__, std::ostream &f_target) {
+void Rapifier::rapify_class(const ConfigClass &cfg, std::ostream &f_target) {
     uint32_t fp_temp;
 
-    if (class__.content.empty()) {
+    if (cfg.isDefinition() || cfg.isDelete()) {
         // extern or delete class
-        f_target.put(static_cast<char>(class__.is_delete ? 4 : 3));
-        f_target.write(class__.name.c_str(), class__.name.length() + 1);
+        f_target.put(static_cast<char>(cfg.isDelete() ? 4 : 3));
+        f_target.write(cfg.getName().data(), cfg.getName().length() + 1);
         return;
     }
     
-    if (!class__.parent.empty())
-        f_target.write(class__.parent.c_str(), class__.parent.length() + 1);
+    if (cfg.hasParent())
+        f_target.write(cfg.getInheritedParentName().data(), cfg.getInheritedParentName().length() + 1);
     else
         f_target.put(0);
 
-    uint32_t num_entries = class__.content.size();
+    auto& entries = cfg.getEntriesNoParent();
+    const uint32_t num_entries = entries.size();
 
     write_compressed_int(num_entries, f_target);
-    for (auto& def : class__.content) {
-        if (def.type == Config::rap_type::rap_var) {
-            auto& c = std::get<Config::variable>(def.content);
+    for (auto& def : entries) {
+        if (def.isEntry()) {
+            auto& c = def.getAsEntry();
             rapify_variable(c, f_target);
         } else {
-            auto& c = std::get<Config::class_>(def.content);
-            if (!c.content.empty()) {
-                f_target.put(0);
-                f_target.write(c.name.c_str(),
-                    c.name.length() + 1);
-                c.offset_location = f_target.tellp();
-                f_target.write("\0\0\0\0", 4);
+            auto& c = def.getAsClass();
+            if (c->isDefinition() || c->isDelete()) {
+                rapify_class(*c, f_target); //Write isDef/isDelete flag and return
             } else {
-                rapify_class(c, f_target);
+                f_target.put(0);
+                f_target.write(c->getName().data(),
+                    c->getName().length() + 1);
+                c->setOffsetLocation(f_target.tellp());
+                f_target.write("\0\0\0\0", 4);
             }
         }
     }
     //#TODO mikero writes a filesize marker here. 4 bytes
     //Arma won't read cuz num_entries
 
-    for (auto& def : class__.content) {
-        if (def.type != Config::rap_type::rap_class) continue;
-        auto& c = std::get<Config::class_>(def.content);
-        if (c.content.empty())  continue;
+    for (auto& def : entries) {
+        if (!def.isClass()) continue;
+        auto& c = def.getAsClass();
+        if (c->isDefinition() || c->isDelete())  continue;
         
         fp_temp = f_target.tellp();
-        f_target.seekp(c.offset_location);
+        f_target.seekp(c->getOffsetLocation());
         
         f_target.write(reinterpret_cast<char*>(&fp_temp), sizeof(uint32_t));
         f_target.seekp(0, std::ofstream::end);
 
-        rapify_class(c, f_target);
+        rapify_class(*c, f_target);
     }
 }
 
@@ -725,17 +766,19 @@ int Rapifier::rapify_file(std::istream &source, std::ostream &target, const char
         return 1;
     }
 
-    rapify(parsedConfig.getConfig(), target);
+    rapify(*parsedConfig.getConfig(), target);
 
     return 0;
 }
 
 
 __itt_string_handle* handle_rapify = __itt_string_handle_create("Rapifier::rapify");
-int Rapifier::rapify(Config::class_& cls, std::ostream& output) {
+int Rapifier::rapify(const ConfigClass& cls, std::ostream& output) {
     __itt_task_begin(configDomain, __itt_null, __itt_null, handle_rapify);
     uint32_t enum_offset = 0;
     output.write("\0raP", 4);
+    //4 byte int is a version number which has to be 0 or 1 to be rejected by OFP
+    //4 byte int is the version number
     output.write("\0\0\0\0\x08\0\0\0", 8);
     output.write(reinterpret_cast<char*>(&enum_offset), 4); // this is replaced later
 

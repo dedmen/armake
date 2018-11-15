@@ -34,7 +34,7 @@
 #include <sstream>
 
 
-int read_animations(Config::class_& cfg, char *config_path, struct skeleton_ *skeleton) {
+int read_animations(ConfigClass& cfg, char *config_path, struct skeleton_ *skeleton) {
     /*
      * Reads the animation subclasses of the given config path into the struct
      * array.
@@ -43,41 +43,26 @@ int read_animations(Config::class_& cfg, char *config_path, struct skeleton_ *sk
      * integer on failure.
      */
 
-    int i;
-    int j;
-    int k;
-    int success;
-    char parent[2048];
-    char containing[2048];
-    char value_path[2048];
-
-
-    // Run the function for the parent class first
-
-    // Now go through all the animations
-    auto subclasses = cfg.getSubClasses();
-
     //#TODO is it an error if we have more animations than MAXANIMS?
 
-    for (auto& anim : subclasses) {
-        auto animName = anim.get().name;
+    // Now go through all the animations
+    for (auto& [animName, anim] : cfg.getSubclasses()) {
         //Check if a animation with same name already exists, if it does we want to overwrite.
         auto found = std::find_if(skeleton->animations.begin(), skeleton->animations.end(), [&animName](const animation& anim) {
             return anim.name == animName;
         });
 
         auto newAnimation = (found == skeleton->animations.end()) ?
-            skeleton->animations.emplace_back(animName) //if we don't have one to overwrite, we add a new one.
+            skeleton->animations.emplace_back(std::string(animName)) //if we don't have one to overwrite, we add a new one.
             :
             *found; //Overwrite existing one
 
         newAnimation.name = animName;
 
         // Read anim type
-        auto type = anim.get().getString({ "type" }); //#TODO does this work?
-        sprintf(value_path, "%s >> %s >> type", config_path, animName.c_str());
+        auto type = anim->getString({ "type" }); //#TODO does this work?
         if (!type) {
-            lwarningf(current_target, -1, "Animation type for %s could not be found.\n", animName.c_str());
+            lwarningf(current_target, -1, "Animation type for %s could not be found.\n", animName.data());
             continue;
         }
 
@@ -133,8 +118,8 @@ int read_animations(Config::class_& cfg, char *config_path, struct skeleton_ *sk
 
 #define ERROR_READING(key) lwarningf(current_target, -1, "Error reading %s for %s.\n", key, animName)
 
-#define TRY_GET_STRING(targ, key) auto key = anim.get().getString({ #key }); if (!key) ERROR_READING(#key); newAnimation.targ = *key;
-#define TRY_GET_FLOAT(targ, key) auto key = anim.get().getFloat({ #key }); if (!key) ERROR_READING(#key); newAnimation.targ = *key;
+#define TRY_GET_STRING(targ, key) auto key = anim->getString({ #key }); if (!key) ERROR_READING(#key); newAnimation.targ = *key;
+#define TRY_GET_FLOAT(targ, key) auto key = anim->getFloat({ #key }); if (!key) ERROR_READING(#key); newAnimation.targ = *key;
 
 
         TRY_GET_STRING(source, source);
@@ -154,7 +139,7 @@ int read_animations(Config::class_& cfg, char *config_path, struct skeleton_ *sk
         TRY_GET_FLOAT(hide_value, hideValue);
         TRY_GET_FLOAT(unhide_value, unHideValue);
 
-        auto sourceAddress = anim.get().getString({ "sourceAddress" });
+        auto sourceAddress = anim->getString({ "sourceAddress" });
 
         if (!sourceAddress) {
             ERROR_READING("sourceAddress");
@@ -273,7 +258,7 @@ int read_model_config(char *path, struct skeleton_ *skeleton) {
     lower_case(model_name);
 
     // Check if model entry even exists
-    auto modelConfig = cfg.getConfig().getClass({ "CfgModels", model_name });
+    auto modelConfig = cfg->getClass({ "CfgModels", model_name });
     if (!modelConfig) {
         errorf("Failed to find model config entry.\n");
         return 1; //#TODO fix this error code. That's not the correct one
@@ -283,7 +268,7 @@ int read_model_config(char *path, struct skeleton_ *skeleton) {
         lnwarningf(path, -1, "model-without-prefix", "Model has a model config entry but doesn't seem to have a prefix (missing _).\n");
 
     // Read name
-    auto skeletonName = cfg.getConfig().getString({ "CfgModels", model_name , "skeletonName"});
+    auto skeletonName = cfg->getString({ "CfgModels", model_name , "skeletonName"});
     if (!skeletonName) {
         errorf("Failed to read skeleton name.\n");
         return 1;//#TODO fix this error code. That's not the correct one
@@ -292,20 +277,20 @@ int read_model_config(char *path, struct skeleton_ *skeleton) {
 
     // Read bones
     if (!skeleton->name.empty()) {
-        auto skeletonInherit = cfg.getConfig().getString({ "CfgSkeletons", skeleton->name , "skeletonInherit" });
+        auto skeletonInherit = cfg->getString({ "CfgSkeletons", skeleton->name , "skeletonInherit" });
         if (!skeletonInherit) {
             errorf("Failed to read bones.\n"); //#TODO fix this wrong error message
             return success;//#TODO fix this error code. That's not the correct one
         }
 
-        auto isDiscrete = cfg.getConfig().getInt({ "CfgSkeletons", skeleton->name, "isDiscrete" });
+        auto isDiscrete = cfg->getInt({ "CfgSkeletons", skeleton->name, "isDiscrete" });
         if (isDiscrete)
             skeleton->is_discrete = (*isDiscrete > 0);
         else
             skeleton->is_discrete = false;
 
         if (skeletonInherit->length() > 1) { // @todo: more than 1 parent
-            auto skeletonBones = cfg.getConfig().getArrayOfStrings({ "CfgSkeletons", *skeletonInherit , "skeletonBones" });
+            auto skeletonBones = cfg->getArrayOfStrings({ "CfgSkeletons", *skeletonInherit , "skeletonBones" });
             if (!skeletonBones) { //#TODO differentitate between empty and not found
                 errorf("Failed to read bones.\n");
                 return success;//#TODO fix this error code. That's not the correct one
@@ -316,7 +301,7 @@ int read_model_config(char *path, struct skeleton_ *skeleton) {
             }
         }
 
-        auto skeletonBones = cfg.getConfig().getArrayOfStrings({ "CfgSkeletons", skeleton->name , "skeletonBones" });
+        auto skeletonBones = cfg->getArrayOfStrings({ "CfgSkeletons", skeleton->name , "skeletonBones" });
         if (!skeletonBones) { //#TODO differentitate between empty and not found
             errorf("Failed to read bones.\n");
             return success;//#TODO fix this error code. That's not the correct one
@@ -340,14 +325,14 @@ int read_model_config(char *path, struct skeleton_ *skeleton) {
     }
 
     // Read sections
-    auto sectionsInherit = cfg.getConfig().getString({ "CfgModels", model_name, "sectionsInherit" });
+    auto sectionsInherit = cfg->getString({ "CfgModels", model_name, "sectionsInherit" });
     if (!sectionsInherit) {
         errorf("Failed to read sections.\n");
         return success;
     }
 
     if (sectionsInherit->length() > 0) {
-        auto sections = cfg.getConfig().getArrayOfStrings({ "CfgModels", *sectionsInherit, "sections" });
+        auto sections = cfg->getArrayOfStrings({ "CfgModels", *sectionsInherit, "sections" });
         if (!sections) { //#TODO differentiate between empty and not found
             errorf("Failed to read sections.\n");
             return success;
@@ -355,7 +340,7 @@ int read_model_config(char *path, struct skeleton_ *skeleton) {
         skeleton->sections = *sections;
     }
 
-    auto sections = cfg.getConfig().getArrayOfStrings({ "CfgModels", model_name, "sections" });
+    auto sections = cfg->getArrayOfStrings({ "CfgModels", model_name, "sections" });
     if (!sections) {
         errorf("Failed to read sections.\n");
         return success;
@@ -367,7 +352,7 @@ int read_model_config(char *path, struct skeleton_ *skeleton) {
 
     // Read animations
     skeleton->num_animations = 0;
-    auto animations = cfg.getConfig().getClass({ "CfgModels", model_name, "Animations" });
+    auto animations = cfg->getClass({ "CfgModels", model_name, "Animations" });
     if (animations) {
         //#TODO inheritance?
         success = read_animations(*animations, config_path, skeleton);
@@ -382,12 +367,12 @@ int read_model_config(char *path, struct skeleton_ *skeleton) {
         lwarningf(path, -1, "animated-without-skeleton", "Model doesn't have a skeleton but is animated.\n");
 
     // Read thermal stuff
-    skeleton->ht_min = *cfg.getConfig().getFloat({ "CfgModels",model_name, "htMin" }); //#TODO error checking. Should use exceptions
-    skeleton->ht_max = *cfg.getConfig().getFloat({ "CfgModels",model_name, "htMax" }); //#TODO error checking. Should use exceptions
-    skeleton->af_max = *cfg.getConfig().getFloat({ "CfgModels",model_name, "afMax" }); //#TODO error checking. Should use exceptions
-    skeleton->mf_max = *cfg.getConfig().getFloat({ "CfgModels",model_name, "mfMax" }); //#TODO error checking. Should use exceptions
-    skeleton->mf_act = *cfg.getConfig().getFloat({ "CfgModels",model_name, "mfAct" }); //#TODO error checking. Should use exceptions
-    skeleton->t_body = *cfg.getConfig().getFloat({ "CfgModels",model_name, "tBody" }); //#TODO error checking. Should use exceptions
+    skeleton->ht_min = *cfg->getFloat({ "CfgModels",model_name, "htMin" }); //#TODO error checking. Should use exceptions
+    skeleton->ht_max = *cfg->getFloat({ "CfgModels",model_name, "htMax" }); //#TODO error checking. Should use exceptions
+    skeleton->af_max = *cfg->getFloat({ "CfgModels",model_name, "afMax" }); //#TODO error checking. Should use exceptions
+    skeleton->mf_max = *cfg->getFloat({ "CfgModels",model_name, "mfMax" }); //#TODO error checking. Should use exceptions
+    skeleton->mf_act = *cfg->getFloat({ "CfgModels",model_name, "mfAct" }); //#TODO error checking. Should use exceptions
+    skeleton->t_body = *cfg->getFloat({ "CfgModels",model_name, "tBody" }); //#TODO error checking. Should use exceptions
 
     return 0;
 }

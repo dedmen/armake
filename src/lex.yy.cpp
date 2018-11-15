@@ -572,7 +572,7 @@ goto find_rule; \
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 #line 27 "rapify.l"
-#define YY_DECL int yylex(YYTypeStruct* yylval_param, YYLTYPE* yylloc, Config::class_ &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner)
+#define YY_DECL int yylex(YYTypeStruct* yylval_param, YYLTYPE* yylloc, ConfigClass &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner)
 //char *buffer, int numBytesRead, int maxBytesToRead
 #define YY_INPUT(b,r,s)  auto& inStr = *static_cast<std::istream*>(yyget_extra(yyscanner)); inStr.read(b, s); r = inStr.gcount()
 #define YY_NO_UNISTD_H
