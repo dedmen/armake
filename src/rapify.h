@@ -338,13 +338,27 @@ private:
 
 
 class Rapifier {
+
+    class DerapifyException : public std::exception {
+        std::vector<std::string> stack;
+        uint8_t type;
+    public:
+        DerapifyException(std::string_view msg, uint8_t type = 0) : std::exception(msg.data()),
+           type(type) {}
+        void addToStack(std::string_view a) {
+            stack.emplace_back(a);
+        }
+        uint8_t getType() const noexcept { return type; }
+        std::vector<std::string>& getStack() noexcept { return stack; }
+    };
+
     friend class Config;
     static void rapify_expression(const ConfigValue &expr, std::ostream &f_target);
     static void rapify_variable(const ConfigEntry &var, std::ostream &f_target);
     static void rapify_class(const ConfigClass &cfg, std::ostream &f_target);
 
-    static std::optional<std::vector<ConfigValue>> derapify_array(std::istream &source);
-    static int derapify_class(std::istream &source, ConfigClass &curClass, int level);
+    static std::vector<ConfigValue> derapify_array(std::istream &source) noexcept(false);
+    static void derapify_class(std::istream &source, ConfigClass &curClass, int level) noexcept(false);
 
 public:
     static bool isRapified(std::istream &input);

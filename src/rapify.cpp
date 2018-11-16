@@ -372,13 +372,26 @@ Config Config::fromBinarized(std::istream & input, bool buildParentTree) {
     output.config = std::make_shared<ConfigClass>();
     input.seekg(0);
 
-    auto success = Rapifier::derapify_class(input, *output.config, 0);
+    try {
+        Rapifier::derapify_class(input, *output.config, 0);
+    } catch( Rapifier::DerapifyException& ex) {
+        
+        std::stringstream buf;
+        buf << "Exception occured in Config::fromBinarized: " << ex.what();
+        if (ex.getType() != 255)
+            buf << " " << static_cast<unsigned>(ex.getType());
+        buf << "\nTrace: ";
+        auto& stack = ex.getStack();
+        std::reverse(stack.begin(), stack.end());
+        for (auto& it : stack) {
+            buf << "/" << it;
+        }
+        buf << "\nFile Offset: " << input.tellg();
 
-    if (success) {
-        errorf("Failed to parse config.\n");
-        __itt_task_end(configDomain);
+        errorf(buf.str().c_str());
         return {};
     }
+
     __itt_task_end(configDomain);
     if (buildParentTree) output.config->buildParentTree();
     return output;
@@ -488,9 +501,7 @@ void Config::toPlainText(std::ostream& output, std::string_view indent) {
 }
 
 
-
-
-std::optional<std::vector<ConfigValue>> Rapifier::derapify_array(std::istream &source) {
+std::vector<ConfigValue> Rapifier::derapify_array(std::istream &source) {
     std::vector<ConfigValue> output;
     uint32_t num_entries = read_compressed_int(source);
 
@@ -516,24 +527,20 @@ std::optional<std::vector<ConfigValue>> Rapifier::derapify_array(std::istream &s
             output.emplace_back(rap_type::rap_int, long_value);
         }
         else if (type == 3) {
-            auto result = derapify_array(source);
-
-            if (!result) {
-                errorf("Failed to derapify subarray.\n");
-                return {};
+            //Result can't be invalid. If it was then the throw will step past this
+            output.emplace_back(rap_type::rap_array, derapify_array(source));
+        } else {
+            if (source.eof()) {
+                throw DerapifyException("Premature EOF", -1);
             }
-            output.emplace_back(rap_type::rap_array, std::move(*result));
-        }
-        else {
-            errorf("Unknown array element type %i.\n", type);
-            return {};
+            throw DerapifyException("Unknown array element type", type);
         }
     }
 
     return output;
 }
 
-int Rapifier::derapify_class(std::istream &source, ConfigClass &curClass, int level) {
+void Rapifier::derapify_class(std::istream &source, ConfigClass &curClass, int level) {
     if (curClass.getName().empty()) {
         source.seekg(16);
     }
@@ -542,7 +549,7 @@ int Rapifier::derapify_class(std::istream &source, ConfigClass &curClass, int le
     std::string inherited;
     std::getline(source, inherited, '\0');
 
-    uint32_t num_entries = read_compressed_int(source);
+    const uint32_t num_entries = read_compressed_int(source);
 
     if (!curClass.getName().empty()) {
         curClass.inheritedParent = inherited;
@@ -561,18 +568,16 @@ int Rapifier::derapify_class(std::istream &source, ConfigClass &curClass, int le
             source.read(reinterpret_cast<char*>(&fp_class), sizeof(uint32_t));
             fp_tmp = source.tellg();
             source.seekg(fp_class);
-
-            auto success = derapify_class(source, *subclass, level + 1);
-
-            if (success) {
-                errorf("Failed to derapify class \"%s\".\n", subclass->getName().data());
-                return success;
+            try {
+                derapify_class(source, *subclass, level + 1);
+            } catch (DerapifyException& ex) {
+                ex.addToStack(subclass->getName());
+                throw;
             }
 
             curClass.entries.emplace(std::move(subclass));
             source.seekg(fp_tmp);
-        }
-        else if (type == 1) { //value
+        } else if (type == 1) { //value
          //#TODO make enums for these
          //Var has special type
          //0 string
@@ -593,30 +598,25 @@ int Rapifier::derapify_class(std::istream &source, ConfigClass &curClass, int le
 
                 valueType = valueContent.type = rap_type::rap_string;
                 valueContent.value = escape_string(value);
-            }
-            else if (type == 1) {
+            } else if (type == 1) {
                 float float_value;
                 source.read(reinterpret_cast<char*>(&float_value), sizeof(float_value));
 
                 valueType = valueContent.type = rap_type::rap_float;
                 valueContent.value = float_value;
-            }
-            else if (type == 2) {
+            } else if (type == 2) {
                 int32_t long_value;
                 source.read(reinterpret_cast<char*>(&long_value), sizeof(long_value));
 
                 valueType = valueContent.type = rap_type::rap_int;
                 valueContent.value = long_value;
-            }
-            else {
-                errorf("Unknown token type %i.\n", type);
-                return 1;
+            } else {
+                throw DerapifyException("unknown valuetoken", type);
             }
 
             curClass.entries.emplace(ConfigEntry(valueType, std::move(valueName), std::move(valueContent)));
 
-        }
-        else if (type == 2 || type == 5) { //array or array append
+        } else if (type == 2 || type == 5) { //array or array append
             if (type == 5)
                 source.seekg(4, std::istream::_Seekcur);
 
@@ -625,19 +625,17 @@ int Rapifier::derapify_class(std::istream &source, ConfigClass &curClass, int le
 
             auto rapType = type == 2 ? rap_type::rap_array : rap_type::rap_array_expansion;
 
-            auto result = derapify_array(source);
-            if (result) { //#TODO throw error if not? derapify array already throws errors
-
+            try {
                 curClass.entries.emplace(
                     ConfigEntry(rapType, std::move(valueName),
-                        ConfigValue(rapType, std::move(*result))
+                        ConfigValue(rapType, derapify_array(source))
                     )
                 );
+            } catch (DerapifyException& ex) {
+                ex.addToStack(valueName);
+                throw;
             }
-
-
-        }
-        else if (type == 3 || type == 4) { //3 is class 4 is delete class
+        } else if (type == 3 || type == 4) { //3 is class 4 is delete class
             std::string classname;
             std::getline(source, classname, '\0');
 
@@ -646,14 +644,13 @@ int Rapifier::derapify_class(std::istream &source, ConfigClass &curClass, int le
             subclass->is_definition = true;
 
             curClass.entries.emplace(std::move(subclass));
-        }
-        else {
-            errorf("Unknown class entry type %i.\n", type);
-            return 2;
+        } else {
+            if (source.eof()) {
+                throw DerapifyException("Premature EOF", -1);
+            }
+            throw DerapifyException("Unknown class entry type", type);
         }
     }
-
-    return 0;
 }
 
 void Rapifier::rapify_expression(const ConfigValue &expr, std::ostream &f_target) {
@@ -781,6 +778,15 @@ int Rapifier::rapify_file(const char* source, const char* target) {
     }
     else {
         std::ofstream targetFile(target, std::ofstream::out | std::ofstream::binary);
+
+        //#TODO grab exceptions in case disk is full
+        //targetFile.exceptions(std::ostream::failbit | std::ostream::badbit);
+        //try {
+        //    
+        //}catch (std::ostream::failure e) {
+        //    __debugbreak();
+        //}
+
         return rapify_file(sourceFile, targetFile, source);
     }
 
