@@ -158,6 +158,7 @@ public:
 
 class ConfigClass;
 class ConfigClassEntry {
+    friend class ConfigClass; //Just to access iequals
     std::variant<
         std::shared_ptr<ConfigClass>,
         ConfigEntry,
@@ -215,12 +216,13 @@ namespace std {
 
 class ConfigClass : public std::enable_shared_from_this<ConfigClass> {
     friend class Rapifier;
+    friend class Config;
     std::string name;
     std::variant<std::monostate, std::string, std::weak_ptr<ConfigClass>> inheritedParent;
     std::weak_ptr<ConfigClass> treeParent;
     std::unordered_set<ConfigClassEntry> entries;
-    bool is_delete{ false };
     bool is_definition{ false };
+    bool is_delete{ false };
     long offset_location{ 0 };
 
     void populateContent(std::vector<ConfigClassEntry> &content) {
@@ -228,11 +230,21 @@ class ConfigClass : public std::enable_shared_from_this<ConfigClass> {
             entries.emplace(std::move(it));
         }
     }
+
+    std::shared_ptr<ConfigClass> findInheritedParent(const ConfigClassEntry &parentName, bool skipEntries = false, bool walkTree = true);
+    void buildParentTree();
+
+    bool hasParentTreeBeenBuilt() const noexcept {
+        using wt = std::weak_ptr<ConfigClass>;
+        const bool isUninitialized = !treeParent.owner_before(wt{}) && !wt{}.owner_before(treeParent);
+        return !isUninitialized;
+    }
+
 public:
     struct definitionT {};
     struct deleteT {};
     ConfigClass() = default;
-    ConfigClass(std::string name, definitionT) : name(std::move(name)), is_delete(true), is_definition(true) {}
+    ConfigClass(std::string name, definitionT) : name(std::move(name)), is_definition(true), is_delete(true) {}
     ConfigClass(std::string name, deleteT) : name(std::move(name)), is_definition(true) {}
     ConfigClass(std::string name, std::string parent) : name(std::move(name)) {
         if (!parent.empty()) this->inheritedParent = parent;
@@ -273,27 +285,6 @@ public:
     }
     void setOffsetLocation(long v) {
         offset_location = v;
-    }
-
-
-    std::shared_ptr<ConfigClass> findInheritedParent(const ConfigClassEntry &parentName) const {
-        auto found = entries.find(parentName);
-        if (found != entries.end() && found->isClass()) //Do my subclasses contain the wanted class?
-            return found->getAsClass();
-        if (inheritedParent.index() == 2)
-            return std::get<2>(inheritedParent).lock()->findInheritedParent(parentName);
-
-        if (treeParent.lock())
-            return treeParent.lock()->findInheritedParent(parentName);
-        return nullptr;
-    }
-
-    void buildParentTree();
-
-    bool hasParentTreeBeenBuilt() const noexcept {
-        using wt = std::weak_ptr<ConfigClass>;
-        const bool isUninitialized = !treeParent.owner_before(wt{}) && !wt{}.owner_before(treeParent);
-        return !isUninitialized;
     }
 
     using ConfigPath = std::initializer_list<std::string_view>;

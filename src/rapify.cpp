@@ -44,9 +44,6 @@
 
 __itt_domain* configDomain = __itt_domain_create("armake.config");
 
-__itt_string_handle* handle_buildParentTree = __itt_string_handle_create("ConfigClass::buildParentTree");
-__itt_string_handle* handle_buildParentTreeRec = __itt_string_handle_create("ConfigClass::buildParentTreeRec");
-
 std::string_view ConfigClassEntry::getName() const {
     if (isClass())
         return getAsClass()->getName();
@@ -55,25 +52,73 @@ std::string_view ConfigClassEntry::getName() const {
     return std::get<2>(value);
 }
 
+
+std::shared_ptr<ConfigClass> ConfigClass::findInheritedParent(const ConfigClassEntry &parentName, bool skipEntries, bool walkTree) {
+
+    if (!skipEntries) {
+        auto found = entries.find(parentName);
+        if (found != entries.end() && found->isClass()) //Do my subclasses contain the wanted class?
+            return found->getAsClass();
+    }
+
+    if (inheritedParent.index() == 1) {
+        auto& parentName = std::get<std::string>(inheritedParent);
+        auto inhPar = treeParent.lock()->findInheritedParent(ConfigClassEntry(parentName), ConfigClassEntry::iequals(parentName, getName()));
+        if (!inhPar) __debugbreak();
+        inheritedParent = inhPar;
+    }
+
+    if (inheritedParent.index() == 2) {
+        auto val = std::get<2>(inheritedParent).lock()->findInheritedParent(parentName, false, false);
+        if (val) return val;
+    }
+
+    if (treeParent.lock() && walkTree)
+        return treeParent.lock()->findInheritedParent(parentName);
+    return nullptr;
+}
+
+
+
+__itt_string_handle* handle_buildParentTreeTP = __itt_string_handle_create("ConfigClass::buildParentTreeTP");
+__itt_string_handle* handle_buildParentTree = __itt_string_handle_create("ConfigClass::buildParentTree");
+__itt_string_handle* handle_buildParentTreeRec = __itt_string_handle_create("ConfigClass::buildParentTreeRec");
+
 void ConfigClass::buildParentTree() {
+
+    std::function<void(std::shared_ptr<ConfigClass>)> setTreeParents = [&](std::shared_ptr<ConfigClass> cls) {
+        //Multithreading hurts here
+        std::for_each(std::execution::seq, cls->entries.begin(), cls->entries.end(), [&](const ConfigClassEntry& it) {
+            if (!it.isClass()) return;
+            auto& c = it.getAsClass();
+            c->treeParent = cls;
+            setTreeParents(c);
+        });
+    };
+
+    if (!hasParentTreeBeenBuilt()) {//only do once on root node
+        __itt_task_begin(configDomain, __itt_null, __itt_null, handle_buildParentTreeTP);
+        setTreeParents(shared_from_this());
+        __itt_task_end(configDomain);
+    }
+
     __itt_task_begin(configDomain, __itt_null, __itt_null, handle_buildParentTree);
     std::for_each(std::execution::seq, entries.begin(), entries.end(), [this](const ConfigClassEntry& it) {
         if (!it.isClass()) return;
         auto& c = it.getAsClass();
-        c->treeParent = shared_from_this();
         if (c->inheritedParent.index() == 0) return; //doesn't have parent
         if (c->inheritedParent.index() == 2) return; //already resolved
         auto& parentName = std::get<std::string>(c->inheritedParent);
 
-        if (auto par = c->treeParent.lock()->findInheritedParent(ConfigClassEntry(parentName)))
+        if (auto par = c->treeParent.lock()->findInheritedParent(ConfigClassEntry(parentName), ConfigClassEntry::iequals(parentName,c->getName()))) {
             c->inheritedParent = par;
-        else
+        } else
             __debugbreak();
     });
     __itt_task_end(configDomain);
 
     __itt_task_begin(configDomain, __itt_null, __itt_null, handle_buildParentTreeRec);
-    std::for_each(std::execution::par_unseq, entries.begin(), entries.end(), [](const ConfigClassEntry& it) {
+    std::for_each(std::execution::seq, entries.begin(), entries.end(), [](const ConfigClassEntry& it) {
         if (!it.isClass()) return;
         it.getAsClass()->buildParentTree();
     });
@@ -125,13 +170,13 @@ std::map<std::string_view, std::shared_ptr<ConfigClass>> ConfigClass::getSubclas
     //But the output needs to be sorted such that the topmost class's entries come first
     for (auto& it : getParents()) {
         for (auto& elem : it->entries) {
-            if (elem.isClass())
+            if (elem.isClass() && !elem.getAsClass()->isDelete())
                 ret.insert_or_assign(elem.getAsClass()->getName(), elem.getAsClass());
         }
     }
 
     for (auto& elem : entries) {
-        if (elem.isClass())
+        if (elem.isClass() && !elem.getAsClass()->isDelete())
             ret.insert_or_assign(elem.getAsClass()->getName(), elem.getAsClass());
     }
 
@@ -276,8 +321,30 @@ std::vector<float> ConfigClass::getArrayOfFloats(ConfigPath path) const {
 
 bool parse_file(std::istream& f, struct lineref &lineref, ConfigClass &result);
 
+
+__itt_string_handle* handle_fromRawText = __itt_string_handle_create("Config::fromRawText");
+Config Config::fromRawText(std::istream& input, bool buildParentTree) {
+    __itt_task_begin(configDomain, __itt_null, __itt_null, handle_fromRawText);
+    Config output;
+    output.config = std::make_shared<ConfigClass>();
+    input.seekg(0);
+    lineref ref;
+    ref.empty = true;
+
+    auto result = parse_file(input, ref, *output.config);
+
+    if (!result) {
+        errorf("Failed to parse config.\n");
+        __itt_task_end(configDomain);
+        return {};
+    }
+    __itt_task_end(configDomain);
+    if (buildParentTree) output.config->buildParentTree();
+    return output;
+}
+
 __itt_string_handle* handle_fromPreprocessedText = __itt_string_handle_create("Config::fromPreprocessedText");
-Config Config::fromPreprocessedText(std::istream &input, lineref& lineref) {
+Config Config::fromPreprocessedText(std::istream &input, lineref& lineref, bool buildParentTree) {
     __itt_task_begin(configDomain, __itt_null, __itt_null, handle_fromPreprocessedText);
     Config output;
     output.config = std::make_shared<ConfigClass>();
@@ -290,12 +357,12 @@ Config Config::fromPreprocessedText(std::istream &input, lineref& lineref) {
         return {};
     }
     __itt_task_end(configDomain);
-    output.config->buildParentTree();
+    if (buildParentTree) output.config->buildParentTree();
     return output;
 }
 
 __itt_string_handle* handle_fromBinarized = __itt_string_handle_create("Config::fromBinarized");
-Config Config::fromBinarized(std::istream & input) {
+Config Config::fromBinarized(std::istream & input, bool buildParentTree) {
     if (!Rapifier::isRapified(input)) {
         errorf("Source file is not a rapified config.\n");
         return {};
@@ -305,7 +372,6 @@ Config Config::fromBinarized(std::istream & input) {
     output.config = std::make_shared<ConfigClass>();
     input.seekg(0);
 
-
     auto success = Rapifier::derapify_class(input, *output.config, 0);
 
     if (success) {
@@ -314,6 +380,7 @@ Config Config::fromBinarized(std::istream & input) {
         return {};
     }
     __itt_task_end(configDomain);
+    if (buildParentTree) output.config->buildParentTree();
     return output;
 }
 
@@ -589,7 +656,6 @@ int Rapifier::derapify_class(std::istream &source, ConfigClass &curClass, int le
     return 0;
 }
 
-
 void Rapifier::rapify_expression(const ConfigValue &expr, std::ostream &f_target) {
 
     if (expr.getType() == rap_type::rap_array) {
@@ -669,7 +735,7 @@ void Rapifier::rapify_class(const ConfigClass &cfg, std::ostream &f_target) {
             rapify_variable(c, f_target);
         } else {
             auto& c = def.getAsClass();
-            if (c->isDefinition() || c->isDelete()) {
+            if (c->isDefinition()) {
                 rapify_class(*c, f_target); //Write isDef/isDelete flag and return
             } else {
                 f_target.put(0);
@@ -692,7 +758,7 @@ void Rapifier::rapify_class(const ConfigClass &cfg, std::ostream &f_target) {
         f_target.seekp(c->getOffsetLocation());
         
         f_target.write(reinterpret_cast<char*>(&fp_temp), sizeof(uint32_t));
-        f_target.seekp(0, std::ofstream::end);
+        f_target.seekp(0, std::ostream::end);
 
         rapify_class(*c, f_target);
     }
@@ -759,7 +825,7 @@ int Rapifier::rapify_file(std::istream &source, std::ostream &target, const char
         std::ostream_iterator<char>(std::ofstream(dump_name)));
 #endif
 
-    auto parsedConfig = Config::fromPreprocessedText(fileToPreprocess, preproc.getLineref());
+    auto parsedConfig = Config::fromPreprocessedText(fileToPreprocess, preproc.getLineref(), false);
 
     if (!parsedConfig.hasConfig()) {
         errorf("Failed to parse config.\n");
