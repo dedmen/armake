@@ -42,6 +42,9 @@ struct lineref {
     std::vector<std::string> file_names;
     std::vector<uint32_t> file_index;
     std::vector<uint32_t> line_number;
+    //signal that there are no file names or numbers or line numbers here
+    //For when text didn't go through preproc
+    bool empty = false;
 };
 
 bool matches_includepath(std::filesystem::path path, std::string_view includepath, std::string_view includefolder);

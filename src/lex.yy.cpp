@@ -1123,8 +1123,11 @@ YY_RULE_SETUP
     if (*endptr == 0)
         REJECT;
 
-    lnwarningf(lineref.file_names[lineref.file_index[yylineno]].c_str(), lineref.line_number[yylineno],
-            "unquoted-string", "String \"%s\" is not quoted properly.\n", yytext);
+    if (lineref.empty) 
+        nwarningf("unquoted-string", "String \"%s\" is not quoted properly. line: %i\n", yytext, yylineno);
+    else
+        lnwarningf(lineref.file_names[lineref.file_index[yylineno]].c_str(), lineref.line_number[yylineno],
+                "unquoted-string", "String \"%s\" is not quoted properly.\n", yytext);
 
     RESET_VARS;
     yylval->string_value = trim({yytext, static_cast<size_t>(yyleng)});
@@ -1134,7 +1137,7 @@ YY_RULE_SETUP
 case 21:
 /* rule 21 can match eol */
 YY_RULE_SETUP
-#line 126 "rapify.l"
+#line 129 "rapify.l"
 {
     if (!staticData.allow_arr)
         REJECT;
@@ -1146,8 +1149,11 @@ YY_RULE_SETUP
     if (*endptr == 0)
         REJECT;
 
-    lnwarningf(lineref.file_names[lineref.file_index[yylineno]].c_str(), lineref.line_number[yylineno],
-            "unquoted-string", "String \"%s\" is not quoted properly.\n", yytext);
+    if (lineref.empty) 
+        nwarningf("unquoted-string", "String \"%s\" is not quoted properly.  line: %i\n", yytext, yylineno);
+    else
+        lnwarningf(lineref.file_names[lineref.file_index[yylineno]].c_str(), lineref.line_number[yylineno],
+                "unquoted-string", "String \"%s\" is not quoted properly.\n", yytext);
 
     RESET_VARS;
     yylval->string_value = trim({yytext, static_cast<size_t>(yyleng)});
@@ -1156,7 +1162,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 22:
 YY_RULE_SETUP
-#line 145 "rapify.l"
+#line 151 "rapify.l"
 {
     if (staticData.allow_arr || staticData.allow_val)
         REJECT;
@@ -1171,15 +1177,15 @@ YY_RULE_SETUP
 	YY_BREAK
 case 23:
 YY_RULE_SETUP
-#line 157 "rapify.l"
+#line 163 "rapify.l"
 {}
 	YY_BREAK
 case 24:
 YY_RULE_SETUP
-#line 159 "rapify.l"
+#line 165 "rapify.l"
 ECHO;
 	YY_BREAK
-#line 1182 "lex.yy.cpp"
+#line 1188 "lex.yy.cpp"
 			case YY_STATE_EOF(INITIAL):
 				yyterminate();
 
@@ -2344,6 +2350,6 @@ void yyfree (void * ptr , yyscan_t yyscanner)
 
 #define YYTABLES_NAME "yytables"
 
-#line 159 "rapify.l"
+#line 165 "rapify.l"
 
 

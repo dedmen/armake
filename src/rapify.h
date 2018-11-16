@@ -324,8 +324,10 @@ public:
 
 class Config {
 public:
-    static Config fromPreprocessedText(std::istream &input, struct lineref &lineref);
-    static Config fromBinarized(std::istream &input);
+    //Does not preprocess the input text
+    static Config fromRawText(std::istream& input, bool buildParentTree = true);
+    static Config fromPreprocessedText(std::istream &input, struct lineref &lineref, bool buildParentTree = true);
+    static Config fromBinarized(std::istream &input, bool buildParentTree = true);
     void toBinarized(std::ostream &output);
     void toPlainText(std::ostream &output, std::string_view indent = "    ");
 

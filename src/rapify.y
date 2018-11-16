@@ -153,8 +153,12 @@ void yyerror(YYLTYPE* yylloc, ConfigClass &result, struct lineref &lineref, pars
         line++;
     }
 
-    lerrorf(lineref.file_names[lineref.file_index[yylloc->first_line]].c_str(),
-            lineref.line_number[yylloc->first_line], "%s\n", s);
+
+    if (lineref.empty)
+        errorf("%s Line %i\n", s, yylloc->first_line);
+    else
+        lerrorf(lineref.file_names[lineref.file_index[yylloc->first_line]].c_str(),
+                lineref.line_number[yylloc->first_line], "%s\n", s);
 
     fprintf(stderr, " %s", text.c_str());
 }

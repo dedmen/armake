@@ -115,8 +115,11 @@
     if (*endptr == 0)
         REJECT;
 
-    lnwarningf(lineref.file_names[lineref.file_index[yylineno]].c_str(), lineref.line_number[yylineno],
-            "unquoted-string", "String \"%s\" is not quoted properly.\n", yytext);
+    if (lineref.empty) 
+        nwarningf("unquoted-string", "String \"%s\" is not quoted properly. line: %i\n", yytext, yylineno);
+    else
+        lnwarningf(lineref.file_names[lineref.file_index[yylineno]].c_str(), lineref.line_number[yylineno],
+                "unquoted-string", "String \"%s\" is not quoted properly.\n", yytext);
 
     RESET_VARS;
     yylval->string_value = trim({yytext, static_cast<size_t>(yyleng)});
@@ -134,8 +137,11 @@
     if (*endptr == 0)
         REJECT;
 
-    lnwarningf(lineref.file_names[lineref.file_index[yylineno]].c_str(), lineref.line_number[yylineno],
-            "unquoted-string", "String \"%s\" is not quoted properly.\n", yytext);
+    if (lineref.empty) 
+        nwarningf("unquoted-string", "String \"%s\" is not quoted properly.  line: %i\n", yytext, yylineno);
+    else
+        lnwarningf(lineref.file_names[lineref.file_index[yylineno]].c_str(), lineref.line_number[yylineno],
+                "unquoted-string", "String \"%s\" is not quoted properly.\n", yytext);
 
     RESET_VARS;
     yylval->string_value = trim({yytext, static_cast<size_t>(yyleng)});
