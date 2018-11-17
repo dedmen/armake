@@ -181,10 +181,6 @@ public:
 
     std::string_view getName() const;
 
-    bool operator==(const ConfigClassEntry& other) const { //Just for lookup purposes in the unordered_set of class_
-        return iequals(getName(), other.getName());
-    }
-
     bool isClass() const noexcept {
         return value.index() == 0;
     }
@@ -201,38 +197,29 @@ public:
     }
 };
 
-namespace std {
-    template<>
-    struct hash<ConfigClassEntry> {
-        typedef ConfigClassEntry argument_type;
-        typedef size_t result_type;
-
-        size_t operator()(const ConfigClassEntry& x) const {
-            auto toLowerCpy = std::string(x.getName());
-            std::transform(toLowerCpy.begin(), toLowerCpy.end(), toLowerCpy.begin(), ::tolower);
-            return std::hash<std::string>()(toLowerCpy);
-        }
-    };
-}
-
 class ConfigClass : public std::enable_shared_from_this<ConfigClass> {
     friend class Rapifier;
     friend class Config;
     std::string name;
     std::variant<std::monostate, std::string, std::weak_ptr<ConfigClass>> inheritedParent;
     std::weak_ptr<ConfigClass> treeParent;
-    std::unordered_set<ConfigClassEntry> entries;
+    std::vector<ConfigClassEntry> entries;
+    std::unordered_map<std::string_view, std::vector<ConfigClassEntry>::iterator> order;
     bool is_definition{ false };
     bool is_delete{ false };
     long offset_location{ 0 };
 
-    void populateContent(std::vector<ConfigClassEntry> &content) {
-        for (auto& it : content) {
-            entries.emplace(std::move(it));
+    void populateContent(std::vector<ConfigClassEntry> &&content) {
+        entries = content;
+
+        order.reserve(entries.size());
+
+        for (auto it = entries.begin(); it != entries.end(); ++it) {
+            order.emplace(it->getName(), it);
         }
     }
 
-    std::shared_ptr<ConfigClass> findInheritedParent(const ConfigClassEntry &parentName, bool skipEntries = false, bool walkTree = true);
+    std::shared_ptr<ConfigClass> findInheritedParent(std::string_view parentName, bool skipEntries = false, bool walkTree = true);
     void buildParentTree();
 
     bool hasParentTreeBeenBuilt() const noexcept {
@@ -241,26 +228,50 @@ class ConfigClass : public std::enable_shared_from_this<ConfigClass> {
         return !isUninitialized;
     }
 
+
 public:
     struct definitionT {};
     struct deleteT {};
     ConfigClass() = default;
-    ConfigClass(std::string name, definitionT) : name(std::move(name)), is_definition(true), is_delete(true) {}
-    ConfigClass(std::string name, deleteT) : name(std::move(name)), is_definition(true) {}
+    ConfigClass(std::string name, definitionT) : name(std::move(name)), is_definition(true) {}
+    ConfigClass(std::string name, deleteT) : name(std::move(name)), is_definition(true), is_delete(true) {}
     ConfigClass(std::string name, std::string parent) : name(std::move(name)) {
         if (!parent.empty()) this->inheritedParent = parent;
     }
     ConfigClass(std::string name, std::string parent, std::vector<ConfigClassEntry> content)
         : name(std::move(name)) {
         if (!parent.empty()) this->inheritedParent = parent;
-        populateContent(content);
+        populateContent(std::move(content));
     }
     ConfigClass(std::string name, std::vector<ConfigClassEntry> content)
         : name(std::move(name)) {
-        populateContent(content);
+        populateContent(std::move(content));
     }
-    ConfigClass(std::vector<ConfigClassEntry> content) { populateContent(content); }
+    ConfigClass(std::vector<ConfigClassEntry> content) { populateContent(std::move(content)); }
     ConfigClass(std::string_view name) : name(name) {}
+
+
+    ConfigClass& operator=(ConfigClass&& other) noexcept {
+        name = std::move(other.name);
+        inheritedParent = std::move(other.inheritedParent);
+        treeParent = std::move(other.treeParent);
+
+        entries = std::move(other.entries);
+        is_definition = other.is_definition;
+        is_delete = other.is_delete;
+        offset_location = other.offset_location;
+
+        order.reserve(entries.size());
+
+        for (auto it = entries.begin(); it != entries.end(); ++it) {
+            order.emplace(it->getName(), it);
+        }
+        return *this;
+    }
+
+    ConfigClass(ConfigClass&& other) noexcept {
+        this->operator=(std::move(other));
+    }
 
 
     std::string_view getName() const {
@@ -292,8 +303,11 @@ public:
 
     std::vector<std::shared_ptr<ConfigClass>> getParents() const;
     std::map<std::string_view, std::reference_wrapper<const ConfigEntry>> getEntries() const;
-    const std::unordered_set<ConfigClassEntry>& getEntriesNoParent() const {
+    const auto& getEntriesNoParent() const {
         return entries;
+    }
+    const auto& getEntryOrder() const {
+        return order;
     }
 
     std::map<std::string_view, std::shared_ptr<ConfigClass>> getSubclasses() const;
@@ -323,13 +337,13 @@ public:
     void toBinarized(std::ostream &output);
     void toPlainText(std::ostream &output, std::string_view indent = "    ");
 
-    bool hasConfig() { return static_cast<bool>(config); }
-    std::shared_ptr<ConfigClass> getConfig() { return config; }
+    bool hasConfig() const { return static_cast<bool>(config); }
+    std::shared_ptr<ConfigClass> getConfig() const { return config; }
 
-    operator ConfigClass&(){
+    operator ConfigClass&() const {
         return *config;
     }
-    std::shared_ptr<ConfigClass> operator->() {
+    std::shared_ptr<ConfigClass> operator->() const {
         return config;
     }
 

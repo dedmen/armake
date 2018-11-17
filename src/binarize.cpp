@@ -102,8 +102,6 @@ int attempt_bis_binarize(char *source, char *target) {
     bool is_rtm;
     char command[2048];
     char temp[2048];
-    char tempfolder[2048];
-    char target_tempfolder[2048];
     char filename[2048];
     char *dependencies[MAXTEXTURES];
     char *root;
@@ -193,28 +191,36 @@ int attempt_bis_binarize(char *source, char *target) {
     else
         strcpy(filename, source);
 
-    if (!create_temp_folder(filename, tempfolder, sizeof(tempfolder))) {
+    auto tempfolder = create_temp_folder(filename);
+
+    if (!tempfolder) {
         errorf("Failed to create temp folder.\n");
         return 1;
     }
+
+    std::filesystem::path target_tempfolder;
 
     // Create a temp target folder for binarize calls
     if (strcmp(args.positionals[0], "binarize") == 0) {
         strcpy(temp, filename);
         strcat(temp, ".out");
-        if (!create_temp_folder(temp, target_tempfolder, sizeof(target_tempfolder))) {
+
+        auto newFolder = create_temp_folder(temp);
+
+        if (!newFolder) {
             errorf("Failed to create temp folder.\n");
             return 1;
         }
+        target_tempfolder = *newFolder;
     }
 
     strcpy(temp, (strchr(source, PATHSEP) == NULL) ? source : strrchr(source, PATHSEP) + 1);
-    strcpy(filename, tempfolder);
+    strcpy(filename, tempfolder->string().c_str());
     strcat(filename, temp);
 
     GetFullPathName(source, 2048, temp, NULL);
 
-    if (!copy_file(temp, filename)) {
+    if (!::copy_file(std::filesystem::path(temp), *tempfolder / temp)) {
         errorf("Failed to copy %s to temp folder.\n", temp);
         return 2;
     }
@@ -224,13 +230,13 @@ int attempt_bis_binarize(char *source, char *target) {
 
     strcpy(temp, root);
     strcat(temp, "config.cpp");
-    strcpy(filename, tempfolder);
+    strcpy(filename, tempfolder->string().c_str());
     strcat(filename, "config.cpp");
     copy_file(temp, filename);
 
     strcpy(temp, root);
     strcat(temp, "model.cfg");
-    strcpy(filename, tempfolder);
+    strcpy(filename, tempfolder->string().c_str());
     strcat(filename, "model.cfg");
     copy_file(temp, filename);
 
@@ -253,7 +259,7 @@ int attempt_bis_binarize(char *source, char *target) {
                 continue;
             }
 
-            strcpy(filename, tempfolder);
+            strcpy(filename, tempfolder->string().c_str());
             strcat(filename, dependencies[i]);
 
             if (!copy_file(fileFound->string().c_str(), filename)) {
@@ -270,11 +276,11 @@ int attempt_bis_binarize(char *source, char *target) {
     sprintf(command, "\"%s\"", temp);
 
     strcat(command, " -norecurse -always -silent -maxProcesses=0 ");
-    strcat(command, tempfolder);
+    strcat(command, tempfolder->string().c_str());
     strcat(command, " ");
 
     if (strcmp(args.positionals[0], "binarize") == 0) {
-        strcpy(temp, target_tempfolder);
+        strcpy(temp, target_tempfolder.string().c_str());
         *(strrchr(temp, PATHSEP)) = 0;
     } else {
         GetFullPathName(target, 2048, temp, NULL);
@@ -308,7 +314,7 @@ int attempt_bis_binarize(char *source, char *target) {
     // Copy final file to target
     if (strcmp(args.positionals[0], "binarize") == 0) {
         strcpy(temp, (strchr(source, PATHSEP) == NULL) ? source : strrchr(source, PATHSEP) + 1);
-        strcpy(filename, target_tempfolder);
+        strcpy(filename, target_tempfolder.string().c_str());
         strcat(filename, temp);
         if (!copy_file(filename, target))
             return 4;
@@ -320,7 +326,7 @@ int attempt_bis_binarize(char *source, char *target) {
     }
 
     // Clean Up
-    if (!remove_folder(tempfolder)) {
+    if (!remove_folder(*tempfolder)) {
         errorf("Failed to remove temp folder.\n");
         return 5;
     }
@@ -330,7 +336,7 @@ int attempt_bis_binarize(char *source, char *target) {
 #endif
 
 
-int binarize(char *source, char *target) {
+int binarize(const char *source, const char *target) {
     /*
      * Binarize the given file. If source and target are identical, the target
      * is overwritten. If the source is a P3D, it is converted to ODOL. If the

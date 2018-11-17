@@ -323,4 +323,4 @@ struct model_info {
 
 int read_lods(FILE *f_source, std::vector<mlod_lod> &mlod_lods, uint32_t num_lods);
 
-int mlod2odol(char *source, char *target);
+int mlod2odol(const char *source, const char *target);

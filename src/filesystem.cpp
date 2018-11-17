@@ -49,44 +49,31 @@ bool create_folder(const std::filesystem::path& path) {
      * Create the given folder recursively. Returns -2 if the directory already exists,
      * false on error and true on success.
      */
-    std::error_code ec;
-    bool res = std::filesystem::create_directories(path, ec);
-    return res;
+    return std::filesystem::create_directories(path);
 }
 
-bool create_temp_folder(char *addon, char *temp_folder, size_t bufsize) {
+std::optional<std::filesystem::path> create_temp_folder(std::string_view addonName) {
     /*
      * Create a temp folder for the given addon in the proper place
-     * depending on the operating system. Returns false on failure and true
-     * on success.
+     * depending on the operating system. Returns created directory on success and nothing
+     * on failure.
      */
 
-    char temp[2048] = TEMPPATH;
-    char addon_sanitized[2048];
-    int i;
+    auto tempDir = std::filesystem::temp_directory_path() / "armake";
 
-#ifdef _WIN32
-    temp[0] = 0;
-    GetTempPath(sizeof(temp), temp);
-    strcat(temp, "armake\\");
-#endif
-
-    temp[strlen(temp) - 1] = 0;
-
-    for (i = 0; i <= strlen(addon); i++)
-        addon_sanitized[i] = (addon[i] == '\\' || addon[i] == '/') ? '_' : addon[i];
+    std::string addonNameSanitized(addonName);
+    std::replace(addonNameSanitized.begin(), addonNameSanitized.end(), '/', '_');
+    std::replace(addonNameSanitized.begin(), addonNameSanitized.end(), '\\', '_');
 
     // find a free one
-    for (i = 0; i < 1024; i++) {
-        snprintf(temp_folder, bufsize, "%s_%s_%i", temp, addon_sanitized, i);
-        if (!std::filesystem::exists(temp_folder))
-            break;
+    for (int i = 0; i < 1024; i++) {
+        auto path = tempDir / (addonNameSanitized + std::to_string(i));
+        if (!std::filesystem::exists(path) && create_folder(path)) {
+            return path;
+        }
     }
 
-    if (i == 1024)
-        return false;
-
-    return create_folder(temp_folder);
+    return {};
 }
 
 
@@ -127,121 +114,8 @@ bool copy_file(const std::filesystem::path &source, const std::filesystem::path 
     return std::filesystem::copy_file(source, target, std::filesystem::copy_options::overwrite_existing);
 }
 
-
-#ifndef _WIN32
-int alphasort_ci(const struct dirent **a, const struct dirent **b) {
-    /*
-     * A case insensitive version of alphasort.
-     */
-
-    int i;
-    char a_name[512];
-    char b_name[512];
-
-    strncpy(a_name, (*a)->d_name, sizeof(a_name));
-    strncpy(b_name, (*b)->d_name, sizeof(b_name));
-
-    for (i = 0; i < strlen(a_name); i++) {
-        if (a_name[i] >= 'A' && a_name[i] <= 'Z')
-            a_name[i] = a_name[i] - ('A' - 'a');
-    }
-
-    for (i = 0; i < strlen(b_name); i++) {
-        if (b_name[i] >= 'A' && b_name[i] <= 'Z')
-            b_name[i] = b_name[i] - ('A' - 'a');
-    }
-
-    return strcoll(a_name, b_name);
-}
-#endif
-
-
-int traverse_directory_recursive(char *root, char *cwd, int (*callback)(char *, char *, char *), char *third_arg) {
-    /*
-     * Recursive helper function for directory traversal.
-     */
-
-#ifdef _WIN32
-
-    WIN32_FIND_DATA file;
-    HANDLE handle = NULL;
-    char mask[2048];
-    int success;
-
-    if (cwd[strlen(cwd) - 1] == '\\')
-        cwd[strlen(cwd) - 1] = 0;
-
-    GetFullPathName(cwd, 2048, mask, NULL);
-    sprintf(mask, "%s\\*", mask);
-
-    handle = FindFirstFile(mask, &file);
-    if (handle == INVALID_HANDLE_VALUE)
-        return 1;
-
-    do {
-        if (strcmp(file.cFileName, ".") == 0 || strcmp(file.cFileName, "..") == 0)
-            continue;
-
-        sprintf(mask, "%s\\%s", cwd, file.cFileName);
-        if (file.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-            traverse_directory_recursive(root, mask, callback, third_arg);
-        } else {
-            success = callback(root, mask, third_arg);
-            if (success)
-                return success;
-        }
-    } while (FindNextFile(handle, &file));
-
-    FindClose(handle);
-
-    return 0;
-
-#else
-
-    struct dirent **namelist;
-    struct stat st;
-    char next[2048];
-    int i;
-    int n;
-    int success;
-
-    n = scandir(cwd, &namelist, NULL, alphasort_ci);
-    if (n < 0)
-        return 1;
-
-    success = 0;
-    for (i = 0; i < n; i++) {
-        if (strcmp(namelist[i]->d_name, "..") == 0 ||
-                strcmp(namelist[i]->d_name, ".") == 0)
-            continue;
-
-        strcpy(next, cwd);
-        strcat(next, "/");
-        strcat(next, namelist[i]->d_name);
-
-        stat(next, &st);
-
-        if (S_ISDIR(st.st_mode))
-            success = traverse_directory_recursive(root, next, callback, third_arg);
-        else
-            success = callback(root, next, third_arg);
-
-        if (success)
-            goto cleanup;
-    }
-
-cleanup:
-    for (i = 0; i < n; i++)
-        free(namelist[i]);
-    free(namelist);
-
-    return success;
-
-#endif
-}
-
 __itt_string_handle* handle_traverse_directory = __itt_string_handle_create("traverse_directory");
-int traverse_directory(char *root, int (*callback)(char *, char *, char *), char *third_arg) {
+int traverse_directory(const std::filesystem::path &root, int (*callback)(const std::filesystem::path &rootDir, const std::filesystem::path &file, char *thirdArg), char *third_arg) {
     /*
      * Traverse the given path and call the callback with the root folder as
      * the first, the current file path as the second, and the given third
@@ -254,9 +128,20 @@ int traverse_directory(char *root, int (*callback)(char *, char *, char *), char
      * error and the last callback return value should the callback fail.
      */
     __itt_task_begin(fsDomain, __itt_null, __itt_null, handle_traverse_directory);
-    auto res = traverse_directory_recursive(root, root, callback, third_arg);
+
+    for (auto i = std::filesystem::recursive_directory_iterator(root, std::filesystem::directory_options::follow_directory_symlink);
+        i != std::filesystem::recursive_directory_iterator();
+        ++i) {
+        //if (i->is_directory() && (i->path().filename() == ignoreGit || i->path().filename() == ignoreSvn)) {
+        //    i.disable_recursion_pending(); //Don't recurse into that directory
+        //    continue;
+        //}
+        if (!i->is_regular_file()) continue;
+
+        callback(root, i->path().string().c_str(), third_arg);
+    }
     __itt_task_end(fsDomain);
-    return res;
+    return 0;
 }
 
 __itt_string_handle* handle_copy_directory = __itt_string_handle_create("copy_directory");

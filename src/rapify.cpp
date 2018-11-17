@@ -53,17 +53,17 @@ std::string_view ConfigClassEntry::getName() const {
 }
 
 
-std::shared_ptr<ConfigClass> ConfigClass::findInheritedParent(const ConfigClassEntry &parentName, bool skipEntries, bool walkTree) {
+std::shared_ptr<ConfigClass> ConfigClass::findInheritedParent(std::string_view  parentName, bool skipEntries, bool walkTree) {
 
     if (!skipEntries) {
-        auto found = entries.find(parentName);
-        if (found != entries.end() && found->isClass()) //Do my subclasses contain the wanted class?
-            return found->getAsClass();
+        auto found = order.find(parentName);
+        if (found != order.end() && found->second->isClass()) //Do my subclasses contain the wanted class?
+            return found->second->getAsClass();
     }
 
     if (inheritedParent.index() == 1) {
         auto& parentName = std::get<std::string>(inheritedParent);
-        auto inhPar = treeParent.lock()->findInheritedParent(ConfigClassEntry(parentName), ConfigClassEntry::iequals(parentName, getName()));
+        auto inhPar = treeParent.lock()->findInheritedParent(parentName, ConfigClassEntry::iequals(parentName, getName()));
         if (!inhPar) __debugbreak();
         inheritedParent = inhPar;
     }
@@ -110,7 +110,7 @@ void ConfigClass::buildParentTree() {
         if (c->inheritedParent.index() == 2) return; //already resolved
         auto& parentName = std::get<std::string>(c->inheritedParent);
 
-        if (auto par = c->treeParent.lock()->findInheritedParent(ConfigClassEntry(parentName), ConfigClassEntry::iequals(parentName,c->getName()))) {
+        if (auto par = c->treeParent.lock()->findInheritedParent(parentName, ConfigClassEntry::iequals(parentName,c->getName()))) {
             c->inheritedParent = par;
         } else
             __debugbreak();
@@ -187,9 +187,9 @@ std::map<std::string_view, std::shared_ptr<ConfigClass>> ConfigClass::getSubclas
 std::optional<ConfigClassEntry> ConfigClass::getEntry(ConfigPath path) const {
     const std::string_view subelement = *path.begin();
 
-    auto found = entries.find(ConfigClassEntry(subelement));
+    auto found = order.find(subelement);
 
-    if (found == entries.end()) { //We don't have that value, maybe a parent has?
+    if (found == order.end()) { //We don't have that value, maybe a parent has?
         if (inheritedParent.index() == 2) {
             auto subresult = std::get<2>(inheritedParent).lock()->getEntry(path);
             if (subresult)
@@ -198,14 +198,14 @@ std::optional<ConfigClassEntry> ConfigClass::getEntry(ConfigPath path) const {
         return {}; //Nope, no parent has it
     }
 
-    if (path.size() == 1 && found != entries.end())  //we are at end of path and have found the value
-        return *found; //Found it!
+    if (path.size() == 1 && found != order.end())  //we are at end of path and have found the value
+        return *found->second; //Found it!
 
     //We are not at end of path, so we must descent into the Tree
 
-    if (found->isEntry()) return {}; //The value we found is not a class, we cannot descent into it
+    if (found->second->isEntry()) return {}; //The value we found is not a class, we cannot descent into it
 
-    return found->getAsClass()->getEntry(std::initializer_list<std::string_view>(path.begin() + 1, path.end()));
+    return found->second->getAsClass()->getEntry(std::initializer_list<std::string_view>(path.begin() + 1, path.end()));
 }
 
 std::shared_ptr<ConfigClass> ConfigClass::getClass(ConfigPath path) const {
@@ -555,6 +555,8 @@ void Rapifier::derapify_class(std::istream &source, ConfigClass &curClass, int l
         curClass.inheritedParent = inherited;
     }
 
+    std::vector<ConfigClassEntry> entries;
+
     for (int i = 0; i < num_entries; i++) {
         uint8_t type = source.get();
 
@@ -575,7 +577,8 @@ void Rapifier::derapify_class(std::istream &source, ConfigClass &curClass, int l
                 throw;
             }
 
-            curClass.entries.emplace(std::move(subclass));
+            entries.emplace_back(std::move(subclass));
+
             source.seekg(fp_tmp);
         } else if (type == 1) { //value
          //#TODO make enums for these
@@ -614,8 +617,7 @@ void Rapifier::derapify_class(std::istream &source, ConfigClass &curClass, int l
                 throw DerapifyException("unknown valuetoken", type);
             }
 
-            curClass.entries.emplace(ConfigEntry(valueType, std::move(valueName), std::move(valueContent)));
-
+            entries.emplace_back(ConfigEntry(valueType, std::move(valueName), std::move(valueContent)));
         } else if (type == 2 || type == 5) { //array or array append
             if (type == 5)
                 source.seekg(4, std::istream::_Seekcur);
@@ -626,11 +628,9 @@ void Rapifier::derapify_class(std::istream &source, ConfigClass &curClass, int l
             auto rapType = type == 2 ? rap_type::rap_array : rap_type::rap_array_expansion;
 
             try {
-                curClass.entries.emplace(
-                    ConfigEntry(rapType, std::move(valueName),
-                        ConfigValue(rapType, derapify_array(source))
-                    )
-                );
+                entries.emplace_back(ConfigEntry(rapType, std::move(valueName),
+                    ConfigValue(rapType, derapify_array(source))
+                ));
             } catch (DerapifyException& ex) {
                 ex.addToStack(valueName);
                 throw;
@@ -643,7 +643,7 @@ void Rapifier::derapify_class(std::istream &source, ConfigClass &curClass, int l
             subclass->is_delete = type == 4;
             subclass->is_definition = true;
 
-            curClass.entries.emplace(std::move(subclass));
+            entries.emplace_back(std::move(subclass));
         } else {
             if (source.eof()) {
                 throw DerapifyException("Premature EOF", -1);
@@ -651,6 +651,7 @@ void Rapifier::derapify_class(std::istream &source, ConfigClass &curClass, int l
             throw DerapifyException("Unknown class entry type", type);
         }
     }
+    curClass.populateContent(std::move(entries));
 }
 
 void Rapifier::rapify_expression(const ConfigValue &expr, std::ostream &f_target) {
@@ -686,21 +687,15 @@ void Rapifier::rapify_expression(const ConfigValue &expr, std::ostream &f_target
 }
 
 void Rapifier::rapify_variable(const ConfigEntry &var, std::ostream &f_target) {
-    if (var.getType() == rap_type::rap_var) {
-        f_target.put(1);
-        switch (var.getValue().getType()) {
-            case rap_type::rap_string: f_target.put(0); break;
-            case rap_type::rap_float: f_target.put(1); break;
-            case rap_type::rap_int: f_target.put(2); break;
-        }
-    } else {
-        switch (var.getType()) {
-            case rap_type::rap_array: f_target.put(2); break;
-            case rap_type::rap_array_expansion: 
-                f_target.put(5);
-                f_target.write("\x01\0\0\0", 4);//last 3 bytes are unused by engine
-                break;
-        }
+    switch (var.getType()) {
+        case rap_type::rap_string: f_target.put(1); f_target.put(0); break;
+        case rap_type::rap_float: f_target.put(1); f_target.put(1); break;
+        case rap_type::rap_int: f_target.put(1); f_target.put(2); break;
+        case rap_type::rap_array: f_target.put(2); break;
+        case rap_type::rap_array_expansion:
+            f_target.put(5);
+            f_target.write("\x01\0\0\0", 4);//last 3 bytes are unused by engine
+            break;
     }
 
     f_target.write(var.getName().c_str(), var.getName().length() + 1);

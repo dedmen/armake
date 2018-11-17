@@ -19,6 +19,6 @@
 #pragma once
 
 
-int binarize(char *source, char *target);
+int binarize(const char *source, const char *target);
 
 int cmd_binarize();

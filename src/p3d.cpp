@@ -1647,7 +1647,7 @@ void write_animations(FILE *f_target, uint32_t num_lods, std::vector<mlod_lod> &
 __itt_domain* p3dDomain = __itt_domain_create("armake.p3d");
 __itt_string_handle* handle_mlod2odol = __itt_string_handle_create("mlod2odol");
 
-int mlod2odol(char *source, char *target) {
+int mlod2odol(const char *source, const char *target) {
     /*
      * Converts the MLOD P3D to ODOL. Overwrites the target if it already
      * exists.

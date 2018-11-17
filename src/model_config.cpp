@@ -205,7 +205,7 @@ void sort_bones(const std::vector<bone>& src, std::vector<bone>& tgt, const char
 }
 
 
-int read_model_config(char *path, struct skeleton_ *skeleton) {
+int read_model_config(const char *path, struct skeleton_ *skeleton) {
     /*
      * Reads the model config information for the given model path. If no
      * model config is found, -1 is returned. 0 is returned on success

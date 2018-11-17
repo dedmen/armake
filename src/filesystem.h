@@ -19,6 +19,7 @@
 #pragma once
 
 #include <string_view>
+#include <optional>
 
 #ifdef _WIN32
 #define PATHSEP '\\'
@@ -37,7 +38,7 @@ namespace std::filesystem {
 
 bool create_folder(const std::filesystem::path &path);
 
-bool create_temp_folder(char *addon, char *temp_folder, size_t bufsize);
+std::optional<std::filesystem::path> create_temp_folder(std::string_view addonName);
 
 int remove_file(const std::filesystem::path &path);
 
@@ -45,7 +46,7 @@ bool remove_folder(const std::filesystem::path &folder);
 
 bool copy_file(const std::filesystem::path &source, const std::filesystem::path &target);
 
-int traverse_directory(char *root, int (*callback)(char *, char *, char *),
+int traverse_directory(const std::filesystem::path &root, int (*callback)(const std::filesystem::path &rootDir, const std::filesystem::path &file, char *thirdArg),
     char *third_arg);
 
 bool copy_directory(const std::filesystem::path &source, const std::filesystem::path &target);

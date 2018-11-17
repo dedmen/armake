@@ -98,4 +98,4 @@ struct skeleton_ { //using std::vector and std::string reduced the size of this 
 };
 
 
-int read_model_config(char *path, struct skeleton_ *skeleton);
+int read_model_config(const char *path, struct skeleton_ *skeleton);

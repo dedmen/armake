@@ -59,25 +59,25 @@ bool file_allowed(const char *filename) {
 
 std::vector<std::pair<std::filesystem::path, size_t>> files_sizes;
 
-int binarize_callback(char *root, char *source, char *junk) {
+int binarize_callback(const std::filesystem::path &root, const std::filesystem::path &source, char *junk) {
     int success;
     char target[2048];
     char filename[1024];
 
     filename[0] = 0;
-    strcat(filename, source + strlen(root) + 1);
+    strcat(filename, source.string().c_str() + strlen(root.string().c_str()) + 1);
 
     if (!file_allowed(filename))
         return 0;
 
-    strncpy(target, source, sizeof(target));
+    strncpy(target, source.string().c_str(), sizeof(target));
 
     if (strlen(target) > 10 &&
             strcmp(target + strlen(target) - 10, "config.cpp") == 0) {
         strcpy(target + strlen(target) - 3, "bin");
     }
 
-    success = binarize(source, target);
+    success = binarize(source.string().c_str(), target);
 
     files_sizes.emplace_back(target, std::filesystem::file_size(target));
 
@@ -88,13 +88,13 @@ int binarize_callback(char *root, char *source, char *junk) {
 }
 
 
-int write_header_to_pbo(char *root, char *source, char *target) {
+int write_header_to_pbo(const std::filesystem::path &root, const std::filesystem::path &source, char *target) {
     FILE *f_source;
     FILE *f_target;
     char filename[1024];
 
     filename[0] = 0;
-    strcat(filename, source + strlen(root) + 1);
+    strcat(filename, source.string().c_str() + strlen(root.string().c_str()) + 1);
 
     if (!file_allowed(filename))
         return 0;
@@ -114,7 +114,7 @@ int write_header_to_pbo(char *root, char *source, char *target) {
     header.reserved = 0;
     header.timestamp = 0;
 
-    f_source = fopen(source, "rb");
+    f_source = fopen(source.string().c_str(), "rb");
     if (!f_source) {
         fclose(f_target);
         return -2;
@@ -148,7 +148,7 @@ int write_header_to_pbo(char *root, char *source, char *target) {
 }
 
 
-int write_data_to_pbo(char *root, char *source, char *target) {
+int write_data_to_pbo(const std::filesystem::path &root, const std::filesystem::path &source, char *target) {
     FILE *f_source;
     FILE *f_target;
     char buffer[4096];
@@ -157,12 +157,12 @@ int write_data_to_pbo(char *root, char *source, char *target) {
     int i;
 
     filename[0] = 0;
-    strcat(filename, source + strlen(root) + 1);
+    strcat(filename, source.string().c_str() + strlen(root.string().c_str()) + 1);
 
     if (!file_allowed(filename))
         return 0;
 
-    f_source = fopen(source, "rb");
+    f_source = fopen(source.string().c_str(), "rb");
     if (!f_source)
         return -1;
     fseek(f_source, 0, SEEK_END);
@@ -330,16 +330,16 @@ int cmd_build() {
 #endif
 
     // create and prepare temp folder
-    char tempfolder[1024];
-    if (!create_temp_folder(addonprefix, tempfolder, sizeof(tempfolder))) {
+    auto tempfolder = create_temp_folder(addonprefix);
+    if (!tempfolder) {
         errorf("Failed to create temp folder.\n");
         remove_file(args.positionals[2]);
         return 2;
     }
-    if (!copy_directory(args.positionals[1], tempfolder)) {
+    if (!copy_directory(args.positionals[1], *tempfolder)) {
         errorf("Failed to copy to temp folder.\n");
         remove_file(args.positionals[2]);
-        remove_folder(tempfolder);
+        remove_folder(*tempfolder);
         return 3;
     }
 
@@ -351,18 +351,18 @@ int cmd_build() {
     strcpy(nobinpath + strlen(nobinpath) - 11, "$NOBIN$");
     strcpy(notestpath + strlen(notestpath) - 11, "$NOBIN-NOTEST$");
     if (!args.packonly && !std::filesystem::exists(nobinpath) && !std::filesystem::exists(notestpath)) {
-        if (traverse_directory(tempfolder, binarize_callback, "")) {
+        if (traverse_directory(tempfolder->string().c_str(), binarize_callback, "")) {
             current_target = args.positionals[1];
             errorf("Failed to binarize some files.\n");
             remove_file(args.positionals[2]);
-            remove_folder(tempfolder);
+            remove_folder(*tempfolder);
             return 4;
         }
 
         char configpath[2048];
-        strcpy(configpath, tempfolder);
+        strcpy(configpath, tempfolder->string().c_str());
         strcat(configpath, "?config.cpp");
-        configpath[strlen(tempfolder)] = PATHSEP;
+        configpath[strlen(tempfolder->string().c_str())] = PATHSEP;
 
         if (std::filesystem::exists(configpath)) {
 #ifdef _WIN32
@@ -371,7 +371,7 @@ int cmd_build() {
             if (remove(configpath)) {
 #endif
                 remove_file(args.positionals[2]);
-                remove_folder(tempfolder);
+                remove_folder(*tempfolder);
                 return 5;
             }
         }
@@ -403,7 +403,7 @@ int cmd_build() {
                 if (args.headerextensions[i][j] == '\0' && !valid) {
                     errorf("Invalid header extension format (%s).\n", args.headerextensions[i]);
                     remove_file(args.positionals[2]);
-                    remove_folder(tempfolder);
+                    remove_folder(*tempfolder);
                     return 6;
                 }
 
@@ -425,7 +425,7 @@ int cmd_build() {
     f_target = fopen(args.positionals[2], "ab");
     if (!f_target)
         return -1;
-    auto tmpFolderLen = strlen(tempfolder)+1;
+    auto tmpFolderLen = strlen(tempfolder->string().c_str())+1;
     for (auto& [path, filesize] : files_sizes) {
 
         std::string filename = path.string().substr(tmpFolderLen);
@@ -482,7 +482,7 @@ int cmd_build() {
     if (!f_target) {
         errorf("Failed to write header boundary to PBO.\n");
         remove_file(args.positionals[2]);
-        remove_folder(tempfolder);
+        remove_folder(*tempfolder);
         return 8;
     }
     for (i = 0; i < 21; i++)
@@ -490,10 +490,10 @@ int cmd_build() {
     fclose(f_target);
 
     // write contents to file
-    if (traverse_directory(tempfolder, write_data_to_pbo, args.positionals[2])) {
+    if (traverse_directory(tempfolder->string().c_str(), write_data_to_pbo, args.positionals[2])) {
         errorf("Failed to pack some file(s) into the PBO.\n");
         remove_file(args.positionals[2]);
-        remove_folder(tempfolder);
+        remove_folder(*tempfolder);
         return 9;
     }
 
@@ -504,7 +504,7 @@ int cmd_build() {
     if (!f_target) {
         errorf("Failed to write checksum to file.\n");
         remove_file(args.positionals[2]);
-        remove_folder(tempfolder);
+        remove_folder(*tempfolder);
         return 10;
     }
     fputc(0, f_target);
@@ -512,7 +512,7 @@ int cmd_build() {
     fclose(f_target);
 
     // remove temp folder
-    if (!remove_folder(tempfolder)) {
+    if (!remove_folder(*tempfolder)) {
         errorf("Failed to remove temp folder.\n");
         return 11;
     }
