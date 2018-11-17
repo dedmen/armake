@@ -136,7 +136,8 @@ public:
         return name;
     }
     rap_type getType() const {
-        return type;
+        if (type == rap_type::rap_array_expansion) return type;
+        return value.getType();
     }
 
     const ConfigValue& getValue() const {

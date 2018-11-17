@@ -331,12 +331,12 @@ int cmd_build() {
 
     // create and prepare temp folder
     char tempfolder[1024];
-    if (create_temp_folder(addonprefix, tempfolder, sizeof(tempfolder))) {
+    if (!create_temp_folder(addonprefix, tempfolder, sizeof(tempfolder))) {
         errorf("Failed to create temp folder.\n");
         remove_file(args.positionals[2]);
         return 2;
     }
-    if (copy_directory(args.positionals[1], tempfolder)) {
+    if (!copy_directory(args.positionals[1], tempfolder)) {
         errorf("Failed to copy to temp folder.\n");
         remove_file(args.positionals[2]);
         remove_folder(tempfolder);
@@ -512,7 +512,7 @@ int cmd_build() {
     fclose(f_target);
 
     // remove temp folder
-    if (remove_folder(tempfolder)) {
+    if (!remove_folder(tempfolder)) {
         errorf("Failed to remove temp folder.\n");
         return 11;
     }

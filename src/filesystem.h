@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <string_view>
 
 #ifdef _WIN32
 #define PATHSEP '\\'
@@ -29,28 +30,22 @@
 #define TEMPPATH "/tmp/armake/"
 #endif
 
+namespace std::filesystem {
+        class path;
+}
 
-#ifdef _WIN32
-size_t getdelim(char **buf, size_t *bufsiz, int delimiter, FILE *fp);
 
-size_t getline(char **buf, size_t *bufsiz, FILE *fp);
-#endif
+bool create_folder(const std::filesystem::path &path);
 
-int get_temp_name(char *target, char *suffix);
+bool create_temp_folder(char *addon, char *temp_folder, size_t bufsize);
 
-int create_folder(char *path);
+int remove_file(const std::filesystem::path &path);
 
-int create_folders(const char *path);
+bool remove_folder(const std::filesystem::path &folder);
 
-int create_temp_folder(char *addon, char *temp_folder, size_t bufsize);
-
-int remove_file(char *path);
-
-int remove_folder(char *folder);
-
-int copy_file(const char *source, const char *target);
+bool copy_file(const std::filesystem::path &source, const std::filesystem::path &target);
 
 int traverse_directory(char *root, int (*callback)(char *, char *, char *),
     char *third_arg);
 
-int copy_directory(char *source, char *target);
+bool copy_directory(const std::filesystem::path &source, const std::filesystem::path &target);

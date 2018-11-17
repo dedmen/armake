@@ -44,138 +44,20 @@
 
 __itt_domain* fsDomain = __itt_domain_create("armake.filesystem");
 
-
-
-#ifdef _WIN32
-size_t getdelim(char **buf, size_t *bufsiz, int delimiter, FILE *fp) {
-    char *ptr, *eptr;
-
-    if (*buf == NULL || *bufsiz == 0) {
-        *bufsiz = BUFSIZ;
-        if ((*buf = (char*)malloc(*bufsiz)) == NULL)
-            return -1;
-    }
-
-    for (ptr = *buf, eptr = *buf + *bufsiz;;) {
-        int c = fgetc(fp);
-        if (c == -1) {
-            if (feof(fp)) {
-                size_t diff = (size_t)(ptr - *buf);
-                if (diff != 0) {
-                    *ptr = '\0';
-                    return diff;
-                }
-            }
-            return -1;
-        }
-        *ptr++ = c;
-        if (c == delimiter) {
-            *ptr = '\0';
-            return ptr - *buf;
-        }
-        if (ptr + 2 >= eptr) {
-            char *nbuf;
-            size_t nbufsiz = *bufsiz * 2;
-            size_t d = ptr - *buf;
-            if ((nbuf = (char*)realloc(*buf, nbufsiz)) == NULL)
-                return -1;
-            *buf = nbuf;
-            *bufsiz = nbufsiz;
-            eptr = nbuf + nbufsiz;
-            ptr = nbuf + d;
-        }
-    }
-}
-
-size_t getline(char **buf, size_t *bufsiz, FILE *fp) {
-    return getdelim(buf, bufsiz, '\n', fp);
-}
-#endif
-
-
-int get_temp_name(char *target, char *suffix) {
-#ifdef _WIN32
-    if (!GetTempFileName(".", "amk", 0, target)) { return 1; }
-    strcat(target, suffix);
-    return 0;
-#else
-    strcpy(target, "amk_XXXXXX");
-    strcat(target, suffix);
-    return mkstemps(target, strlen(suffix)) == -1;
-#endif
-}
-
-
-int create_folder(char *path) {
+bool create_folder(const std::filesystem::path& path) {
     /*
-     * Create the given folder. Returns -2 if the directory already exists,
-     * -1 on error and 0 on success.
+     * Create the given folder recursively. Returns -2 if the directory already exists,
+     * false on error and true on success.
      */
-
-#ifdef _WIN32
-
-    if (!CreateDirectory(path, NULL)) {
-        if (GetLastError() == ERROR_ALREADY_EXISTS)
-            return -2;
-        else
-            return -1;
-    }
-
-    return 0;
-
-#else
-
-    struct stat st = {0};
-
-    if (stat(path, &st) != -1)
-        return -2;
-
-    return mkdir(path, 0755);
-
-#endif
+    std::error_code ec;
+    bool res = std::filesystem::create_directories(path, ec);
+    return res;
 }
 
-
-int create_folders(const char *path) {
-    /*
-     * Recursively create all folders for the given path. Returns -1 on
-     * failure and 0 on success.
-     */
-
-    char tmp[2048];
-    char *p = NULL;
-    int success;
-    size_t len;
-
-    tmp[0] = 0;
-    strcat(tmp, path);
-    len = strlen(tmp);
-
-    if (tmp[len - 1] == PATHSEP)
-        tmp[len - 1] = 0;
-
-    for (p = tmp + 1; *p; p++) {
-        if (*p == PATHSEP && *(p-1) != ':') {
-            *p = 0;
-            success = create_folder(tmp);
-            if (success != -2 && success != 0)
-                return success;
-            *p = PATHSEP;
-        }
-    }
-
-    success = create_folder(tmp);
-    if (success != -2 && success != 0)
-        return success;
-
-    return 0;
-}
-
-
-int create_temp_folder(char *addon, char *temp_folder, size_t bufsize) {
+bool create_temp_folder(char *addon, char *temp_folder, size_t bufsize) {
     /*
      * Create a temp folder for the given addon in the proper place
-     * depending on the operating system. Returns -1 on failure and 0
+     * depending on the operating system. Returns false on failure and true
      * on success.
      */
 
@@ -196,130 +78,53 @@ int create_temp_folder(char *addon, char *temp_folder, size_t bufsize) {
 
     // find a free one
     for (i = 0; i < 1024; i++) {
-        snprintf(temp_folder, bufsize, "%s_%s_%i%c", temp, addon_sanitized, i, PATHSEP);
+        snprintf(temp_folder, bufsize, "%s_%s_%i", temp, addon_sanitized, i);
         if (!std::filesystem::exists(temp_folder))
             break;
     }
 
     if (i == 1024)
-        return -1;
+        return false;
 
-    return create_folders(temp_folder);
+    return create_folder(temp_folder);
 }
 
 
-int remove_file(char *path) {
+int remove_file(const std::filesystem::path &path) {
     /*
-     * Remove a file. Returns 0 on success and 1 on failure.
+     * Remove a file. Returns true on success and 0 on failure.
      */
 
-#ifdef _WIN32
-    return !DeleteFile(path);
-#else
-    return (remove(path) * -1);
-#endif
+
+    return std::filesystem::remove(path);
 }
 
 __itt_string_handle* handle_remove_folder = __itt_string_handle_create("remove_folder");
-int remove_folder(char *folder) {
+bool remove_folder(const std::filesystem::path &folder) {
     /*
-     * Recursively removes a folder tree. Returns a negative integer on
-     * failure and 0 on success.
+     * Recursively removes a folder tree. Returns false on
+     * failure and true on success.
      */
 
-#ifdef _WIN32
     __itt_task_begin(fsDomain, __itt_null, __itt_null, handle_remove_folder);
-    // MASSIVE @todo
-    char cmd[512];
-    sprintf(cmd, "rmdir %s /s /q", folder);
-    if (system(cmd))
-        return -1;
+    std::filesystem::remove_all(folder);
     __itt_task_end(fsDomain);
-#else
 
-    // ALSO MASSIVE @todo
-    char cmd[512];
-    sprintf(cmd, "rm -rf %s", folder);
-    if (system(cmd))
-        return -1;
-
-#endif
-
-    return 0;
+    return true;
 }
 
 
-int copy_file(const char *source, const char *target) {
+bool copy_file(const std::filesystem::path &source, const std::filesystem::path &target) {
     /*
      * Copy the file from the source to the target. Overwrites if the target
      * already exists.
-     * Returns a negative integer on failure and 0 on success.
+     * Returns a true on success and false on failure.
      */
-    //#TODO std::filesystem
-    // Create the containing folder
-    //char containing[strlen(target) + 1];
-    int lastsep = 0;
-    int i;
-    for (i = 0; i < strlen(target); i++) {
-        if (target[i] == PATHSEP)
-            lastsep = i;
-    }
-    std::string containing = std::string(target, target + lastsep);
-    //strcpy(containing, target);
-    //containing[lastsep] = 0;
 
-    if (create_folders(containing.c_str()))
-        return -1;
+    if (!create_folder(target.parent_path()))
+        return false;
 
-#ifdef _WIN32
-
-    if (!CopyFile(source, target, 0))
-        return -2;
-
-#else
-
-    int f_target, f_source;
-    char buf[4096];
-    ssize_t nread;
-
-    f_source = open(source, O_RDONLY);
-    if (f_source < 0)
-        return -2;
-
-    f_target = open(target, O_WRONLY | O_CREAT, 0666);
-    if (f_target < 0) {
-        close(f_source);
-        if (f_target >= 0)
-            close(f_target);
-        return -3;
-    }
-
-    while (nread = read(f_source, buf, sizeof buf), nread > 0) {
-        char *out_ptr = buf;
-        ssize_t nwritten;
-
-        do {
-            nwritten = write(f_target, out_ptr, nread);
-
-            if (nwritten >= 0) {
-                nread -= nwritten;
-                out_ptr += nwritten;
-            } else if (errno != EINTR) {
-                close(f_source);
-                if (f_target >= 0)
-                    close(f_target);
-                return -4;
-            }
-        } while (nread > 0);
-    }
-
-    close(f_source);
-    if (close(f_target) < 0)
-        return -5;
-
-#endif
-
-    return 0;
+    return std::filesystem::copy_file(source, target, std::filesystem::copy_options::overwrite_existing);
 }
 
 
@@ -454,42 +259,22 @@ int traverse_directory(char *root, int (*callback)(char *, char *, char *), char
     return res;
 }
 
-
-int copy_callback(char *source_root, char *source, char *target_root) {
-    // Remove trailing path seperators
-    if (source_root[strlen(source_root) - 1] == PATHSEP)
-        source_root[strlen(source_root) - 1] = 0;
-    if (target_root[strlen(target_root) - 1] == PATHSEP)
-        target_root[strlen(target_root) - 1] = 0;
-
-    if (strstr(source, source_root) != source)
-        return -1;
-
-    std::string target = std::string(target_root) + std::string(source + strlen(source_root));
-    //char target[strlen(source) + strlen(target_root) + 1]; // assume worst case
-    //target[0] = 0;
-    //strcat(target, target_root);
-    //strcat(target, source + strlen(source_root));
-
-    return copy_file(source, target.c_str());
-}
-
 __itt_string_handle* handle_copy_directory = __itt_string_handle_create("copy_directory");
-int copy_directory(char *source, char *target) {
+bool copy_directory(const std::filesystem::path &source, const std::filesystem::path &target) {
     /*
      * Copy the entire directory given with source to the target folder.
-     * Returns 0 on success and a non-zero integer on failure.
+     * Returns true on success and false on failure.
      */
 
     __itt_task_begin(fsDomain, __itt_null, __itt_null, handle_copy_directory);
+    try {
+        std::filesystem::copy(source, target, std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing);
+    } catch (std::filesystem::filesystem_error& ex) {
+        errorf("copy_directory failed. %s \nFrom: %s\nTo: %s", ex.what(), ex.path1().string().c_str(), ex.path2().string().c_str());
+        __itt_task_end(fsDomain);
+        return false;
+    }
 
-    // Remove trailing path seperators
-    if (source[strlen(source) - 1] == PATHSEP)
-        source[strlen(source) - 1] = 0;
-    if (target[strlen(target) - 1] == PATHSEP)
-        target[strlen(target) - 1] = 0;
-
-    auto res = traverse_directory(source, copy_callback, target);
     __itt_task_end(fsDomain);
-    return res;
+    return true;
 }

@@ -193,7 +193,7 @@ int attempt_bis_binarize(char *source, char *target) {
     else
         strcpy(filename, source);
 
-    if (create_temp_folder(filename, tempfolder, sizeof(tempfolder))) {
+    if (!create_temp_folder(filename, tempfolder, sizeof(tempfolder))) {
         errorf("Failed to create temp folder.\n");
         return 1;
     }
@@ -202,7 +202,7 @@ int attempt_bis_binarize(char *source, char *target) {
     if (strcmp(args.positionals[0], "binarize") == 0) {
         strcpy(temp, filename);
         strcat(temp, ".out");
-        if (create_temp_folder(temp, target_tempfolder, sizeof(target_tempfolder))) {
+        if (!create_temp_folder(temp, target_tempfolder, sizeof(target_tempfolder))) {
             errorf("Failed to create temp folder.\n");
             return 1;
         }
@@ -214,7 +214,7 @@ int attempt_bis_binarize(char *source, char *target) {
 
     GetFullPathName(source, 2048, temp, NULL);
 
-    if (copy_file(temp, filename)) {
+    if (!copy_file(temp, filename)) {
         errorf("Failed to copy %s to temp folder.\n", temp);
         return 2;
     }
@@ -256,7 +256,7 @@ int attempt_bis_binarize(char *source, char *target) {
             strcpy(filename, tempfolder);
             strcat(filename, dependencies[i]);
 
-            if (copy_file(fileFound->string().c_str(), filename)) {
+            if (!copy_file(fileFound->string().c_str(), filename)) {
                 errorf("Failed to copy %s to temp folder.\n", temp);
                 return 3;
             }
@@ -310,17 +310,17 @@ int attempt_bis_binarize(char *source, char *target) {
         strcpy(temp, (strchr(source, PATHSEP) == NULL) ? source : strrchr(source, PATHSEP) + 1);
         strcpy(filename, target_tempfolder);
         strcat(filename, temp);
-        if (copy_file(filename, target))
+        if (!copy_file(filename, target))
             return 4;
 
-        if (remove_folder(target_tempfolder)) {
+        if (!remove_folder(target_tempfolder)) {
             errorf("Failed to remove temp folder.\n");
             return 5;
         }
     }
 
     // Clean Up
-    if (remove_folder(tempfolder)) {
+    if (!remove_folder(tempfolder)) {
         errorf("Failed to remove temp folder.\n");
         return 5;
     }
@@ -359,13 +359,13 @@ int binarize(char *source, char *target) {
     if (!strcmp(fileext, ".p3d") ||
             !strcmp(fileext, ".rtm")) {
 #ifdef _WIN32
-        success = attempt_bis_binarize(source, target);
-        if (success >= 0)
-            return success;
-        if (!warned_bi_not_found) {
-            lwarningf(source, -1, "Failed to find BI tools, using internal binarizer.\n");
-            warned_bi_not_found = true;
-        }
+        //success = attempt_bis_binarize(source, target);
+        //if (success >= 0)
+        //    return success;
+        //if (!warned_bi_not_found) {
+        //    lwarningf(source, -1, "Failed to find BI tools, using internal binarizer.\n");
+        //    warned_bi_not_found = true;
+        //}
 #endif
         if (!strcmp(fileext, ".p3d"))
             return mlod2odol(source, target);

@@ -192,7 +192,7 @@ int cmd_unpack() {
     }
 
     // create folder
-    if (create_folders(args.positionals[2])) {
+    if (!create_folder(args.positionals[2])) {
         errorf("Failed to create output folder %s.\n", args.positionals[2]);
         fclose(f_source);
         free(headers);
@@ -322,7 +322,7 @@ int cmd_unpack() {
         strcpy(buffer, full_path);
         if (strrchr(buffer, PATHSEP) != NULL) {
             *strrchr(buffer, PATHSEP) = 0;
-            if (create_folders(buffer)) {
+            if (!create_folder(buffer)) {
                 errorf("Failed to create folder %s.\n", buffer);
                 fclose(f_source);
                 return 6;
