@@ -56,6 +56,172 @@ bool is_garbage(struct header *header) {
     return false;
 }
 
+bool PboProperty::read(std::istream& in) {
+    std::getline(in, key, '\0');
+    if (key.empty()) return false; //We tried to read the end element of the property list
+    std::getline(in, value, '\0');
+    return true;
+}
+
+void PboProperty::write(std::ostream& out) const {
+    out.write(key.c_str(), key.length() + 1);
+    out.write(value.c_str(), value.length() + 1);
+}
+
+void PboEntry::read(std::istream& in) {
+    struct {
+        uint32_t method;
+        uint32_t originalsize;
+        uint32_t reserved;
+        uint32_t timestamp;
+        uint32_t datasize;
+    } header {};
+
+    std::getline(in, name, '\0');
+    //#TODO read in one go
+    in.read(reinterpret_cast<char*>(&header.method), 4);
+    in.read(reinterpret_cast<char*>(&header.originalsize), 4);
+    in.read(reinterpret_cast<char*>(&header.reserved), 4);
+    in.read(reinterpret_cast<char*>(&header.timestamp), 4);
+    in.read(reinterpret_cast<char*>(&header.datasize), 4);
+    method = PboEntryPackingMethod::none;
+
+    if (header.method == 'Encr') { //encrypted
+        method = PboEntryPackingMethod::encrypted;
+    }
+    if (header.method == 'Cprs') { //compressed
+        method = PboEntryPackingMethod::compressed;
+    }
+    if (header.method == 'Vers') { //Version
+        method = PboEntryPackingMethod::version;
+    }
+
+    data_size = header.datasize;
+    original_size = header.originalsize;
+
+}
+
+void PboEntry::write(std::ostream& out, bool noDate) const {
+    struct {
+        uint32_t method;
+        uint32_t originalsize;
+        uint32_t reserved;
+        uint32_t timestamp;
+        uint32_t datasize;
+    } header {};
+
+    switch (method) {
+        case PboEntryPackingMethod::none: header.method = 0; break;
+        case PboEntryPackingMethod::version: header.method = 'Vers'; break;
+        case PboEntryPackingMethod::compressed: header.method = 'Cprs'; break;
+        case PboEntryPackingMethod::encrypted: header.method = 'Encr'; break;
+    }
+    header.originalsize = original_size;
+    header.reserved = 'ACE3'; //#TODO remove dis?
+    //time is unused by Arma. We could write more misc stuff into there for a total of 8 bytes
+    header.timestamp = noDate ? 0 : std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    header.datasize = data_size;
+
+    out.write(reinterpret_cast<char*>(&header.method), 4);
+    out.write(reinterpret_cast<char*>(&header.originalsize), 4);
+    out.write(reinterpret_cast<char*>(&header.reserved), 4);
+    out.write(reinterpret_cast<char*>(&header.timestamp), 4);
+    out.write(reinterpret_cast<char*>(&header.datasize), 4);
+}
+
+int PboEntryBuffer::underflow() {
+    if (gptr() < egptr()) // buffer not exhausted
+        return traits_type::to_int_type(*gptr());
+
+    //gptr Pointer to current position of input sequence
+    //egptr End of the buffered part of the input sequence
+    //Beginning of the buffered part of the input sequence
+
+    reader.input.seekg(file.startOffset + bufferEndFilePos);
+    size_t sizeLeft = file.data_size - bufferEndFilePos;
+    if (sizeLeft == 0) return std::char_traits<char>::eof();
+
+    auto sizeToRead = std::min(sizeLeft, buffer.size());
+    reader.input.read(buffer.data(), sizeToRead);
+    bufferEndFilePos += sizeToRead;
+
+    setg(&buffer.front(), &buffer.front(), &buffer.front() + sizeToRead);
+
+    return std::char_traits<char>::to_int_type(*this->gptr());
+}
+
+int64_t PboEntryBuffer::xsgetn(char* _Ptr, int64_t _Count) {
+    // get _Count characters from stream
+    const int64_t _Start_count = _Count;
+
+    while (_Count) {
+        size_t dataLeft = egptr() - gptr();
+        if (dataLeft == 0) {
+            reader.input.seekg(file.startOffset + bufferEndFilePos);
+            size_t sizeLeft = file.data_size - bufferEndFilePos;
+            if (sizeLeft == 0) break; //EOF
+            auto sizeToRead = std::min(sizeLeft, buffer.size());
+            reader.input.read(buffer.data(), sizeToRead);
+            bufferEndFilePos += sizeToRead;
+            dataLeft = sizeToRead;
+        }
+
+        std::copy(gptr(), gptr()+dataLeft, _Ptr);
+        _Ptr += dataLeft;
+        gbump(dataLeft);
+    }
+
+    return (_Start_count - _Count);
+}
+
+//void PboFile::writeTerminator(std::ostream& out) { //Don't name this terminator, FileHeader?
+//    
+//    out.put(0); //name
+//    auto vers = static_cast<uint32_t>('Vers');
+//    out.write(reinterpret_cast<const char*>(&vers), 4); //packing method
+//    out.write("\0\0\0\0", 4); //orginial size unused
+//    out.write("\0\0\0\0", 4); //internal offset unused
+//    out.write("\0\0\0\0", 4); //timestamp has to be 0
+//    out.write("\0\0\0\0", 4); //size
+//
+//}
+
+void PboReader::readHeaders() {
+    PboEntry intro;
+    intro.read(input);
+
+    //#TODO check stuff and throw if error
+    //filename is empty
+    //packing method is vers
+    //time is 0
+    //datasize is 0
+
+    //header ignores startoffset and uncompressed size
+
+    PboProperty prop;
+    while (prop.read(input)) {
+        properties.emplace_back(std::move(prop));
+    }
+    //When prop's last read "failed" we just finished reading the terminator of the properties
+    propertiesEnd = input.tellg();
+
+    PboEntry entry;
+
+    while (entry.read(input), !entry.name.empty()) {
+        files.emplace_back(std::move(entry));
+    }
+    //We just read the last terminating entry header too.
+    headerEnd = input.tellg();
+
+    size_t curPos = headerEnd;
+    for (auto& it : files) {
+        it.startOffset = curPos;
+        curPos += it.data_size;
+    }
+    auto fileEnd = curPos;
+    //After end there is checksum 20 bytes. Grab that too. cmd_inspect might want to display that or check it
+
+}
 
 int cmd_inspect() {
     extern struct arguments args;
