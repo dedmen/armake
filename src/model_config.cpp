@@ -116,7 +116,7 @@ int read_animations(ConfigClass& cfg, char *config_path, struct skeleton_ *skele
         newAnimation.hide_value = 0.0f;
         newAnimation.unhide_value = -1.0f;
 
-#define ERROR_READING(key) lwarningf(current_target, -1, "Error reading %s for %s.\n", key, animName)
+#define ERROR_READING(key) lwarningf(current_target, -1, "Error reading %s for %s.\n", key, animName.data())
 
 #define TRY_GET_STRING(targ, key) auto key = anim->getString({ #key }); if (!key) ERROR_READING(#key); newAnimation.targ = *key;
 #define TRY_GET_FLOAT(targ, key) auto key = anim->getFloat({ #key }); if (!key) ERROR_READING(#key); newAnimation.targ = *key;
@@ -261,8 +261,9 @@ int read_model_config(const char *path, struct skeleton_ *skeleton) {
     auto modelConfig = cfg->getClass({ "CfgModels", model_name });
     if (!modelConfig) {
         errorf("Failed to find model config entry.\n");
+        __debugbreak();
         return 1; //#TODO fix this error code. That's not the correct one
-    };
+    }
 
     if (strchr(model_name, '_') == NULL)
         lnwarningf(path, -1, "model-without-prefix", "Model has a model config entry but doesn't seem to have a prefix (missing _).\n");
@@ -273,12 +274,13 @@ int read_model_config(const char *path, struct skeleton_ *skeleton) {
         errorf("Failed to read skeleton name.\n");
         return 1;//#TODO fix this error code. That's not the correct one
     }
-    skeleton->name = *skeletonName;
+    skeleton->name = std::move(*skeletonName);
 
     // Read bones
     if (!skeleton->name.empty()) {
         auto skeletonInherit = cfg->getString({ "CfgSkeletons", skeleton->name , "skeletonInherit" });
         if (!skeletonInherit) {
+            __debugbreak();
             errorf("Failed to read bones.\n"); //#TODO fix this wrong error message
             return success;//#TODO fix this error code. That's not the correct one
         }
@@ -292,6 +294,7 @@ int read_model_config(const char *path, struct skeleton_ *skeleton) {
         if (skeletonInherit->length() > 1) { // @todo: more than 1 parent
             auto skeletonBones = cfg->getArrayOfStrings({ "CfgSkeletons", *skeletonInherit , "skeletonBones" });
             if (!skeletonBones) { //#TODO differentitate between empty and not found
+                __debugbreak();
                 errorf("Failed to read bones.\n");
                 return success;//#TODO fix this error code. That's not the correct one
             }
@@ -337,7 +340,9 @@ int read_model_config(const char *path, struct skeleton_ *skeleton) {
             errorf("Failed to read sections.\n");
             return success;
         }
-        skeleton->sections = *sections;
+        for (auto&& it : *sections)
+            if (!it.empty())
+                skeleton->sections.emplace_back(it);
     }
 
     auto sections = cfg->getArrayOfStrings({ "CfgModels", model_name, "sections" });
@@ -345,8 +350,10 @@ int read_model_config(const char *path, struct skeleton_ *skeleton) {
         errorf("Failed to read sections.\n");
         return success;
     }
-    if (!sections->empty())
-        skeleton->sections.insert(skeleton->sections.end(), sections->begin(), sections->end());
+
+    for (auto&& it : *sections)
+        if (!it.empty())
+            skeleton->sections.emplace_back(it);
 
     skeleton->num_sections = skeleton->sections.size();
 

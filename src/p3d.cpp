@@ -702,12 +702,16 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
             odol_lod->num_textures++;
         }
 
-        for (j = 0; j < MAXMATERIALS && j < odol_lod->materials.size() && odol_lod->materials[j].path[0] != 0; j++) {
-            if (mlod_lod->faces[i].material_name == odol_lod->materials[j].path)
+        bool matExists = false;
+        for (j = 0; j < MAXMATERIALS && j < odol_lod->materials.size() && !odol_lod->materials[j].path.empty(); j++) {
+            if (mlod_lod->faces[i].material_name == odol_lod->materials[j].path) {
+                matExists = true;
                 break;
+            }
         }
+        //#TODO use findIf here
         //#CHECK if material doesn't exist yet. j should be materials size+1
-
+        //#TODO use materials.count() to get the index of the to be inserted element
         mlod_lod->faces[i].material_index = (mlod_lod->faces[i].material_name.length() > 0) ? j : -1;
 
         if (j >= MAXMATERIALS) {
@@ -715,7 +719,7 @@ void convert_lod(struct mlod_lod *mlod_lod, struct odol_lod *odol_lod,
             break;
         }
 
-        if (mlod_lod->faces[i].material_name.empty() || (!odol_lod->materials.empty() && (odol_lod->materials[j].path[0] != 0)))
+        if (mlod_lod->faces[i].material_name.empty() || matExists) //Only create material if we have a material. And if it doesn't exist already
             continue;
 
         const char* temp = current_target;

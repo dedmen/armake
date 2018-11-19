@@ -43,13 +43,12 @@ __itt_domain* buildDomain = __itt_domain_create("armake.build");
 
 
 bool file_allowed(const char *filename) {
-    int i;
     extern struct arguments args;
 
     if (strcmp(filename, "$PBOPREFIX$") == 0)
         return false;
 
-    for (i = 0; i < args.num_excludefiles; i++) {
+    for (int i = 0; i < args.num_excludefiles; i++) {
         if (matches_glob(filename, args.excludefiles[i]))
             return false;
     }

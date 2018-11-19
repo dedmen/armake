@@ -197,6 +197,37 @@ public:
     }
 };
 
+struct CaseInsensitiveCompareLess {
+    // case-independent (ci) compare_less binary function
+    struct nocase_compare {
+        bool operator() (const unsigned char& c1, const unsigned char& c2) const {
+            return tolower(c1) == tolower(c2);
+        }
+    };
+    bool operator() (const std::string_view & s1, const std::string_view & s2) const {
+        return std::equal
+        (s1.begin(), s1.end(),   // source range
+            s2.begin(), s2.end(),   // dest range
+            nocase_compare());  // comparison
+    }
+    //hash
+    size_t operator() (const std::string_view & s1) const {
+        size_t _Val = 0;
+        //MSVC std::hash for strings
+        for (auto& it : s1) {
+            _Val ^= static_cast<size_t>(tolower(it));
+
+#if defined(_WIN64)
+            _Val *= 1099511628211ULL;
+#else /* defined(_WIN64) */
+            _Val *= 16777619U;
+#endif /* defined(_WIN64) */
+        }
+        return _Val;
+    }
+};
+
+
 class ConfigClass : public std::enable_shared_from_this<ConfigClass> {
     friend class Rapifier;
     friend class Config;
@@ -204,7 +235,7 @@ class ConfigClass : public std::enable_shared_from_this<ConfigClass> {
     std::variant<std::monostate, std::string, std::weak_ptr<ConfigClass>> inheritedParent;
     std::weak_ptr<ConfigClass> treeParent;
     std::vector<ConfigClassEntry> entries;
-    std::unordered_map<std::string_view, std::vector<ConfigClassEntry>::iterator> order;
+    std::unordered_map<std::string_view, std::vector<ConfigClassEntry>::iterator, CaseInsensitiveCompareLess, CaseInsensitiveCompareLess> order;
     bool is_definition{ false };
     bool is_delete{ false };
     long offset_location{ 0 };

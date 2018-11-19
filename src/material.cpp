@@ -161,17 +161,18 @@ int read_material(struct material *material) {
     buf.seekg(0);
     auto cfg = Config::fromPreprocessedText(buf, p.getLineref());
 
+#define TRY_READ_ARRAY(tgt, src) {auto x = cfg->getArrayOfFloats({ #src }); if (!x.empty()) material->tgt = x;}
+
     current_target = material->path.c_str();
     // Read colors
-    material->emissive = cfg->getArrayOfFloats({ "emmisive" }); //#TODO default values
-    material->ambient = cfg->getArrayOfFloats({ "ambient" });
-    material->diffuse = cfg->getArrayOfFloats({ "diffuse" });
-    material->forced_diffuse = cfg->getArrayOfFloats({ "forcedDiffuse" });
-    material->specular = cfg->getArrayOfFloats({ "specular" });
-   
-    material->specular2 = material->specular;
-    material->specular_power = *cfg->getFloat({ "specularPower" });
+    TRY_READ_ARRAY(emissive, emissive);
+    TRY_READ_ARRAY(ambient, ambient);
+    TRY_READ_ARRAY(diffuse, diffuse);
+    TRY_READ_ARRAY(forced_diffuse, forcedDiffuse);
+    TRY_READ_ARRAY(specular, specular);
 
+    material->specular2 = material->specular;
+    {auto x = cfg->getFloat({ "specularPower" }); if (x) material->specular_power = *x; }
 
     // Read shaders
     auto pixelShaderID = cfg->getString({ "PixelShaderID" });
@@ -230,21 +231,29 @@ int read_material(struct material *material) {
             //#TODO retrieve uvTransform entry. So we don't re-resolve the whole path everytime
 
             auto aside = cfg->getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "aside" });
-            material->transforms[i].transform[0][0] = aside[0]; //#TODO make this easier use a actual matrix. And then read the parts as vectors using a vector<float> constructor
-            material->transforms[i].transform[0][1] = aside[1];
-            material->transforms[i].transform[0][2] = aside[2];
+            if (!aside.empty()) {
+                material->transforms[i].transform[0][0] = aside[0]; //#TODO make this easier use a actual matrix. And then read the parts as vectors using a vector<float> constructor
+                material->transforms[i].transform[0][1] = aside[1];
+                material->transforms[i].transform[0][2] = aside[2];
+            }
             auto up = cfg->getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "up" });
-            material->transforms[i].transform[1][0] = up[0];
-            material->transforms[i].transform[1][1] = up[1];
-            material->transforms[i].transform[1][2] = up[2];
+            if (!up.empty()) {
+                material->transforms[i].transform[1][0] = up[0];
+                material->transforms[i].transform[1][1] = up[1];
+                material->transforms[i].transform[1][2] = up[2];
+            }
             auto dir = cfg->getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "dir" });
-            material->transforms[i].transform[2][0] = dir[0];
-            material->transforms[i].transform[2][1] = dir[1];
-            material->transforms[i].transform[2][2] = dir[2];
+            if (!dir.empty()) {
+                material->transforms[i].transform[2][0] = dir[0];
+                material->transforms[i].transform[2][1] = dir[1];
+                material->transforms[i].transform[2][2] = dir[2];
+            }
             auto pos = cfg->getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "pos" });
-            material->transforms[i].transform[3][0] = pos[0];
-            material->transforms[i].transform[3][1] = pos[1];
-            material->transforms[i].transform[3][2] = pos[2];
+            if (!pos.empty()) {
+                material->transforms[i].transform[3][0] = pos[0];
+                material->transforms[i].transform[3][1] = pos[1];
+                material->transforms[i].transform[3][2] = pos[2];
+            }
         }
     }
 
