@@ -22,8 +22,12 @@
 #define MAXFILES 4096
 
 #include <fstream>
+#include <utility>
 #include <vector>
 #include <algorithm>
+#include <sstream>
+#include <filesystem>
+
 
 struct header {
     char name[512];
@@ -90,8 +94,8 @@ class PboReader {
 
     std::vector<PboEntry> files;
     std::vector<PboProperty> properties;
-    uint32_t propertiesEnd;
-    uint32_t headerEnd;
+    uint32_t propertiesEnd{0};
+    uint32_t headerEnd{0};
     std::istream& input;
 public:
     PboReader(std::istream &input) : input(input) {}
@@ -102,6 +106,56 @@ public:
     }
 
 
+};
+
+class PboFileToWrite : std::enable_shared_from_this<PboFileToWrite> { //#TODO need a better name
+protected:
+    PboEntry entryInfo;
+public:
+    //return info like name and filesize (packing method not supported yet, startOffset/originalSize are ignored)
+    //Might be called by multiple threads!
+    virtual PboEntry& getEntryInformation() {
+        return entryInfo;
+    }
+    virtual void writeDataTo(std::ostream &output) = 0;
+
+};
+
+class PboFTW_CopyFromFile : public PboFileToWrite {
+    std::filesystem::path file;
+public:
+    PboFTW_CopyFromFile(std::string filename, std::filesystem::path inputFile) : file(std::move(inputFile)) {
+        entryInfo.name = std::move(filename);
+    }
+
+    PboEntry& getEntryInformation() override {
+        entryInfo.data_size = entryInfo.original_size = std::filesystem::file_size(file);
+        return entryInfo;
+    }
+    void writeDataTo(std::ostream& output) override;
+};
+
+class PboFTW_FromString : public PboFileToWrite {
+    std::string data;
+public:
+    PboFTW_FromString(std::string filename, std::string input) : data(std::move(input)) {
+        entryInfo.name = std::move(filename);
+        entryInfo.data_size = entryInfo.original_size = data.length();
+    }
+    void writeDataTo(std::ostream& output) override;
+};
+
+
+
+class PboWriter {
+    std::vector<PboProperty> properties;
+    std::vector<std::shared_ptr<PboFileToWrite>> filesToWrite;
+public:
+
+
+    void addProperty(PboProperty prop) { properties.emplace_back(std::move(prop)); }
+    void addFile(std::shared_ptr<PboFileToWrite> file) { filesToWrite.emplace_back(std::move(file)); }
+    void writePbo(std::ostream &output);
 };
 
 

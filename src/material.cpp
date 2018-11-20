@@ -165,7 +165,7 @@ int read_material(struct material *material) {
 
     current_target = material->path.c_str();
     // Read colors
-    TRY_READ_ARRAY(emissive, emissive);
+    TRY_READ_ARRAY(emissive, emmisive);// "Did you mean: emissive?"
     TRY_READ_ARRAY(ambient, ambient);
     TRY_READ_ARRAY(diffuse, diffuse);
     TRY_READ_ARRAY(forced_diffuse, forcedDiffuse);

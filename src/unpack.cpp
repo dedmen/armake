@@ -29,6 +29,7 @@
 #include "filesystem.h"
 #include "utils.h"
 #include "unpack.h"
+#include <numeric>
 
 
 bool is_garbage(struct header *header) {
@@ -122,6 +123,7 @@ void PboEntry::write(std::ostream& out, bool noDate) const {
     header.timestamp = noDate ? 0 : std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     header.datasize = data_size;
 
+    out.write(name.c_str(), name.length()+1);
     out.write(reinterpret_cast<char*>(&header.method), 4);
     out.write(reinterpret_cast<char*>(&header.originalsize), 4);
     out.write(reinterpret_cast<char*>(&header.reserved), 4);
@@ -174,18 +176,6 @@ int64_t PboEntryBuffer::xsgetn(char* _Ptr, int64_t _Count) {
     return (_Start_count - _Count);
 }
 
-//void PboFile::writeTerminator(std::ostream& out) { //Don't name this terminator, FileHeader?
-//    
-//    out.put(0); //name
-//    auto vers = static_cast<uint32_t>('Vers');
-//    out.write(reinterpret_cast<const char*>(&vers), 4); //packing method
-//    out.write("\0\0\0\0", 4); //orginial size unused
-//    out.write("\0\0\0\0", 4); //internal offset unused
-//    out.write("\0\0\0\0", 4); //timestamp has to be 0
-//    out.write("\0\0\0\0", 4); //size
-//
-//}
-
 void PboReader::readHeaders() {
     PboEntry intro;
     intro.read(input);
@@ -220,6 +210,129 @@ void PboReader::readHeaders() {
     }
     auto fileEnd = curPos;
     //After end there is checksum 20 bytes. Grab that too. cmd_inspect might want to display that or check it
+
+}
+
+
+extern "C" {
+#include "sha1.h"
+}
+#include <array>
+
+struct hashing_ostreambuf : public std::streambuf
+{
+    hashing_ostreambuf(std::ostream &finalOut) : finalOut(finalOut) {
+        SHA1Reset(&context);
+    }
+
+protected:
+    std::streamsize xsputn(const char_type* s, std::streamsize n) override {
+        SHA1Input(&context, reinterpret_cast<const unsigned char*>(s), n);
+        finalOut.write(s, n);
+
+        //Yes return result is fake, but meh.
+        return n; // returns the number of characters successfully written.
+    }
+
+    int_type overflow(int_type ch) override {
+        auto outc = static_cast<char>(ch);
+        SHA1Input(&context, reinterpret_cast<const unsigned char*>(&outc), 1);
+        finalOut.put(outc);
+
+        return 1;
+    }
+
+public:
+
+    std::array<char, 20> getResult() {
+
+        if (!SHA1Result(&context))
+            throw std::logic_error("SHA1 hash corrupted");
+
+        for (int i = 0; i < 5; i++) {
+            unsigned temp = context.Message_Digest[i];
+            context.Message_Digest[i] = ((temp >> 24) & 0xff) |
+                ((temp << 8) & 0xff0000) | ((temp >> 8) & 0xff00) | ((temp << 24) & 0xff000000);
+        }
+        std::array<char, 20> res;
+
+        memcpy(res.data(), context.Message_Digest, 20);
+
+        return res;
+    }
+
+
+private:
+    std::ostream &finalOut;
+    SHA1Context context;
+};
+
+void PboWriter::writePbo(std::ostream& output) {
+
+    hashing_ostreambuf hashOutbuf(output);
+
+    std::ostream out(&hashOutbuf);
+
+
+    struct pboEntryHeader {
+        uint32_t method;
+        uint32_t originalsize;
+        uint32_t reserved;
+        uint32_t timestamp;
+        uint32_t datasize;
+        void write(std::ostream& output) const {
+            output.write(reinterpret_cast<const char*>(this), sizeof(pboEntryHeader));
+        }
+    };
+
+    pboEntryHeader versHeader {
+        'Vers',
+        'arma','ke!!', 0, 0
+    };
+
+    //Write a "dummy" Entry which is used as header.
+    //#TODO this should use pboEntry class to write. But I want a special "reserved" value here
+    out.put(0); //name
+    versHeader.write(out);
+
+    for (auto& it : properties)
+        it.write(out);
+    out.put(0); //properties endmarker
+
+    const size_t curOffs = out.tellp();
+
+    const size_t headerStringsSize = std::transform_reduce(filesToWrite.begin(),filesToWrite.end(), 0u, std::plus<>(), [](auto& it) {
+        return it->getEntryInformation().name.length() + 1;
+    });
+
+    const size_t headerSize = (filesToWrite.size() + 1) * sizeof(pboEntryHeader) + headerStringsSize;
+
+    auto curFileStartOffset = curOffs + headerSize;
+    for (auto& it : filesToWrite) {
+        auto& prop = it->getEntryInformation();
+        prop.startOffset = curFileStartOffset;
+
+        curFileStartOffset += prop.name.length() + 1 + sizeof(pboEntryHeader);
+        prop.write(out);
+    }
+
+    //End is indicated by empty name
+    out.put(0);
+    //Rest of the header after that is ignored, so why not have fun?
+    pboEntryHeader endHeader {
+        'This','is t','he b','est ','tang'
+    };
+    endHeader.write(out);
+
+
+    for (auto& it : filesToWrite) {
+        it->writeDataTo(out);
+    }
+
+    auto hash = hashOutbuf.getResult();
+
+    //no need to write to hashing buf anymore
+    output.write(hash.data(), hash.size());
 
 }
 
