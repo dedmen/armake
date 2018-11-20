@@ -184,6 +184,11 @@ int hash_file(char *path, unsigned char *hash) {
 }
 
 
+
+
+__itt_string_handle* handle_writepbo = __itt_string_handle_create("writePbo");
+__itt_string_handle* handle_prepWrite = __itt_string_handle_create("prepWrite");
+
 int cmd_build() {
     extern const char *current_target;
     int i;
@@ -331,6 +336,9 @@ int cmd_build() {
 
     current_target = args.positionals[1];
 
+
+    __itt_task_begin(buildDomain, __itt_null, __itt_null, handle_prepWrite);
+
     PboWriter writer;
 
     std::string prefixClean(addonprefix);
@@ -369,9 +377,11 @@ int cmd_build() {
     for (auto& file : files_sizes) {
         writer.addFile(file);
     }
-    
+    __itt_task_end(buildDomain);
+    __itt_task_begin(buildDomain, __itt_null, __itt_null, handle_writepbo);
     std::ofstream outputFile(args.positionals[2], std::ofstream::binary);
     writer.writePbo(outputFile);
+    __itt_task_end(buildDomain);
     //#TODO reuse writer's file list to generate bisign
 
     // remove temp folder
