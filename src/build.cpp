@@ -22,6 +22,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <filesystem>
+#include "unpack.h"
 //#include <unistd.h>
 
 #ifdef _WIN32
@@ -42,29 +43,26 @@ extern "C" {
 __itt_domain* buildDomain = __itt_domain_create("armake.build");
 
 
-bool file_allowed(const char *filename) {
+bool file_allowed(std::string_view filename) {
     extern struct arguments args;
 
-    if (strcmp(filename, "$PBOPREFIX$") == 0)
+    if (filename == "$PBOPREFIX$")
         return false;
 
     for (int i = 0; i < args.num_excludefiles; i++) {
-        if (matches_glob(filename, args.excludefiles[i]))
+        if (matches_glob(filename.data(), args.excludefiles[i]))
             return false;
     }
 
     return true;
 }
 
-std::vector<std::pair<std::filesystem::path, size_t>> files_sizes;
+std::vector<std::shared_ptr<PboFileToWrite>> files_sizes;
 
-int binarize_callback(const std::filesystem::path &root, const std::filesystem::path &source, char *junk) {
-    int success;
+int binarize_callback(const std::filesystem::path &root, const std::filesystem::path &source, const char *junk) {
     char target[2048];
-    char filename[1024];
 
-    filename[0] = 0;
-    strcat(filename, source.string().c_str() + strlen(root.string().c_str()) + 1);
+    std::string filename = source.string().substr(root.string().length() + 1);
 
     if (!file_allowed(filename))
         return 0;
@@ -76,9 +74,25 @@ int binarize_callback(const std::filesystem::path &root, const std::filesystem::
         strcpy(target + strlen(target) - 3, "bin");
     }
 
-    success = binarize(source.string().c_str(), target);
+    int success = binarize(source.string().c_str(), target);
 
-    files_sizes.emplace_back(target, std::filesystem::file_size(target));
+
+
+    std::string_view p3do(".p3do");
+    if (std::equal(p3do.rbegin(), p3do.rend(), filename.rbegin()))
+        filename.pop_back();
+    ;
+    std::string_view cpp("config.cpp");
+    if (std::equal(cpp.rbegin(), cpp.rend(), filename.rbegin()))
+        filename.replace(filename.length()-3,3,"bin");
+
+    //#TODO store binarized config directly via membuf
+    if (success == -1) {
+        files_sizes.emplace_back(std::make_shared<PboFTW_CopyFromFile>(filename, source));
+    } else {
+        files_sizes.emplace_back(std::make_shared<PboFTW_CopyFromFile>(filename, target));
+    }
+    
 
     if (success > 0)
         return success * -1;
@@ -86,68 +100,7 @@ int binarize_callback(const std::filesystem::path &root, const std::filesystem::
     return 0;
 }
 
-
-int write_header_to_pbo(const std::filesystem::path &root, const std::filesystem::path &source, char *target) {
-    FILE *f_source;
-    FILE *f_target;
-    char filename[1024];
-
-    filename[0] = 0;
-    strcat(filename, source.string().c_str() + strlen(root.string().c_str()) + 1);
-
-    if (!file_allowed(filename))
-        return 0;
-
-    f_target = fopen(target, "ab");
-    if (!f_target)
-        return -1;
-
-    struct {
-        uint32_t method;
-        uint32_t originalsize;
-        uint32_t reserved;
-        uint32_t timestamp;
-        uint32_t datasize;
-    } header;
-    header.method = 0;
-    header.reserved = 0;
-    header.timestamp = 0;
-
-    f_source = fopen(source.string().c_str(), "rb");
-    if (!f_source) {
-        fclose(f_target);
-        return -2;
-    }
-
-    fseek(f_source, 0, SEEK_END);
-    header.datasize = ftell(f_source);
-    header.originalsize = header.datasize;
-    fclose(f_source);
-
-    // replace pathseps on linux
-#ifndef _WIN32
-    int i;
-    for (i = 0; i < strlen(filename); i++) {
-        if (filename[i] == '/')
-            filename[i] = '\\';
-    }
-#endif
-
-    // replace .p3do ending
-    if (strlen(filename) > 5 && !strcmp(filename + strlen(filename) - 5, ".p3do"))
-        filename[strlen(filename) - 1] = 0;
-
-    fwrite(filename, strlen(filename), 1, f_target);
-    fputc(0, f_target);
-
-    fwrite(&header, sizeof(header), 1, f_target);
-    fclose(f_target);
-
-    return 0;
-}
-
-
-int write_data_to_pbo(const std::filesystem::path &root, const std::filesystem::path &source, char *target) {
+int write_data_to_pbo(const std::filesystem::path &root, const std::filesystem::path &source, const char *target) {
     FILE *f_source;
     FILE *f_target;
     char buffer[4096];
@@ -350,7 +303,7 @@ int cmd_build() {
     strcpy(nobinpath + strlen(nobinpath) - 11, "$NOBIN$");
     strcpy(notestpath + strlen(notestpath) - 11, "$NOBIN-NOTEST$");
     if (!args.packonly && !std::filesystem::exists(nobinpath) && !std::filesystem::exists(notestpath)) {
-        if (traverse_directory(tempfolder->string().c_str(), binarize_callback, "")) {
+        if (traverse_directory(tempfolder->string().c_str(), binarize_callback, tempfolder->string().c_str())) {
             current_target = args.positionals[1];
             errorf("Failed to binarize some files.\n");
             remove_file(args.positionals[2]);
@@ -378,137 +331,48 @@ int cmd_build() {
 
     current_target = args.positionals[1];
 
-    // write header extensions
-    f_target = fopen(args.positionals[2], "wb");
-    fwrite("\0sreV\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0prefix\0", 28, 1, f_target);
-    // write addonprefix with windows pathseps
-    for (i = 0; i <= strlen(addonprefix); i++) {
-        if (addonprefix[i] == PATHSEP)
-            fputc('\\', f_target);
-        else
-            fputc(addonprefix[i], f_target);
-    }
+    PboWriter writer;
+
+    std::string prefixClean(addonprefix);
+    std::replace(prefixClean.begin(), prefixClean.end(), '/', '\\');
+    if (prefixClean != addonprefix)
+        warningf("Prefix name contains forward slashes: %s\n", addonprefix);
+
+    //write prefix
+    writer.addProperty({ "prefix", prefixClean });
+
     // write extra header extensions
     for (i = 0; i < args.num_headerextensions && args.headerextensions[i][0] != 0; i++) {
-        k = 0;
-        valid = false;
-        for (j = 0; j <= strlen(args.headerextensions[i]); j++) {
-            if (args.headerextensions[i][j] == '=' || args.headerextensions[i][j] == '\0') {
-                // prefix is already written above
-                if (strcmp(buffer, "prefix") == 0)
-                    break;
 
-                // validate
-                if (args.headerextensions[i][j] == '\0' && !valid) {
-                    errorf("Invalid header extension format (%s).\n", args.headerextensions[i]);
-                    remove_file(args.positionals[2]);
-                    remove_folder(*tempfolder);
-                    return 6;
-                }
+        std::string_view ext = args.headerextensions[i];
+        auto seperatorOffset = ext.find_first_of('=');
 
-                // write
-                fputs(buffer, f_target);
-                fputc(0, f_target);
-                k = 0;
-                valid = true;
-            } else {
-                buffer[k++] = args.headerextensions[i][j];
-                buffer[k] = '\0';
-            }
+        if (seperatorOffset == std::string::npos) { //no seperator found
+            errorf("Invalid header extension format (%s).\n", args.headerextensions[i]);
+            remove_folder(*tempfolder);
+            return 6;
         }
-    }
-    fputc(0, f_target);
-    fclose(f_target);
+
+        std::string_view key = ext.substr(0, seperatorOffset);
+        std::string_view val = ext.substr(seperatorOffset + 1);
+
+        if (key == "prefix") continue;
 
 
-    f_target = fopen(args.positionals[2], "ab");
-    if (!f_target)
-        return -1;
-    auto tmpFolderLen = strlen(tempfolder->string().c_str())+1;
-    for (auto& [path, filesize] : files_sizes) {
+        writer.addProperty({ std::string(key), std::string(val) });
 
-        std::string filename = path.string().substr(tmpFolderLen);
-
-        if (!file_allowed(filename.c_str()))
-            return 0;
-
-        struct {
-            uint32_t method;
-            uint32_t originalsize;
-            uint32_t reserved;
-            uint32_t timestamp;
-            uint32_t datasize;
-        } header;
-        header.method = 0;
-        header.reserved = 0;
-        header.timestamp = 0;
-
-
-        header.datasize = filesize;
-        header.originalsize = filesize;
-
-        // replace pathseps on linux
-#ifndef _WIN32
-        int i;
-        for (i = 0; i < strlen(filename); i++) {
-            if (filename[i] == '/')
-                filename[i] = '\\';
-        }
-#endif
-
-        // replace .p3do ending
-        std::string_view p3do(".p3do");
-        if (std::equal(p3do.rbegin(), p3do.rend(), filename.rbegin()))
-            filename.pop_back();
-
-        fwrite(filename.c_str(), filename.length(), 1, f_target);
-        fputc(0, f_target);
-
-        fwrite(&header, sizeof(header), 1, f_target);
-    }
-    fclose(f_target);
-
-    // write headers to file
-    //if (traverse_directory(tempfolder, write_header_to_pbo, args.positionals[2])) {
-    //    errorf("Failed to write some file header(s) to PBO.\n");
-    //    remove_file(args.positionals[2]);
-    //    remove_folder(tempfolder);
-    //    return 7;
-    //}
-
-    // header boundary
-    f_target = fopen(args.positionals[2], "ab");
-    if (!f_target) {
-        errorf("Failed to write header boundary to PBO.\n");
-        remove_file(args.positionals[2]);
-        remove_folder(*tempfolder);
-        return 8;
-    }
-    for (i = 0; i < 21; i++)
-        fputc(0, f_target);
-    fclose(f_target);
-
-    // write contents to file
-    if (traverse_directory(tempfolder->string().c_str(), write_data_to_pbo, args.positionals[2])) {
-        errorf("Failed to pack some file(s) into the PBO.\n");
-        remove_file(args.positionals[2]);
-        remove_folder(*tempfolder);
-        return 9;
     }
 
-    // write checksum to file
-    unsigned char checksum[20];
-    hash_file(args.positionals[2], checksum);
-    f_target = fopen(args.positionals[2], "ab");
-    if (!f_target) {
-        errorf("Failed to write checksum to file.\n");
-        remove_file(args.positionals[2]);
-        remove_folder(*tempfolder);
-        return 10;
+
+
+
+    for (auto& file : files_sizes) {
+        writer.addFile(file);
     }
-    fputc(0, f_target);
-    fwrite(checksum, 20, 1, f_target);
-    fclose(f_target);
+    
+    std::ofstream outputFile(args.positionals[2], std::ofstream::binary);
+    writer.writePbo(outputFile);
+    //#TODO reuse writer's file list to generate bisign
 
     // remove temp folder
     if (!remove_folder(*tempfolder)) {

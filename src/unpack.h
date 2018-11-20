@@ -56,10 +56,10 @@ class PboEntry {
 public:
     std::string name;
 
-    uint32_t original_size;
-    uint32_t data_size;
-    uint32_t startOffset;
-    PboEntryPackingMethod method;
+    uint32_t original_size = 0;
+    uint32_t data_size = 0;
+    uint32_t startOffset = 0;
+    PboEntryPackingMethod method = PboEntryPackingMethod::none;
 
 
     void read(std::istream& in);
@@ -112,6 +112,7 @@ class PboFileToWrite : std::enable_shared_from_this<PboFileToWrite> { //#TODO ne
 protected:
     PboEntry entryInfo;
 public:
+    virtual ~PboFileToWrite() = default;
     //return info like name and filesize (packing method not supported yet, startOffset/originalSize are ignored)
     //Might be called by multiple threads!
     virtual PboEntry& getEntryInformation() {
@@ -126,12 +127,14 @@ class PboFTW_CopyFromFile : public PboFileToWrite {
 public:
     PboFTW_CopyFromFile(std::string filename, std::filesystem::path inputFile) : file(std::move(inputFile)) {
         entryInfo.name = std::move(filename);
+        //only backslash in pbo
+        std::replace(entryInfo.name.begin(), entryInfo.name.end(), '/', '\\');
+        entryInfo.data_size = entryInfo.original_size = std::filesystem::file_size(file); //I expect file size not to change.
     }
-
-    PboEntry& getEntryInformation() override {
-        entryInfo.data_size = entryInfo.original_size = std::filesystem::file_size(file);
-        return entryInfo;
-    }
+    //PboEntry& getEntryInformation() override {
+    //    entryInfo.data_size = entryInfo.original_size = std::filesystem::file_size(file);
+    //    return entryInfo;
+    //}
     void writeDataTo(std::ostream& output) override;
 };
 
@@ -140,6 +143,8 @@ class PboFTW_FromString : public PboFileToWrite {
 public:
     PboFTW_FromString(std::string filename, std::string input) : data(std::move(input)) {
         entryInfo.name = std::move(filename);
+        //only backslash in pbo
+        std::replace(entryInfo.name.begin(), entryInfo.name.end(), '/', '\\');
         entryInfo.data_size = entryInfo.original_size = data.length();
     }
     void writeDataTo(std::ostream& output) override;

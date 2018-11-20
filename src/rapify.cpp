@@ -40,6 +40,7 @@
 #include <iterator>
 #include <functional>
 #include <algorithm>
+#include <array>
 //#include "rapify.tab.h"
 
 __itt_domain* configDomain = __itt_domain_create("armake.config");
@@ -799,9 +800,16 @@ int Rapifier::rapify_file(std::istream &source, std::ostream &target, const char
 
     // Check if the file is already rapified
     if (isRapified(source)) {
-        std::copy(std::istreambuf_iterator<char>(source),
-            std::istreambuf_iterator<char>(),
-            std::ostream_iterator<char>(target));
+
+        //#TODO we might want to throw an exception instead.
+        //The caller of this can handle it more efficiently and maybe just get rid of target file
+
+        //copy source to target
+        std::array<char, 4096> buf;
+        do {
+            source.read(buf.data(), buf.size());
+            target.write(buf.data(), source.gcount());
+        } while (source.gcount() > 0);
         return 0;
     }
 
@@ -821,9 +829,11 @@ int Rapifier::rapify_file(std::istream &source, std::ostream &target, const char
     char dump_name[2048];
     sprintf(dump_name, "armake_preprocessed_%u.dump", (unsigned)time(NULL));
 
-    std::copy(std::istreambuf_iterator<char>(fileToPreprocess),
-        std::istreambuf_iterator<char>(),
-        std::ostream_iterator<char>(std::ofstream(dump_name)));
+    std::array<char, 4096> buf;
+    do {
+        fileToPreprocess.read(buf.data(), buf.size());
+        dump_name.write(buf.data(), fileToPreprocess.gcount());
+    } while (fileToPreprocess.gcount() > 0);
 #endif
 
     auto parsedConfig = Config::fromPreprocessedText(fileToPreprocess, preproc.getLineref(), false);

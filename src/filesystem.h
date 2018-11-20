@@ -46,7 +46,7 @@ bool remove_folder(const std::filesystem::path &folder);
 
 bool copy_file(const std::filesystem::path &source, const std::filesystem::path &target);
 
-int traverse_directory(const std::filesystem::path &root, int (*callback)(const std::filesystem::path &rootDir, const std::filesystem::path &file, char *thirdArg),
-    char *third_arg);
+int traverse_directory(const std::filesystem::path &root, int (*callback)(const std::filesystem::path &rootDir, const std::filesystem::path &file, const char *thirdArg),
+    const char *third_arg);
 
 bool copy_directory(const std::filesystem::path &source, const std::filesystem::path &target);

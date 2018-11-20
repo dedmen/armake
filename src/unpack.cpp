@@ -118,9 +118,9 @@ void PboEntry::write(std::ostream& out, bool noDate) const {
         case PboEntryPackingMethod::encrypted: header.method = 'Encr'; break;
     }
     header.originalsize = original_size;
-    header.reserved = 'ACE3'; //#TODO remove dis?
+    header.reserved = '3ECA'; //#TODO remove dis?
     //time is unused by Arma. We could write more misc stuff into there for a total of 8 bytes
-    header.timestamp = noDate ? 0 : std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    header.timestamp = 0;// noDate ? 0 : std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     header.datasize = data_size;
 
     out.write(name.c_str(), name.length()+1);
@@ -267,6 +267,15 @@ private:
     SHA1Context context;
 };
 
+void PboFTW_CopyFromFile::writeDataTo(std::ostream& output) {
+    std::ifstream inp(file, std::ifstream::binary);
+    std::array<char, 4096> buf;
+    do {
+        inp.read(buf.data(), buf.size());
+        output.write(buf.data(), inp.gcount());
+    } while (inp.gcount() > 0);
+}
+
 void PboWriter::writePbo(std::ostream& output) {
 
     hashing_ostreambuf hashOutbuf(output);
@@ -287,7 +296,9 @@ void PboWriter::writePbo(std::ostream& output) {
 
     pboEntryHeader versHeader {
         'Vers',
-        'arma','ke!!', 0, 0
+        'amra','!!ek', 0, 0
+        //'UHTC',' UHL', 0, 0
+        //0,0,0,0
     };
 
     //Write a "dummy" Entry which is used as header.
@@ -299,20 +310,20 @@ void PboWriter::writePbo(std::ostream& output) {
         it.write(out);
     out.put(0); //properties endmarker
 
-    const size_t curOffs = out.tellp();
-
-    const size_t headerStringsSize = std::transform_reduce(filesToWrite.begin(),filesToWrite.end(), 0u, std::plus<>(), [](auto& it) {
-        return it->getEntryInformation().name.length() + 1;
-    });
-
-    const size_t headerSize = (filesToWrite.size() + 1) * sizeof(pboEntryHeader) + headerStringsSize;
-
-    auto curFileStartOffset = curOffs + headerSize;
+    //const size_t curOffs = out.tellp();
+    //
+    //const size_t headerStringsSize = std::transform_reduce(filesToWrite.begin(),filesToWrite.end(), 0u, std::plus<>(), [](auto& it) {
+    //    return it->getEntryInformation().name.length() + 1;
+    //});
+    //
+    //const size_t headerSize = (filesToWrite.size() + 1) * sizeof(pboEntryHeader) + headerStringsSize;
+    //
+    //auto curFileStartOffset = curOffs + headerSize;
     for (auto& it : filesToWrite) {
         auto& prop = it->getEntryInformation();
-        prop.startOffset = curFileStartOffset;
-
-        curFileStartOffset += prop.name.length() + 1 + sizeof(pboEntryHeader);
+        //prop.startOffset = curFileStartOffset;
+        //
+        //curFileStartOffset += prop.name.length() + 1 + sizeof(pboEntryHeader);
         prop.write(out);
     }
 
@@ -320,7 +331,8 @@ void PboWriter::writePbo(std::ostream& output) {
     out.put(0);
     //Rest of the header after that is ignored, so why not have fun?
     pboEntryHeader endHeader {
-        'This','is t','he b','est ','tang'
+        'sihT','t si','b eh',' tse','gnat'
+        //0,0,0,0,0
     };
     endHeader.write(out);
 
@@ -329,9 +341,11 @@ void PboWriter::writePbo(std::ostream& output) {
         it->writeDataTo(out);
     }
 
+    
     auto hash = hashOutbuf.getResult();
 
     //no need to write to hashing buf anymore
+    output.put(0); //file hash requires leading zero which doesn't contribute to hash data
     output.write(hash.data(), hash.size());
 
 }

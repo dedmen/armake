@@ -115,7 +115,7 @@ bool copy_file(const std::filesystem::path &source, const std::filesystem::path 
 }
 
 __itt_string_handle* handle_traverse_directory = __itt_string_handle_create("traverse_directory");
-int traverse_directory(const std::filesystem::path &root, int (*callback)(const std::filesystem::path &rootDir, const std::filesystem::path &file, char *thirdArg), char *third_arg) {
+int traverse_directory(const std::filesystem::path &root, int (*callback)(const std::filesystem::path &rootDir, const std::filesystem::path &file, const char *thirdArg), const char *third_arg) {
     /*
      * Traverse the given path and call the callback with the root folder as
      * the first, the current file path as the second, and the given third
