@@ -18,12 +18,10 @@
 
 #pragma once
 
-
-#include <stdint.h>
-#include <stdbool.h>
 #include "vector.h"
 #include <ratio>
 #include <string>
+#include <functional>
 
 
 #include "lib/ittnotify.h"
@@ -113,6 +111,24 @@ public:
     }
 
 };
+
+
+class ScopeGuard {
+public:
+    explicit ScopeGuard(std::function<void()> func) :function(std::move(func)) {}
+
+    ScopeGuard(const ScopeGuard&) = delete;
+    ScopeGuard& operator=(const ScopeGuard&) = delete;
+    ScopeGuard(ScopeGuard&&) = delete;
+    ScopeGuard& operator=(ScopeGuard&&) = delete;
+
+    void dismiss() { dismissed = true; }
+    ~ScopeGuard() { if (!dismissed) function(); }
+private:
+    bool dismissed = false;
+    std::function<void()> function;
+};
+
 
 extern const char *current_target;
 

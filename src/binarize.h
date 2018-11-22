@@ -17,8 +17,8 @@
  */
 
 #pragma once
+#include <filesystem>
 
-
-int binarize(const char *source, const char *target);
+int binarize(std::filesystem::path source, std::filesystem::path target);
 
 int cmd_binarize();

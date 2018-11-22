@@ -43,102 +43,6 @@ extern "C" {
 __itt_domain* buildDomain = __itt_domain_create("armake.build");
 
 
-bool file_allowed(std::string_view filename) {
-    extern struct arguments args;
-
-    if (filename == "$PBOPREFIX$")
-        return false;
-
-    for (int i = 0; i < args.num_excludefiles; i++) {
-        if (matches_glob(filename.data(), args.excludefiles[i]))
-            return false;
-    }
-
-    return true;
-}
-
-std::vector<std::shared_ptr<PboFileToWrite>> files_sizes;
-
-int binarize_callback(const std::filesystem::path &root, const std::filesystem::path &source, const char *junk) {
-    char target[2048];
-
-    std::string filename = source.string().substr(root.string().length() + 1);
-
-    if (!file_allowed(filename))
-        return 0;
-
-    strncpy(target, source.string().c_str(), sizeof(target));
-
-    if (strlen(target) > 10 &&
-            strcmp(target + strlen(target) - 10, "config.cpp") == 0) {
-        strcpy(target + strlen(target) - 3, "bin");
-    }
-
-    int success = binarize(source.string().c_str(), target);
-
-
-
-    std::string_view p3do(".p3do");
-    if (std::equal(p3do.rbegin(), p3do.rend(), filename.rbegin()))
-        filename.pop_back();
-    ;
-    std::string_view cpp("config.cpp");
-    if (std::equal(cpp.rbegin(), cpp.rend(), filename.rbegin()))
-        filename.replace(filename.length()-3,3,"bin");
-
-    //#TODO store binarized config directly via membuf
-    if (success == -1) {
-        files_sizes.emplace_back(std::make_shared<PboFTW_CopyFromFile>(filename, source));
-    } else {
-        files_sizes.emplace_back(std::make_shared<PboFTW_CopyFromFile>(filename, target));
-    }
-    
-
-    if (success > 0)
-        return success * -1;
-
-    return 0;
-}
-
-int write_data_to_pbo(const std::filesystem::path &root, const std::filesystem::path &source, const char *target) {
-    FILE *f_source;
-    FILE *f_target;
-    char buffer[4096];
-    char filename[1024];
-    int datasize;
-    int i;
-
-    filename[0] = 0;
-    strcat(filename, source.string().c_str() + strlen(root.string().c_str()) + 1);
-
-    if (!file_allowed(filename))
-        return 0;
-
-    f_source = fopen(source.string().c_str(), "rb");
-    if (!f_source)
-        return -1;
-    fseek(f_source, 0, SEEK_END);
-    datasize = ftell(f_source);
-
-    f_target = fopen(target, "ab");
-    if (!f_target) {
-        fclose(f_source);
-        return -2;
-    }
-
-    fseek(f_source, 0, SEEK_SET);
-    for (i = 0; datasize - i >= sizeof(buffer); i += sizeof(buffer)) {
-        fread(buffer, sizeof(buffer), 1, f_source);
-        fwrite(buffer, sizeof(buffer), 1, f_target);
-    }
-    fread(buffer, datasize - i, 1, f_source);
-    fwrite(buffer, datasize - i, 1, f_target);
-
-    fclose(f_source);
-    fclose(f_target);
-
-    return 0;
-}
 
 __itt_string_handle* handle_hash_file = __itt_string_handle_create("hash_file");
 int hash_file(char *path, unsigned char *hash) {
@@ -173,8 +77,8 @@ int hash_file(char *path, unsigned char *hash) {
 
     for (i = 0; i < 5; i++) {
         temp = sha.Message_Digest[i];
-        sha.Message_Digest[i] = ((temp>>24)&0xff) |
-            ((temp<<8)&0xff0000) | ((temp>>8)&0xff00) | ((temp<<24)&0xff000000);
+        sha.Message_Digest[i] = ((temp >> 24) & 0xff) |
+            ((temp << 8) & 0xff0000) | ((temp >> 8) & 0xff00) | ((temp << 24) & 0xff000000);
     }
 
     memcpy(hash, sha.Message_Digest, 20);
@@ -183,181 +87,103 @@ int hash_file(char *path, unsigned char *hash) {
     return 0;
 }
 
-
-
-
 __itt_string_handle* handle_writepbo = __itt_string_handle_create("writePbo");
 __itt_string_handle* handle_prepWrite = __itt_string_handle_create("prepWrite");
 
-int cmd_build() {
-    extern const char *current_target;
-    int i;
-    int j;
-    int k;
-    char buffer[512];
-    bool valid = false;
 
-    if (args.num_positionals != 3)
-        return 128;
 
-    current_target = args.positionals[1];
+bool file_allowed(std::string_view filename) {
+    extern struct arguments args;
 
-    // check if target already exists
-    FILE *f_target;
-    if (std::filesystem::exists(args.positionals[2]) && !args.force) {
-        errorf("File %s already exists and --force was not set.\n", args.positionals[2]);
+    if (filename == "$PBOPREFIX$")
+        return false;
+
+    for (int i = 0; i < args.num_excludefiles; i++) {
+        if (matches_glob(filename.data(), args.excludefiles[i]))
+            return false;
+    }
+
+    return true;
+}
+
+
+
+int Builder::binarize_callback(const std::filesystem::path &root, const std::filesystem::path &source, const char *junk) {
+
+    std::string filename = source.string().substr(root.string().length() + 1);
+
+    if (!file_allowed(filename))
+        return 0;
+
+    std::string target(source.string());
+    std::string_view cpp("config.cpp");
+
+
+    if (target.length() > 10 &&
+        std::equal(cpp.rbegin(), cpp.rend(), target.rbegin()))
+        target.replace(target.length() - 3, 3, "bin");
+
+
+    const int success = binarize(source, target);
+
+    std::string_view p3do(".p3do");
+    if (std::equal(p3do.rbegin(), p3do.rend(), filename.rbegin()))
+        filename.pop_back();
+
+    if (std::equal(cpp.rbegin(), cpp.rend(), filename.rbegin()))
+        filename.replace(filename.length()-3,3,"bin");
+
+    //#TODO store binarized config directly via membuf
+    if (success == -1) {
+        files_sizes.emplace_back(std::make_shared<PboFTW_CopyFromFile>(filename, source));
+    } else {
+        //if binarize failed, we just copy the source file
+        files_sizes.emplace_back(std::make_shared<PboFTW_CopyFromFile>(filename, target));
+    }
+    
+
+    if (success > 0)
+        return success * -1;
+
+    return 0;
+}
+
+int Builder::buildDirectory(std::filesystem::path inputDirectory, std::filesystem::path targetPbo) {
+    
+    // check if target/source exist
+    try {
+        //They will throw if something about the path is seriously wrong
+
+        if (std::filesystem::exists(targetPbo) && !args.force) {
+            errorf("File %s already exists and --force was not set.\n", targetPbo.c_str());
+            return 1;
+        }
+        if (!std::filesystem::exists(inputDirectory)) {
+            errorf("Source directory %s not found.\n", inputDirectory.c_str());
+            return 1;
+        }
+    } catch (const std::filesystem::filesystem_error& err) {
+        errorf("Failed to check existence of file %s. Error code: %u\n", err.path1().c_str(), err.code());
         return 1;
     }
 
-    // remove trailing slash in source
-    if (args.positionals[1][strlen(args.positionals[1]) - 1] == '\\')
-        args.positionals[1][strlen(args.positionals[1]) - 1] = 0;
-    if (args.positionals[1][strlen(args.positionals[1]) - 1] == '/')
-        args.positionals[1][strlen(args.positionals[1]) - 1] = 0;
 
-    f_target = fopen(args.positionals[2], "wb");
-    if (!f_target) {
-        errorf("Failed to open %s.\n", args.positionals[2]);
-        return 2;
-    }
-    fclose(f_target);
+
 
     // get addon prefix
-    char prefixpath[1024];
-    char addonprefix[512];
-    FILE *f_prefix;
-    prefixpath[0] = 0;
-    strcat(prefixpath, args.positionals[1]);
-    strcat(prefixpath, PATHSEP_STR);
-    strcat(prefixpath, "$PBOPREFIX$");
-
-    for (i = 0; i < args.num_headerextensions && args.headerextensions[i][0] != 0; i++) {
-        k = 0;
-        valid = false;
-        for (j = 0; j <= strlen(args.headerextensions[i]); j++) {
-            if (args.headerextensions[i][j] == '=' || args.headerextensions[i][j] == '\0') {
-                if (strcmp(buffer, "prefix") == 0) {
-                    k = 0;
-                    valid = true;
-                } else if (valid) {
-                    strcat(addonprefix, buffer);
-                } else {
-                    break;
-                }
-            } else {
-                buffer[k++] = args.headerextensions[i][j];
-                buffer[k] = '\0';
-            }
-        }
-    }
-
-    if (!valid) {
-        f_prefix = fopen(prefixpath, "rb");
-        if (!f_prefix) {
-            if (strrchr(args.positionals[1], PATHSEP) == NULL)
-                strncpy(addonprefix, args.positionals[1], sizeof(addonprefix));
-            else
-                strncpy(addonprefix, strrchr(args.positionals[1], PATHSEP) + 1, sizeof(addonprefix));
-        } else {
-            fgets(addonprefix, sizeof(addonprefix), f_prefix);
-            fclose(f_prefix);
-        }
-
-        if (addonprefix[strlen(addonprefix) - 1] == '\n')
-            addonprefix[strlen(addonprefix) - 1] = '\0';
-        if (addonprefix[strlen(addonprefix) - 1] == '\r')
-            addonprefix[strlen(addonprefix) - 1] = '\0';
-    }
-
-    // replace pathseps on linux
-#ifndef _WIN32
-    char tmp[512] = "";
-    char *p = NULL;
-    for (p = addonprefix; *p; p++) {
-        if (*p == '\\' && tmp[strlen(tmp) - 1] == '/')
-            continue;
-        if (*p == '\\')
-            tmp[strlen(tmp)] = '/';
-        else
-            tmp[strlen(tmp)] = *p;
-        tmp[strlen(tmp) + 1] = 0;
-    }
-    addonprefix[0] = 0;
-    strcat(addonprefix, tmp);
-#endif
-
-    // create and prepare temp folder
-    auto tempfolder = create_temp_folder(addonprefix);
-    if (!tempfolder) {
-        errorf("Failed to create temp folder.\n");
-        remove_file(args.positionals[2]);
-        return 2;
-    }
-    if (!copy_directory(args.positionals[1], *tempfolder)) {
-        errorf("Failed to copy to temp folder.\n");
-        remove_file(args.positionals[2]);
-        remove_folder(*tempfolder);
-        return 3;
-    }
-
-    // preprocess and binarize stuff if required
-    char nobinpath[1024];
-    char notestpath[1024];
-    strcpy(nobinpath, prefixpath);
-    strcpy(notestpath, prefixpath);
-    strcpy(nobinpath + strlen(nobinpath) - 11, "$NOBIN$");
-    strcpy(notestpath + strlen(notestpath) - 11, "$NOBIN-NOTEST$");
-    if (!args.packonly && !std::filesystem::exists(nobinpath) && !std::filesystem::exists(notestpath)) {
-        if (traverse_directory(tempfolder->string().c_str(), binarize_callback, tempfolder->string().c_str())) {
-            current_target = args.positionals[1];
-            errorf("Failed to binarize some files.\n");
-            remove_file(args.positionals[2]);
-            remove_folder(*tempfolder);
-            return 4;
-        }
-
-        char configpath[2048];
-        strcpy(configpath, tempfolder->string().c_str());
-        strcat(configpath, "?config.cpp");
-        configpath[strlen(tempfolder->string().c_str())] = PATHSEP;
-
-        if (std::filesystem::exists(configpath)) {
-#ifdef _WIN32
-            if (!DeleteFile(configpath)) {
-#else
-            if (remove(configpath)) {
-#endif
-                remove_file(args.positionals[2]);
-                remove_folder(*tempfolder);
-                return 5;
-            }
-        }
-    }
-
-    current_target = args.positionals[1];
+    const auto prefixPath = inputDirectory / "$PBOPREFIX$";
 
 
-    __itt_task_begin(buildDomain, __itt_null, __itt_null, handle_prepWrite);
-
-    PboWriter writer;
-
-    std::string prefixClean(addonprefix);
-    std::replace(prefixClean.begin(), prefixClean.end(), '/', '\\');
-    if (prefixClean != addonprefix)
-        warningf("Prefix name contains forward slashes: %s\n", addonprefix);
-
-    //write prefix
-    writer.addProperty({ "prefix", prefixClean });
+    std::vector<PboProperty> pboProperties;
 
     // write extra header extensions
-    for (i = 0; i < args.num_headerextensions && args.headerextensions[i][0] != 0; i++) {
+    for (int i = 0; i < args.num_headerextensions && args.headerextensions[i][0] != 0; i++) {
 
         std::string_view ext = args.headerextensions[i];
         auto seperatorOffset = ext.find_first_of('=');
 
         if (seperatorOffset == std::string::npos) { //no seperator found
             errorf("Invalid header extension format (%s).\n", args.headerextensions[i]);
-            remove_folder(*tempfolder);
             return 6;
         }
 
@@ -367,23 +193,110 @@ int cmd_build() {
         if (key == "prefix") continue;
 
 
-        writer.addProperty({ std::string(key), std::string(val) });
+        pboProperties.emplace_back(std::string(key), std::string(val));
+    }
 
+    std::string_view addonPrefix;
+
+    if (auto found = std::find_if(pboProperties.begin(), pboProperties.end(), [](const PboProperty& prop) {
+        return prop.key == "prefix";
+    }); found != pboProperties.end()) {
+        //Prefix supplied via parameters
+        std::string prefixUnclean(found->value);
+        std::replace(found->value.begin(), found->value.end(), '/', '\\');
+        if (prefixUnclean != found->value)
+            warningf("Prefix name contains forward slashes: %s\n", prefixUnclean.c_str());
+        addonPrefix = found->value;
+    }
+    else {
+        //No prefix supplied via parameters. Read it from file and clean it up.
+        std::ifstream prefixFile(prefixPath);
+        std::string tmp;
+        std::getline(prefixFile, tmp);
+
+
+        std::string prefixUnclean(tmp);
+        std::replace(tmp.begin(), tmp.end(), '/', '\\');
+        if (prefixUnclean != tmp)
+            warningf("Prefix name contains forward slashes: %s\n", prefixUnclean.c_str());
+
+        addonPrefix = pboProperties.emplace_back("prefix", std::move(tmp)).value;
+        //#TODO verbose log that prefix was read from file
     }
 
 
 
+
+
+    std::ofstream outputFile(targetPbo, std::ofstream::binary);
+    if (!outputFile.is_open()) {
+        errorf("Failed to open %s.\n", targetPbo.c_str());
+        return 2;
+    }
+
+    ScopeGuard targetPboDeletionGuard([&targetPbo, &outputFile]() {
+        outputFile.close();
+        remove_file(targetPbo);
+    });
+
+    // create and prepare temp folder
+    auto tempfolder = create_temp_folder(addonPrefix.data());
+    if (!tempfolder) {
+        errorf("Failed to create temp folder.\n");
+        return 2;
+    }
+
+    ScopeGuard tempFolderDeletionGuard([&tempfolder]() {
+        remove_folder(*tempfolder);
+    });
+
+    if (!copy_directory(args.positionals[1], *tempfolder)) {
+        errorf("Failed to copy to temp folder.\n");
+        return 3;
+    }
+
+    // preprocess and binarize stuff if required
+    if (!args.packonly &&
+        !std::filesystem::exists(inputDirectory / "$NOBIN$") &&
+        !std::filesystem::exists(inputDirectory / "$NOBIN-NOTEST$")) {
+        if (traverse_directory(tempfolder->string().c_str(), [this](const std::filesystem::path& root, const std::filesystem::path& file, const char*) {
+            binarize_callback(root, file, "");
+        }, "")) {
+            current_target = args.positionals[1];
+            errorf("Failed to binarize some files.\n");
+            return 4;
+        }
+
+        //We have a config.bin now, so we want to delete the old
+
+        auto configPath = *tempfolder / "config.cpp";
+        if (std::filesystem::exists(configPath) && !std::filesystem::remove(configPath))
+            return 5; //delete failed
+    }
+
+    current_target = args.positionals[1];
+
+    __itt_task_begin(buildDomain, __itt_null, __itt_null, handle_prepWrite);
+
+    PboWriter writer;
+
+    for (auto& it : pboProperties) {
+        writer.addProperty(it);
+    }
 
     for (auto& file : files_sizes) {
         writer.addFile(file);
     }
     __itt_task_end(buildDomain);
+
     __itt_task_begin(buildDomain, __itt_null, __itt_null, handle_writepbo);
-    std::ofstream outputFile(args.positionals[2], std::ofstream::binary);
+
     writer.writePbo(outputFile);
     __itt_task_end(buildDomain);
     //#TODO reuse writer's file list to generate bisign
 
+    targetPboDeletionGuard.dismiss();
+    tempFolderDeletionGuard.dismiss();
     // remove temp folder
     if (!remove_folder(*tempfolder)) {
         errorf("Failed to remove temp folder.\n");
@@ -410,8 +323,9 @@ int cmd_build() {
             strcpy(path_signature, args.signature);
             if (strlen(path_signature) < 7 || strcmp(&path_signature[strlen(path_signature) - 7], ".bisign") != 0)
                 strcat(path_signature, ".bisign");
-        } else {
-            strcpy(path_signature, args.positionals[2]);
+        }
+        else {
+            strcpy(path_signature, args.positionals[2]); //target pbo path
             strcat(path_signature, ".");
             strcat(path_signature, keyname);
             strcat(path_signature, ".bisign");
@@ -430,4 +344,36 @@ int cmd_build() {
     }
 
     return 0;
+
+
+
+
+
+
+
+}
+
+int cmd_build() {
+    extern const char *current_target;
+
+    if (args.num_positionals != 3)
+        return 128;
+
+    current_target = args.positionals[1];
+
+    // remove trailing slash in source
+    const std::filesystem::path sourceDirectory([]() {
+        std::string_view sourceDirectory = args.positionals[1];
+        if (sourceDirectory.back() == '\\' || sourceDirectory.back() == '/')
+            sourceDirectory = sourceDirectory.substr(0, sourceDirectory.length() - 1);
+        return sourceDirectory;
+    }());
+    std::string_view targetPbo = args.positionals[2];
+
+    Builder builder;
+
+    return builder.buildDirectory(sourceDirectory, targetPbo);
+
+
+
 }

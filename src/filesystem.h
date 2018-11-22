@@ -20,6 +20,7 @@
 
 #include <string_view>
 #include <optional>
+#include <functional>
 
 #ifdef _WIN32
 #define PATHSEP '\\'
@@ -46,7 +47,7 @@ bool remove_folder(const std::filesystem::path &folder);
 
 bool copy_file(const std::filesystem::path &source, const std::filesystem::path &target);
 
-int traverse_directory(const std::filesystem::path &root, int (*callback)(const std::filesystem::path &rootDir, const std::filesystem::path &file, const char *thirdArg),
+int traverse_directory(const std::filesystem::path &root, std::function<int(const std::filesystem::path &rootDir, const std::filesystem::path &file, const char *thirdArg)> callback,
     const char *third_arg);
 
 bool copy_directory(const std::filesystem::path &source, const std::filesystem::path &target);

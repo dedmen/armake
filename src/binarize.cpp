@@ -45,11 +45,6 @@ bool warned_bi_not_found = false;
 
 
 #ifdef _WIN32
-bool file_exists(char *path) {
-    unsigned long attrs = GetFileAttributes(path);
-    return (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY));
-}
-
 
 char *find_root(char *source) {
     char *root = (char *)malloc(2048);
@@ -131,7 +126,7 @@ int attempt_bis_binarize(char *source, char *target) {
 
     strcat(command, "\\binarize.exe");
 
-    if (!file_exists(command))
+    if (!std::filesystem::is_regular_file(command))
         return -3;
 
     // Read P3D and create a list of required files
@@ -336,7 +331,7 @@ int attempt_bis_binarize(char *source, char *target) {
 #endif
 
 
-int binarize(const char *source, const char *target) {
+int binarize(std::filesystem::path source, std::filesystem::path target) {
     /*
      * Binarize the given file. If source and target are identical, the target
      * is overwritten. If the source is a P3D, it is converted to ODOL. If the
@@ -346,25 +341,20 @@ int binarize(const char *source, const char *target) {
      * success and a positive integer on error.
      */
 
-    char fileext[64];
+
+
+    auto fileExtension = source.extension();
+
+    if (fileExtension == ".cpp" ||
+        fileExtension == ".rvmat" ||
+        fileExtension == ".ext") //#TODO not ext! only description.ext
+        return Rapifier::rapify_file(source.string().c_str(), target.string().c_str());
+
+    if (fileExtension == ".p3d" ||
+        fileExtension == ".rtm") {
 #ifdef _WIN32
-    int success;
-    extern bool warned_bi_not_found;
-#endif
-
-    if (strchr(source, '.') == NULL)
-        return -1;
-
-    strncpy(fileext, strrchr(source, '.'), 64);
-
-    if (!strcmp(fileext, ".cpp") ||
-            !strcmp(fileext, ".rvmat") ||
-            !strcmp(fileext, ".ext"))
-        return Rapifier::rapify_file(source, target);
-
-    if (!strcmp(fileext, ".p3d") ||
-            !strcmp(fileext, ".rtm")) {
-#ifdef _WIN32
+        int success;
+        extern bool warned_bi_not_found;
         //success = attempt_bis_binarize(source, target);
         //if (success >= 0)
         //    return success;
@@ -373,8 +363,8 @@ int binarize(const char *source, const char *target) {
         //    warned_bi_not_found = true;
         //}
 #endif
-        if (!strcmp(fileext, ".p3d"))
-            return mlod2odol(source, target);
+        if (fileExtension == ".p3d")
+            return mlod2odol(source.string().c_str(), target.string().c_str());
     }
 
     return -1;
@@ -385,8 +375,10 @@ int cmd_binarize() {
     int success;
 
     if (args.num_positionals == 1) {
-        return 128;
-    } else if (args.num_positionals == 2) {
+        return 128;//only binarize argument exists, missing path arguments
+    }
+
+    if (args.num_positionals == 2) {
         success = binarize(args.positionals[1], "-");
     } else {
         // check if target already exists

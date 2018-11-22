@@ -38,6 +38,9 @@ struct header {
 
 class PboProperty {
 public:
+    PboProperty() {}
+    PboProperty(std::string k, std::string v): key(std::move(k)), value(std::move(v)) {}
+
     std::string key;
     std::string value;
 

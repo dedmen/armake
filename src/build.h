@@ -18,5 +18,21 @@
 
 #pragma once
 
+#include <filesystem>
+#include <vector>
+#include "unpack.h"
+#include <memory>
+
+//Takes care of everything that's required to build a directory into a pbo
+class Builder { 
+    std::vector<std::shared_ptr<PboFileToWrite>> files_sizes;
+
+    int binarize_callback(const std::filesystem::path &root, const std::filesystem::path &source, const char *junk) noexcept(false);
+
+public:
+
+    int buildDirectory(std::filesystem::path inputDirectory, std::filesystem::path outputFile);
+
+};
 
 int cmd_build();
