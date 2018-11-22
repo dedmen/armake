@@ -325,6 +325,10 @@ int read_model_config(const char *path, struct skeleton_ *skeleton) {
             std::transform(bone.name.begin(), bone.name.end(), bone.name.begin(), tolower);
             std::transform(bone.parent.begin(), bone.parent.end(), bone.parent.begin(), tolower);
         }
+
+        if (skeleton->bones.size() > MAXBONES) { //https://discordapp.com/channels/105462288051380224/105462541215358976/515129500124839956
+            errorf("max bone limit reached! %u out of 255 bones being used.", skeleton->bones.size());
+        }
     }
 
     // Read sections

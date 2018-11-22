@@ -19,7 +19,7 @@
 #pragma once
 
 
-#define MAXBONES 512
+#define MAXBONES 255 //Arma 3 engine limit
 #define MAXSECTIONS 1024
 #define MAXANIMS 1024
 
