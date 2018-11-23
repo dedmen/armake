@@ -33,6 +33,7 @@
 #include "filesystem.h"
 #include "keygen.h"
 #include "sign.h"
+#include <iostream>
 
 
 void print_usage() {
@@ -224,6 +225,8 @@ int main(int argc, char *argv[]) {
 
     append(&args.includefolders, &args.num_includefolders, "."); //Always check CWD after having checked given include folders
 
+    Logger mainLogger(std::cout, std::cerr);
+
     if (success < 0)
         return 0;
     if (success > 0)
@@ -238,25 +241,25 @@ int main(int argc, char *argv[]) {
         goto error;
 
     if (strcmp(args.positionals[0], "binarize") == 0)
-        success = cmd_binarize();
+        success = cmd_binarize(mainLogger);
     else if (strcmp(args.positionals[0], "build") == 0)
-        success = cmd_build();
+        success = cmd_build(mainLogger);
     else if (strcmp(args.positionals[0], "inspect") == 0)
-        success = cmd_inspect();
+        success = cmd_inspect(mainLogger);
     else if (strcmp(args.positionals[0], "unpack") == 0)
-        success = cmd_unpack();
+        success = cmd_unpack(mainLogger);
     else if (strcmp(args.positionals[0], "cat") == 0)
-        success = cmd_cat();
+        success = cmd_cat(mainLogger);
     else if (strcmp(args.positionals[0], "derapify") == 0)
-        success = cmd_derapify();
+        success = cmd_derapify(mainLogger);
     else if (strcmp(args.positionals[0], "keygen") == 0)
-        success = cmd_keygen();
+        success = cmd_keygen(mainLogger);
     else if (strcmp(args.positionals[0], "sign") == 0)
-        success = cmd_sign();
+        success = cmd_sign(mainLogger);
     else if (strcmp(args.positionals[0], "paa2img") == 0)
-        success = PAAConverter::cmd_paa2img();
+        success = PAAConverter::cmd_paa2img(mainLogger);
     else if (strcmp(args.positionals[0], "img2paa") == 0)
-        success = PAAConverter::cmd_img2paa();
+        success = PAAConverter::cmd_img2paa(mainLogger);
     else
         goto error;
 

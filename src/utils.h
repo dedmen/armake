@@ -55,7 +55,7 @@ struct point {
     float y;
     float z;
     uint32_t point_flags;
-    vector3 getPosition() {
+    vector3 getPosition() const {
         return { x,y,z };
     }
 };
@@ -130,7 +130,7 @@ private:
 };
 
 
-extern const char *current_target;
+extern std::string current_target;
 
 #ifdef _WIN32
 char *strndup(const char *s, size_t n);
@@ -139,21 +139,6 @@ char *strchrnul(char *s, int c);
 #else
 int stricmp(char *a, char *b);
 #endif
-
-void infof(const char *format, ...);
-
-void debugf(const char *format, ...);
-
-void warningf(const char *format, ...);
-void lwarningf(const char *file, int line, const char *format, ...);
-
-bool warning_muted(char *name);
-
-void nwarningf(const char *name, const char *format, ...);
-void lnwarningf(const char *file, int line, const char *name, const char *format, ...);
-
-void errorf(const char *format, ...);
-void lerrorf(const char *file, int line, const char *format, ...);
 
 void *safe_malloc(size_t size);
 void *safe_realloc(void *ptr, size_t size);

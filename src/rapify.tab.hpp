@@ -52,6 +52,7 @@ extern int yydebug;
 #include "filesystem.h"
 #include "preprocess.h"
 #include "rapify.h"
+#include "logger.h"
 
 #define YYDEBUG 0
 #define YYERROR_VERBOSE 1
@@ -60,6 +61,7 @@ struct parserStaticData {
     bool allow_val = false;
     bool allow_arr = false;
     bool last_was_class = false;
+    Logger* logger;
 };
 
 struct YYTypeStruct {

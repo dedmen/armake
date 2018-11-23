@@ -37,14 +37,14 @@
 #include "derapify.h"
 #include <filesystem>
 
-int derapify_file(char *source, char *target) {
+int derapify_file(char *source, char *target, Logger& logger) {
     /*
      * Reads the rapified file in source and writes it as a human-readable
      * config into target. If the source file isn't a rapified file, -1 is
      * returned. 0 is returned on success and a positive integer on failure.
      */
 
-    extern const char *current_target;
+    extern std::string current_target;
     FILE *f_source;
     FILE *f_target;
     char buffer[4096];
@@ -72,46 +72,46 @@ int derapify_file(char *source, char *target) {
 
     if (fromConsoleInput)
         if (toConsoleOutput)
-         return derapify_file(std::cin, std::cout);
+         return derapify_file(std::cin, std::cout, logger);
         else
-            return derapify_file(std::cin, std::ofstream(target));
+            return derapify_file(std::cin, std::ofstream(target), logger);
     else
         if (toConsoleOutput)
-            return derapify_file(std::ifstream(source, std::ifstream::binary), std::cout);
+            return derapify_file(std::ifstream(source, std::ifstream::binary), std::cout, logger);
         else
-            return derapify_file(std::ifstream(source, std::ifstream::binary), std::ofstream(target));
+            return derapify_file(std::ifstream(source, std::ifstream::binary), std::ofstream(target), logger);
 }
-int derapify_file(std::istream& source, std::ostream& target) {
-    auto cfg = Config::fromBinarized(source);
+int derapify_file(std::istream& source, std::ostream& target, Logger& logger) {
+    auto cfg = Config::fromBinarized(source, logger);
 
     if (!cfg.hasConfig()) {
-        errorf("Failed to derapify root class.\n");
+        logger.error("Failed to derapify root class.\n");
         return 1;
     }
     extern struct arguments args;
 
-    cfg.toPlainText(target, args.indent ? args.indent : "    ");
+    cfg.toPlainText(target, logger, args.indent ? args.indent : "    ");
 
     return 0;
 }
 
-int cmd_derapify() {
+int cmd_derapify(Logger& logger) {
     extern struct arguments args;
     int success;
 
     if (args.num_positionals == 1) {
-        success = derapify_file("-", "-");
+        success = derapify_file("-", "-", logger);
     } else if (args.num_positionals == 2) {
-        success = derapify_file(args.positionals[1], "-");
+        success = derapify_file(args.positionals[1], "-", logger);
     } else {
         // check if target already exists
         if (std::filesystem::exists(args.positionals[2]) && !args.force) {
-            errorf("File %s already exists and --force was not set.\n", args.positionals[2]);
+            logger.error("File %s already exists and --force was not set.\n", args.positionals[2]);
             return 1;
         }
         //#TODO check if source exists. else throw error
 
-        success = derapify_file(args.positionals[1], args.positionals[2]);
+        success = derapify_file(args.positionals[1], args.positionals[2], logger);
     }
 
     return abs(success);

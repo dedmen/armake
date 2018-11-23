@@ -241,61 +241,61 @@ const struct shader_ref vertexshaders[45] = {
 };
 
 
-int read_material(struct material *material) {
+int Material::read() {
     /*
      * Reads the material information for the given material struct.
      * Returns 0 on success and a positive integer on failure.
      */
 
-    extern const char *current_target;
+    extern std::string current_target;
     char temp[2048];
     int i;
     const struct color default_color = { 0.0f, 0.0f, 0.0f, 1.0f };
 
-    if (material->path[0] != '\\') {
+    if (path[0] != '\\') {
         strcpy(temp, "\\");//#TODO use std::filesystem::path
-        strcat(temp, material->path.c_str());
+        strcat(temp, path.c_str());
     } else {
-        strcpy(temp, material->path.c_str());
+        strcpy(temp, path.c_str());
     }
 
     // Write default values
-    material->type = MATERIALTYPE;
-    material->depr_1 = 1;
-    material->depr_2 = 1;
-    material->depr_3 = 1;
-    material->emissive = default_color;
-    material->ambient = default_color;
-    material->diffuse = default_color;
-    material->forced_diffuse = default_color;
-    material->specular = default_color;
-    material->specular2 = default_color;
-    material->specular_power = 1.0f;
-    material->pixelshader_id = 0;
-    material->vertexshader_id = 0;
-    material->num_textures = 1;
-    material->num_transforms = 1;
+    type = MATERIALTYPE;
+    depr_1 = 1;
+    depr_2 = 1;
+    depr_3 = 1;
+    emissive = default_color;
+    ambient = default_color;
+    diffuse = default_color;
+    forced_diffuse = default_color;
+    specular = default_color;
+    specular2 = default_color;
+    specular_power = 1.0f;
+    pixelshader_id = 0;
+    vertexshader_id = 0;
+    num_textures = 1;
+    num_transforms = 1;
 
-    material->textures.resize(material->num_textures);
-    material->transforms.resize(material->num_transforms);
+    textures.resize(num_textures);
+    transforms.resize(num_transforms);
 
-    material->textures[0].path[0] = 0;
-    material->textures[0].texture_filter = 3;
-    material->textures[0].transform_index = 0;
-    material->textures[0].type11_bool = 0;
+    textures[0].path[0] = 0;
+    textures[0].texture_filter = 3;
+    textures[0].transform_index = 0;
+    textures[0].type11_bool = 0;
 
-    material->transforms[0].uv_source = 1;
-    memset(material->transforms[0].transform, 0, 12 * sizeof(float));
-    memcpy(material->transforms[0].transform, &identity_matrix, sizeof(identity_matrix));
+    transforms[0].uv_source = 1;
+    memset(transforms[0].transform, 0, 12 * sizeof(float));
+    memcpy(transforms[0].transform, &identity_matrix, sizeof(identity_matrix));
 
-    material->dummy_texture.path[0] = 0;
-    material->dummy_texture.texture_filter = 3;
-    material->dummy_texture.transform_index = 0;
-    material->dummy_texture.type11_bool = 0;
+    dummy_texture.path[0] = 0;
+    dummy_texture.texture_filter = 3;
+    dummy_texture.transform_index = 0;
+    dummy_texture.type11_bool = 0;
 
     auto foundFile = find_file(temp, "");
     if (!foundFile) {
-        lwarningf(current_target, -1, "Failed to find material \"%s\".\n", temp);
+        logger.warning(current_target, 0u, "Failed to find material \"%s\".\n", temp);
         return 1;
     }
 
@@ -303,24 +303,23 @@ int read_material(struct material *material) {
 
     ;
 
-    Preprocessor p;
+    Preprocessor p(logger);
     std::stringstream buf;
     p.preprocess(foundFile->string(), std::ifstream(foundFile->string(), std::ifstream::in | std::ifstream::binary), buf, Preprocessor::ConstantMapType());
     buf.seekg(0);
-    auto cfg = Config::fromPreprocessedText(buf, p.getLineref());
+    auto cfg = Config::fromPreprocessedText(buf, p.getLineref(), logger);
 
-#define TRY_READ_ARRAY(tgt, src) {auto x = cfg->getArrayOfFloats({ #src }); if (!x.empty()) material->tgt = x;}
+#define TRY_READ_ARRAY(tgt, src) {auto x = cfg->getArrayOfFloats({ #src }); if (!x.empty()) tgt = x;}
 
-    current_target = material->path.c_str();
+    current_target = path.c_str();
     // Read colors
     TRY_READ_ARRAY(emissive, emmisive);// "Did you mean: emissive?"
     TRY_READ_ARRAY(ambient, ambient);
     TRY_READ_ARRAY(diffuse, diffuse);
     TRY_READ_ARRAY(forced_diffuse, forcedDiffuse);
-    TRY_READ_ARRAY(specular, specular);
+    TRY_READ_ARRAY(specular2 = specular, specular);
 
-    material->specular2 = material->specular;
-    {auto x = cfg->getFloat({ "specularPower" }); if (x) material->specular_power = *x; }
+    {auto x = cfg->getFloat({ "specularPower" }); if (x) specular_power = *x; }
 
     // Read shaders
     auto pixelShaderID = cfg->getString({ "PixelShaderID" });
@@ -330,10 +329,10 @@ int read_material(struct material *material) {
                 break;
         }
         if (i == sizeof(pixelshaders) / sizeof(struct shader_ref)) {
-            lwarningf(current_target, -1, "Unrecognized pixel shader: \"%s\", assuming \"Normal\".\n", *pixelShaderID);
+            logger.warning(current_target, -1, "Unrecognized pixel shader: \"%s\", assuming \"Normal\".\n", *pixelShaderID);
             i = 0;
         }
-        material->pixelshader_id = pixelshaders[i].id;
+        pixelshader_id = pixelshaders[i].id;
     }
 
     auto VertexShaderID = cfg->getString({ "VertexShaderID" });
@@ -343,64 +342,64 @@ int read_material(struct material *material) {
                 break;
         }
         if (i == sizeof(vertexshaders) / sizeof(struct shader_ref)) {
-            lwarningf(current_target, -1, "Unrecognized vertex shader: \"%s\", assuming \"Basic\".\n", *VertexShaderID);
+            logger.warning(current_target, -1, "Unrecognized vertex shader: \"%s\", assuming \"Basic\".\n", *VertexShaderID);
             i = 0;
         }
-        material->vertexshader_id = vertexshaders[i].id;
+        vertexshader_id = vertexshaders[i].id;
     }
 
     // Read stages
     for (i = 1; i < MAXSTAGES; i++) {
         if (!cfg->getString({ "Stage" + std::to_string(i), "texture" }))
             break;
-        material->num_textures++;
-        material->num_transforms++;
+        num_textures++;
+        num_transforms++;
     }
-    material->textures.resize(material->num_textures);
-    material->transforms.resize(material->num_transforms);
+    textures.resize(num_textures);
+    transforms.resize(num_transforms);
 
-    for (i = 0; i < material->num_textures; i++) {
+    for (i = 0; i < num_textures; i++) { //#TODO ranged for
         if (i == 0) {
-            material->textures[i].path[0] = 0;
+            textures[i].path[0] = 0;
         } else {
             auto texture = cfg->getString({ "Stage" + std::to_string(i), "texture" });
-            material->textures[i].path = *texture;
+            textures[i].path = *texture;
         }
 
-        material->textures[i].texture_filter = 3;
-        material->textures[i].transform_index = i;
-        material->textures[i].type11_bool = 0;
+        textures[i].texture_filter = 3;
+        textures[i].transform_index = i;
+        textures[i].type11_bool = 0;
 
-        material->transforms[i].uv_source = 1;
-        memset(material->transforms[i].transform, 0, 12 * sizeof(float));
-        memcpy(material->transforms[i].transform, &identity_matrix, sizeof(identity_matrix));
+        transforms[i].uv_source = 1;
+        memset(transforms[i].transform, 0, 12 * sizeof(float));
+        memcpy(transforms[i].transform, &identity_matrix, sizeof(identity_matrix));
 
         if (i != 0) {
             //#TODO retrieve uvTransform entry. So we don't re-resolve the whole path everytime
 
             auto aside = cfg->getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "aside" });
             if (!aside.empty()) {
-                material->transforms[i].transform[0][0] = aside[0]; //#TODO make this easier use a actual matrix. And then read the parts as vectors using a vector<float> constructor
-                material->transforms[i].transform[0][1] = aside[1];
-                material->transforms[i].transform[0][2] = aside[2];
+                transforms[i].transform[0][0] = aside[0]; //#TODO make this easier use a actual matrix. And then read the parts as vectors using a vector<float> constructor
+                transforms[i].transform[0][1] = aside[1];
+                transforms[i].transform[0][2] = aside[2];
             }
             auto up = cfg->getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "up" });
             if (!up.empty()) {
-                material->transforms[i].transform[1][0] = up[0];
-                material->transforms[i].transform[1][1] = up[1];
-                material->transforms[i].transform[1][2] = up[2];
+                transforms[i].transform[1][0] = up[0];
+                transforms[i].transform[1][1] = up[1];
+                transforms[i].transform[1][2] = up[2];
             }
             auto dir = cfg->getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "dir" });
             if (!dir.empty()) {
-                material->transforms[i].transform[2][0] = dir[0];
-                material->transforms[i].transform[2][1] = dir[1];
-                material->transforms[i].transform[2][2] = dir[2];
+                transforms[i].transform[2][0] = dir[0];
+                transforms[i].transform[2][1] = dir[1];
+                transforms[i].transform[2][2] = dir[2];
             }
             auto pos = cfg->getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "pos" });
             if (!pos.empty()) {
-                material->transforms[i].transform[3][0] = pos[0];
-                material->transforms[i].transform[3][1] = pos[1];
-                material->transforms[i].transform[3][2] = pos[2];
+                transforms[i].transform[3][0] = pos[0];
+                transforms[i].transform[3][1] = pos[1];
+                transforms[i].transform[3][2] = pos[2];
             }
         }
     }
@@ -408,4 +407,43 @@ int read_material(struct material *material) {
     //read_string(f, "StageTI >> texture", material->dummy_texture.path, sizeof(material->dummy_texture.path));
 
     return 0;
+}
+
+
+void Material::writeTo(std::ostream& output) {
+
+#define WRITE_CASTED(elem, size)  output.write(reinterpret_cast<char*>(&elem), size);
+
+    output.write(path.c_str(), path.length() + 1);
+    WRITE_CASTED(type, sizeof(uint32_t));
+    WRITE_CASTED(emissive, sizeof(struct color));
+    WRITE_CASTED(ambient, sizeof(struct color));
+    WRITE_CASTED(diffuse, sizeof(struct color));
+    WRITE_CASTED(forced_diffuse, sizeof(struct color));
+    WRITE_CASTED(specular, sizeof(struct color));
+    WRITE_CASTED(specular2, sizeof(struct color));
+    WRITE_CASTED(specular_power, sizeof(float));
+    WRITE_CASTED(pixelshader_id, sizeof(uint32_t));
+    WRITE_CASTED(vertexshader_id, sizeof(uint32_t));
+    WRITE_CASTED(depr_1, sizeof(uint32_t));
+    WRITE_CASTED(depr_2, sizeof(uint32_t));
+    output.write(surface.c_str(), surface.length() + 1);
+    WRITE_CASTED(depr_3, sizeof(uint32_t));
+    WRITE_CASTED(render_flags, sizeof(uint32_t));
+    WRITE_CASTED(num_textures, sizeof(uint32_t));
+    WRITE_CASTED(num_transforms, sizeof(uint32_t));
+
+    for (int i = 0; i < num_textures; i++) {
+        WRITE_CASTED(textures[i].texture_filter, sizeof(uint32_t));
+        output.write(textures[i].path.c_str(), textures[i].path.length() + 1);
+        WRITE_CASTED(textures[i].transform_index, sizeof(uint32_t));
+        WRITE_CASTED(dummy_texture.type11_bool, sizeof(bool));
+    }
+
+    output.write(reinterpret_cast<char*>(transforms.data()), sizeof(struct stage_transform) * num_transforms);
+
+    WRITE_CASTED(dummy_texture.texture_filter, sizeof(uint32_t));
+    output.write(dummy_texture.path.c_str(), dummy_texture.path.length() + 1);
+    WRITE_CASTED(dummy_texture.transform_index, sizeof(uint32_t));
+    WRITE_CASTED(dummy_texture.type11_bool, sizeof(bool));
 }

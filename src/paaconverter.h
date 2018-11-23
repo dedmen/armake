@@ -18,6 +18,8 @@
 
 #pragma once
 
+class Logger;
+
 class PAAConverter{
     static void img2dxt1(unsigned char *input, unsigned char *output, int width, int height);
     static void img2dxt5(unsigned char *input, unsigned char *output, int width, int height);
@@ -54,11 +56,11 @@ public:
             return PAAType::invalid;
     }
 
-    static int img2paa(std::istream &source, std::ostream &target, PAAType targetType = PAAType::default);
-    static int paa2img(std::istream &source, std::ostream &target);
+    static int img2paa(std::istream &source, std::ostream &target, Logger& logger, PAAType targetType = PAAType::default);
+    static int paa2img(std::istream &source, std::ostream &target, Logger& logger);
 
-    static int cmd_img2paa();
-    static int cmd_paa2img();
+    static int cmd_img2paa(Logger& logger);
+    static int cmd_paa2img(Logger& logger);
 
 };
 

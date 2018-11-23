@@ -31,6 +31,7 @@
 #include "filesystem.h"
 #include "utils.h"
 #include "keygen.h"
+#include "logger.h"
 
 
 //#if OPENSSL_VERSION_NUMBER < 0x10100000L
@@ -205,7 +206,7 @@
 //}
 
 
-int cmd_keygen() {
+int cmd_keygen(Logger& logger) {
     extern struct arguments args;
     char name[512];
     char path_private[2048];
@@ -235,18 +236,18 @@ int cmd_keygen() {
 
     // check if target already exists
     if (std::filesystem::exists(path_private) && !args.force) {
-        errorf("File %s already exists and --force was not set.\n", path_private);
+        logger.error("File %s already exists and --force was not set.\n", path_private);
         return 1;
     }
     if (std::filesystem::exists(path_public) && !args.force) {
-        errorf("File %s already exists and --force was not set.\n", path_public);
+        logger.error("File %s already exists and --force was not set.\n", path_public);
         return 1;
     }
 
 //    success = generate_keypair(name, path_private, path_public);
     success = 1;
     if (success)
-        errorf("Failed to generate key pair.\n");
+        logger.error("Failed to generate key pair.\n");
 
     return success;
 }

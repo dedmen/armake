@@ -43,6 +43,7 @@
 #include <array>
 //#include "rapify.tab.h"
 
+class Logger;
 __itt_domain* configDomain = __itt_domain_create("armake.config");
 
 std::string_view ConfigClassEntry::getName() const {
@@ -320,11 +321,11 @@ std::vector<float> ConfigClass::getArrayOfFloats(ConfigPath path) const {
 }
 
 
-bool parse_file(std::istream& f, struct lineref &lineref, ConfigClass &result);
+bool parse_file(std::istream& f, struct lineref &lineref, Logger& logger, ConfigClass &result);
 
 
 __itt_string_handle* handle_fromRawText = __itt_string_handle_create("Config::fromRawText");
-Config Config::fromRawText(std::istream& input, bool buildParentTree) {
+Config Config::fromRawText(std::istream& input, Logger& logger, bool buildParentTree) {
     __itt_task_begin(configDomain, __itt_null, __itt_null, handle_fromRawText);
     Config output;
     output.config = std::make_shared<ConfigClass>();
@@ -332,10 +333,10 @@ Config Config::fromRawText(std::istream& input, bool buildParentTree) {
     lineref ref;
     ref.empty = true;
 
-    auto result = parse_file(input, ref, *output.config);
+    auto result = parse_file(input, ref, logger, *output.config);
 
     if (!result) {
-        errorf("Failed to parse config.\n");
+        logger.error("Failed to parse config.\n");
         __itt_task_end(configDomain);
         return {};
     }
@@ -345,15 +346,15 @@ Config Config::fromRawText(std::istream& input, bool buildParentTree) {
 }
 
 __itt_string_handle* handle_fromPreprocessedText = __itt_string_handle_create("Config::fromPreprocessedText");
-Config Config::fromPreprocessedText(std::istream &input, lineref& lineref, bool buildParentTree) {
+Config Config::fromPreprocessedText(std::istream &input, lineref& lineref, Logger& logger, bool buildParentTree) {
     __itt_task_begin(configDomain, __itt_null, __itt_null, handle_fromPreprocessedText);
     Config output;
     output.config = std::make_shared<ConfigClass>();
     input.seekg(0);
-    auto result = parse_file(input, lineref, *output.config);
+    auto result = parse_file(input, lineref, logger, *output.config);
 
     if (!result) {
-        errorf("Failed to parse config.\n");
+        logger.error("Failed to parse config.\n");
         __itt_task_end(configDomain);
         return {};
     }
@@ -363,9 +364,9 @@ Config Config::fromPreprocessedText(std::istream &input, lineref& lineref, bool 
 }
 
 __itt_string_handle* handle_fromBinarized = __itt_string_handle_create("Config::fromBinarized");
-Config Config::fromBinarized(std::istream & input, bool buildParentTree) {
+Config Config::fromBinarized(std::istream & input, Logger& logger, bool buildParentTree) {
     if (!Rapifier::isRapified(input)) {
-        errorf("Source file is not a rapified config.\n");
+        logger.error("Source file is not a rapified config.\n");
         return {};
     }
     __itt_task_begin(configDomain, __itt_null, __itt_null, handle_fromBinarized);
@@ -389,7 +390,7 @@ Config Config::fromBinarized(std::istream & input, bool buildParentTree) {
         }
         buf << "\nFile Offset: " << input.tellg();
 
-        errorf(buf.str().c_str());
+        logger.error(buf.str().c_str());
         return {};
     }
 
@@ -406,7 +407,7 @@ void Config::toBinarized(std::ostream& output) {
     __itt_task_end(configDomain);
 }
 
-void Config::toPlainText(std::ostream& output, std::string_view indent) {
+void Config::toPlainText(std::ostream& output, Logger& logger, std::string_view indent) {
 
     uint8_t indentLevel = 0;
     if(!hasConfig()) return;
@@ -440,7 +441,7 @@ void Config::toPlainText(std::ostream& output, std::string_view indent) {
                 output << ", ";
                 break;
             default:
-                errorf("Unknown array element type %i.\n", (int)it.getType());
+                logger.error("Unknown array element type %i.\n", static_cast<int>(it.getType()));
             }
         }
         output.seekp(-2, std::ostream::_Seekcur); //remove last ,
@@ -765,12 +766,12 @@ bool Rapifier::isRapified(std::istream& input) {
     return strncmp(buffer, "\0raP", 4) == 0;
 }
 
-int Rapifier::rapify_file(const char* source, const char* target) {
+int Rapifier::rapify_file(const char* source, const char* target, Logger& logger) {
 
     std::ifstream sourceFile(source, std::ifstream::in | std::ifstream::binary);
 
     if (strcmp(target, "-") == 0) {
-        return rapify_file(sourceFile, std::cout, source);
+        return rapify_file(sourceFile, std::cout, source, logger);
     }
     else {
         std::ofstream targetFile(target, std::ofstream::out | std::ofstream::binary);
@@ -783,13 +784,13 @@ int Rapifier::rapify_file(const char* source, const char* target) {
         //    __debugbreak();
         //}
 
-        return rapify_file(sourceFile, targetFile, source);
+        return rapify_file(sourceFile, targetFile, source, logger);
     }
 
 
 }
 
-int Rapifier::rapify_file(std::istream &source, std::ostream &target, const char* sourceFileName) {
+int Rapifier::rapify_file(std::istream &source, std::ostream &target, const char* sourceFileName, Logger& logger) {
     /*
      * Resolves macros/includes and rapifies the given file. If source and
      * target are identical, the target is overwritten.
@@ -813,7 +814,7 @@ int Rapifier::rapify_file(std::istream &source, std::ostream &target, const char
         return 0;
     }
 
-    Preprocessor preproc;
+    Preprocessor preproc(logger);
     Preprocessor::ConstantMapType constants;
     std::stringstream fileToPreprocess;
     int success = preproc.preprocess(sourceFileName, source, fileToPreprocess, constants);
@@ -821,7 +822,7 @@ int Rapifier::rapify_file(std::istream &source, std::ostream &target, const char
     current_target = sourceFileName;
 
     if (success) {
-        errorf("Failed to preprocess %s.\n", sourceFileName);
+        logger.error("Failed to preprocess %s.\n", sourceFileName);
         return success;
     }
 
@@ -836,10 +837,10 @@ int Rapifier::rapify_file(std::istream &source, std::ostream &target, const char
     } while (fileToPreprocess.gcount() > 0);
 #endif
 
-    auto parsedConfig = Config::fromPreprocessedText(fileToPreprocess, preproc.getLineref(), false);
+    auto parsedConfig = Config::fromPreprocessedText(fileToPreprocess, preproc.getLineref(), logger, false);
 
     if (!parsedConfig.hasConfig()) {
-        errorf("Failed to parse config.\n");
+        logger.error("Failed to parse config.\n");
         return 1;
     }
 

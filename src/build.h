@@ -22,17 +22,18 @@
 #include <vector>
 #include "unpack.h"
 #include <memory>
+#include "logger.h"
 
 //Takes care of everything that's required to build a directory into a pbo
 class Builder { 
     std::vector<std::shared_ptr<PboFileToWrite>> files_sizes;
 
-    int binarize_callback(const std::filesystem::path &root, const std::filesystem::path &source, const char *junk) noexcept(false);
-
+    int binarize_callback(const std::filesystem::path &root, const std::filesystem::path &source) noexcept(false);
+    Logger& logger;
 public:
-
-    int buildDirectory(std::filesystem::path inputDirectory, std::filesystem::path outputFile);
+    Builder(Logger& log) : logger(log) {};
+    int buildDirectory(std::filesystem::path inputDirectory, std::filesystem::path targetPbo);
 
 };
 
-int cmd_build();
+int cmd_build(Logger& logger);

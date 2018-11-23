@@ -42,7 +42,7 @@
 #include <string>
 #include <filesystem>
 
-__itt_domain* fsDomain = __itt_domain_create("armake.filesystem");
+
 
 bool create_folder(const std::filesystem::path& path) {
     /*
@@ -114,52 +114,3 @@ bool copy_file(const std::filesystem::path &source, const std::filesystem::path 
     return std::filesystem::copy_file(source, target, std::filesystem::copy_options::overwrite_existing);
 }
 
-__itt_string_handle* handle_traverse_directory = __itt_string_handle_create("traverse_directory");
-int traverse_directory(const std::filesystem::path &root, std::function<int(const std::filesystem::path &rootDir, const std::filesystem::path &file, const char *thirdArg)> callback, const char *third_arg) {
-    /*
-     * Traverse the given path and call the callback with the root folder as
-     * the first, the current file path as the second, and the given third
-     * arg as the third argument.
-     *
-     * The callback should return 0 success and any negative integer on
-     * failure.
-     *
-     * This function returns 0 on success, a positive integer on a traversal
-     * error and the last callback return value should the callback fail.
-     */
-    __itt_task_begin(fsDomain, __itt_null, __itt_null, handle_traverse_directory);
-
-    for (auto i = std::filesystem::recursive_directory_iterator(root, std::filesystem::directory_options::follow_directory_symlink);
-        i != std::filesystem::recursive_directory_iterator();
-        ++i) {
-        //if (i->is_directory() && (i->path().filename() == ignoreGit || i->path().filename() == ignoreSvn)) {
-        //    i.disable_recursion_pending(); //Don't recurse into that directory
-        //    continue;
-        //}
-        if (!i->is_regular_file()) continue;
-
-        callback(root, i->path().string().c_str(), third_arg);
-    }
-    __itt_task_end(fsDomain);
-    return 0;
-}
-
-__itt_string_handle* handle_copy_directory = __itt_string_handle_create("copy_directory");
-bool copy_directory(const std::filesystem::path &source, const std::filesystem::path &target) {
-    /*
-     * Copy the entire directory given with source to the target folder.
-     * Returns true on success and false on failure.
-     */
-
-    __itt_task_begin(fsDomain, __itt_null, __itt_null, handle_copy_directory);
-    try {
-        std::filesystem::copy(source, target, std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing);
-    } catch (std::filesystem::filesystem_error& ex) {
-        errorf("copy_directory failed. %s \nFrom: %s\nTo: %s", ex.what(), ex.path1().string().c_str(), ex.path2().string().c_str());
-        __itt_task_end(fsDomain);
-        return false;
-    }
-
-    __itt_task_end(fsDomain);
-    return true;
-}

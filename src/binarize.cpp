@@ -77,14 +77,14 @@ char *find_root(char *source) {
 }
 
 
-int attempt_bis_binarize(char *source, char *target) {
+int attempt_bis_binarize(char *source, char *target, Logger& logger) {
     /*
      * Attempts to find and use the BI binarize.exe for binarization. If the
      * exe is not found, a negative integer is returned. 0 is returned on
      * success and a positive integer on failure.
      */
 
-    extern const char *current_target;
+    extern std::string current_target;
     SECURITY_ATTRIBUTES secattr = { sizeof(secattr) };
     STARTUPINFO info = { sizeof(info) };
     PROCESS_INFORMATION processInfo;
@@ -131,23 +131,27 @@ int attempt_bis_binarize(char *source, char *target) {
 
     // Read P3D and create a list of required files
     if (!is_rtm) {
-        f_source = fopen(source, "rb");
-        if (!f_source) {
-            printf("Failed to open %s.\n", source);
-            return 1;
-        }
+        //f_source = fopen(source, "rb");
+        //if (!f_source) {
+        //    printf("Failed to open %s.\n", source);
+        //    return 1;
+        //}
 
-        fseek(f_source, 8, SEEK_SET);
-        fread(&num_lods, 4, 1, f_source);
-        mlod_lods.resize(num_lods);
-        num_lods = read_lods(f_source, mlod_lods, num_lods);
-        fflush(stdout);
-        if (num_lods < 0) {
-            printf("Source file seems to be invalid P3D.\n");
-            return 2;
-        }
 
-        fclose(f_source);
+        //P3DFile f(logger);
+        //f.readMLOD(f_source); //#TODO compact variant that just reads lods without modelinfo
+
+        //fseek(f_source, 8, SEEK_SET);
+        //fread(&num_lods, 4, 1, f_source);
+        //mlod_lods.resize(num_lods);
+        //num_lods = read_lods(f_source, mlod_lods, num_lods);
+        //fflush(stdout);
+        //if (num_lods < 0) {
+        //    printf("Source file seems to be invalid P3D.\n");
+        //    return 2;
+        //}
+        //
+        //fclose(f_source);
 
         memset(dependencies, 0, sizeof(dependencies));
         for (i = 0; i < num_lods; i++) {
@@ -189,7 +193,7 @@ int attempt_bis_binarize(char *source, char *target) {
     auto tempfolder = create_temp_folder(filename);
 
     if (!tempfolder) {
-        errorf("Failed to create temp folder.\n");
+        logger.error("Failed to create temp folder.\n");
         return 1;
     }
 
@@ -203,7 +207,7 @@ int attempt_bis_binarize(char *source, char *target) {
         auto newFolder = create_temp_folder(temp);
 
         if (!newFolder) {
-            errorf("Failed to create temp folder.\n");
+            logger.error("Failed to create temp folder.\n");
             return 1;
         }
         target_tempfolder = *newFolder;
@@ -216,7 +220,7 @@ int attempt_bis_binarize(char *source, char *target) {
     GetFullPathName(source, 2048, temp, NULL);
 
     if (!::copy_file(std::filesystem::path(temp), *tempfolder / temp)) {
-        errorf("Failed to copy %s to temp folder.\n", temp);
+        logger.error("Failed to copy %s to temp folder.\n", temp);
         return 2;
     }
 
@@ -249,7 +253,7 @@ int attempt_bis_binarize(char *source, char *target) {
 
             auto fileFound = find_file(filename, "");
             if (!fileFound) {
-                lwarningf(source, -1, "Failed to find file %s.\n", filename);
+                logger.warning(std::string_view(source), 0u, "Failed to find file %s.\n", filename);
                 free(dependencies[i]);
                 continue;
             }
@@ -258,7 +262,7 @@ int attempt_bis_binarize(char *source, char *target) {
             strcat(filename, dependencies[i]);
 
             if (!copy_file(fileFound->string().c_str(), filename)) {
-                errorf("Failed to copy %s to temp folder.\n", temp);
+                logger.error("Failed to copy %s to temp folder.\n", temp);
                 return 3;
             }
 
@@ -285,7 +289,7 @@ int attempt_bis_binarize(char *source, char *target) {
     strcat(command, temp);
 
     if (getenv("BIOUTPUT"))
-        debugf("cmdline: %s\n", command);
+        logger.debug("cmdline: %s\n", command);
 
     if (!getenv("BIOUTPUT")) {
         secattr.lpSecurityDescriptor = NULL;
@@ -299,12 +303,12 @@ int attempt_bis_binarize(char *source, char *target) {
         CloseHandle(processInfo.hProcess);
         CloseHandle(processInfo.hThread);
     } else {
-        errorf("Failed to binarize %s.\n", source);
+        logger.error("Failed to binarize %s.\n", source);
         return 3;
     }
 
     if (getenv("BIOUTPUT"))
-        debugf("done with binarize.exe\n");
+        logger.debug("done with binarize.exe\n");
 
     // Copy final file to target
     if (strcmp(args.positionals[0], "binarize") == 0) {
@@ -315,14 +319,14 @@ int attempt_bis_binarize(char *source, char *target) {
             return 4;
 
         if (!remove_folder(target_tempfolder)) {
-            errorf("Failed to remove temp folder.\n");
+            logger.error("Failed to remove temp folder.\n");
             return 5;
         }
     }
 
     // Clean Up
     if (!remove_folder(*tempfolder)) {
-        errorf("Failed to remove temp folder.\n");
+        logger.error("Failed to remove temp folder.\n");
         return 5;
     }
 
@@ -331,7 +335,7 @@ int attempt_bis_binarize(char *source, char *target) {
 #endif
 
 
-int binarize(std::filesystem::path source, std::filesystem::path target) {
+int binarize(std::filesystem::path source, std::filesystem::path target, Logger& logger) {
     /*
      * Binarize the given file. If source and target are identical, the target
      * is overwritten. If the source is a P3D, it is converted to ODOL. If the
@@ -348,14 +352,14 @@ int binarize(std::filesystem::path source, std::filesystem::path target) {
     if (fileExtension == ".cpp" ||
         fileExtension == ".rvmat" ||
         fileExtension == ".ext") //#TODO not ext! only description.ext
-        return Rapifier::rapify_file(source.string().c_str(), target.string().c_str());
+        return Rapifier::rapify_file(source.string().c_str(), target.string().c_str(), logger);
 
     if (fileExtension == ".p3d" ||
         fileExtension == ".rtm") {
 #ifdef _WIN32
         int success;
         extern bool warned_bi_not_found;
-        //success = attempt_bis_binarize(source, target);
+        //success = attempt_bis_binarize(source, target, logger);
         //if (success >= 0)
         //    return success;
         //if (!warned_bi_not_found) {
@@ -364,14 +368,14 @@ int binarize(std::filesystem::path source, std::filesystem::path target) {
         //}
 #endif
         if (fileExtension == ".p3d")
-            return mlod2odol(source.string().c_str(), target.string().c_str());
+            return mlod2odol(source.string().c_str(), target.string().c_str(), logger);
     }
 
     return -1;
 }
 
 
-int cmd_binarize() {
+int cmd_binarize(Logger& logger) {
     int success;
 
     if (args.num_positionals == 1) {
@@ -379,19 +383,19 @@ int cmd_binarize() {
     }
 
     if (args.num_positionals == 2) {
-        success = binarize(args.positionals[1], "-");
+        success = binarize(args.positionals[1], "-", logger);
     } else {
         // check if target already exists
         if (std::filesystem::exists(args.positionals[2]) && !args.force) {
-            errorf("File %s already exists and --force was not set.\n", args.positionals[2]);
+            logger.error("File %s already exists and --force was not set.\n", args.positionals[2]);
             return 1;
         }
 
-        success = binarize(args.positionals[1], args.positionals[2]);
+        success = binarize(args.positionals[1], args.positionals[2], logger);
     }
 
     if (success == -1) {
-        errorf("File is no P3D and doesn't seem rapifiable.\n");
+        logger.error("File is no P3D and doesn't seem rapifiable.\n");
         return 1;
     }
 

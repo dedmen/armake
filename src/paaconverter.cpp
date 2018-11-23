@@ -47,6 +47,7 @@
 #include "args.h"
 #include "utils.h"
 #include "paaconverter.h"
+#include "logger.h"
 
 #define COMP_NONE 0
 #define COMP_LZSS 1
@@ -321,7 +322,7 @@ int calculate_maximum_color(unsigned char *imgdata, int num_pixels, unsigned cha
     return 0;
 }
 
-int PAAConverter::img2paa(std::istream &source, std::ostream &target, PAAType paatype) {
+int PAAConverter::img2paa(std::istream &source, std::ostream &target, Logger& logger, PAAType paatype) {
     /*
      * Converts source image to target PAA.
      *
@@ -344,19 +345,19 @@ int PAAConverter::img2paa(std::istream &source, std::ostream &target, PAAType pa
         case PAAType::DXT5:
             break;
         case PAAType::DXT3:
-            errorf("DXT3 support is not implemented.\n");
+            logger.error("DXT3 support is not implemented.\n");
             return 4;
         case PAAType::ARGB4444:
-            errorf("ARGB4444 support is not implemented.\n");
+            logger.error("ARGB4444 support is not implemented.\n");
             return 4;
         case PAAType::ARGB1555:
-            errorf("ARGB1555 support is not implemented.\n");
+            logger.error("ARGB1555 support is not implemented.\n");
             return 4;
         case PAAType::AI88:
-            errorf("AI88 support is not implemented.\n");
+            logger.error("AI88 support is not implemented.\n");
             return 4;
         default:
-            errorf("Unrecognized PAA type \"%s\".\n", args.paatype);
+            logger.error("Unrecognized PAA type \"%s\".\n", args.paatype);
             return 4;
     }
 
@@ -378,7 +379,7 @@ int PAAConverter::img2paa(std::istream &source, std::ostream &target, PAAType pa
 
     unsigned char* tmp = stbi_load_from_callbacks(&cbacks, &source, &w, &h, &num_channels, 4);
     if (!tmp) {
-        errorf("Failed to load image.\n");
+        logger.error("Failed to load image.\n");
         return 1;
     }
 
@@ -402,7 +403,7 @@ int PAAConverter::img2paa(std::istream &source, std::ostream &target, PAAType pa
     }
 
     if (width % 4 != 0 || height % 4 != 0) {
-        errorf("Dimensions are no multiple of 4.\n");
+        logger.error("Dimensions are no multiple of 4.\n");
         stbi_image_free(tmp);
         return 2;
     }
@@ -469,11 +470,11 @@ int PAAConverter::img2paa(std::istream &source, std::ostream &target, PAAType pa
             lzo_uint in_len = datalen;
 
             if (lzo_init() != LZO_E_OK) {
-                errorf("Failed to initialize LZO for compression.\n");
+                logger.error("Failed to initialize LZO for compression.\n");
                 return 6;
 	    }
             if (lzo1x_1_compress(tmpCopy.data(), in_len, outputdata.data(), &out_len, LZOWorkMem.data()) != LZO_E_OK) {
-                errorf("Failed to compress image data.\n");
+                logger.error("Failed to compress image data.\n");
                 return 6;
             }
 
@@ -499,7 +500,7 @@ int PAAConverter::img2paa(std::istream &source, std::ostream &target, PAAType pa
 
         auto tmpCpy = imgdata;
         if (!stbir_resize_uint8(imgdata.data(), width * 2, height * 2, 0, tmpCpy.data(), width, height, 0, 4)) {
-            errorf("Failed to resize image.\n");
+            logger.error("Failed to resize image.\n");
             return 7;
         }
         imgdata = tmpCpy;
@@ -517,7 +518,7 @@ int PAAConverter::img2paa(std::istream &source, std::ostream &target, PAAType pa
     return 0;
 }
 
-int PAAConverter::paa2img(std::istream &source, std::ostream &target) {
+int PAAConverter::paa2img(std::istream &source, std::ostream &target, Logger& logger) {
     /*
      * Converts PAA to PNG.
      *
@@ -535,7 +536,7 @@ int PAAConverter::paa2img(std::istream &source, std::ostream &target) {
         source.read(taggsig, 4);
         taggsig[4] = 0x00;
         if (strcmp(taggsig, "GGAT") != 0) {
-            errorf("Failed to find MIPMAP pointer.\n");
+            logger.error("Failed to find MIPMAP pointer.\n"); //#TODO get rid of logger, and instead throw error exceptions
             return 2;
         }
 
@@ -582,16 +583,16 @@ int PAAConverter::paa2img(std::istream &source, std::ostream &target) {
     if (compression == COMP_LZO) {
         lzo_uint out_len = imgdatalen;
         if (lzo_init() != LZO_E_OK) {
-            errorf("Failed to initialize LZO for decompression.\n");
+            logger.error("Failed to initialize LZO for decompression.\n");
             return 3;
         }
         if (lzo1x_decompress(compressedData.data(), datalen, imgdata.data(), &out_len, NULL) != LZO_E_OK) {
-            errorf("Failed to decompress LZO data.\n");
+            logger.error("Failed to decompress LZO data.\n");
             return 3;
         }
     }
     else if (compression == COMP_LZSS) {
-        errorf("LZSS compression support is not implemented.\n");
+        logger.error("LZSS compression support is not implemented.\n");
         return 3;
     }
     else {
@@ -606,22 +607,22 @@ int PAAConverter::paa2img(std::istream &source, std::ostream &target) {
         dxt12img(imgdata.data(), outputdata.data(), width, height);
         break;
     case PAAType::DXT3:
-        errorf("DXT3 support is not implemented.\n");
+        logger.error("DXT3 support is not implemented.\n");
         return 4;
     case PAAType::DXT5:
         dxt52img(imgdata.data(), outputdata.data(), width, height);
         break;
     case PAAType::ARGB4444:
-        errorf("ARGB4444 support is not implemented.\n");
+        logger.error("ARGB4444 support is not implemented.\n");
         return 4;
     case PAAType::ARGB1555:
-        errorf("ARGB1555 support is not implemented.\n");
+        logger.error("ARGB1555 support is not implemented.\n");
         return 4;
     case PAAType::AI88:
-        errorf("GRAY / AI88 support is not implemented.\n");
+        logger.error("GRAY / AI88 support is not implemented.\n");
         return 4;
     default:
-        errorf("Unrecognized PAA type.\n");
+        logger.error("Unrecognized PAA type.\n");
         return 4;
     }
 
@@ -629,14 +630,14 @@ int PAAConverter::paa2img(std::istream &source, std::ostream &target) {
         {
             static_cast<std::ostream*>(context)->write(static_cast<const char*>(data), size);
         }, &target, width, height, 4, outputdata.data(), width * 4)) {
-        errorf("Failed to write image to output.\n");
+        logger.error("Failed to write image to output.\n");
         return 5;
     }
 
     return 0;
 }
 
-int PAAConverter::cmd_img2paa() {
+int PAAConverter::cmd_img2paa(Logger& logger) {
     extern struct arguments args;
 
     if (args.num_positionals != 3)
@@ -644,7 +645,7 @@ int PAAConverter::cmd_img2paa() {
 
     // check if target already exists
     if (std::filesystem::exists(args.positionals[2]) && !args.force) {
-        errorf("File %s already exists and --force was not set.\n", args.positionals[2]);
+        logger.error("File %s already exists and --force was not set.\n", args.positionals[2]);
         return 1;
     }
 
@@ -653,16 +654,16 @@ int PAAConverter::cmd_img2paa() {
 
     auto paatype = typeFromString(args.paatype);
     if (paatype == PAAType::invalid) {
-        errorf("Unrecognized PAA type \"%s\".\n", args.paatype);
+        logger.error("Unrecognized PAA type \"%s\".\n", args.paatype);
         return 4;
     }
         
 
-    return img2paa(input, output);
+    return img2paa(input, output, logger);
 }
 
 
-int PAAConverter::cmd_paa2img() {
+int PAAConverter::cmd_paa2img(Logger& logger) {
     extern struct arguments args;
 
     if (args.num_positionals != 3)
@@ -670,12 +671,12 @@ int PAAConverter::cmd_paa2img() {
 
     // check if target already exists
     if (std::filesystem::exists(args.positionals[2]) && !args.force) {
-        errorf("File %s already exists and --force was not set.\n", args.positionals[2]);
+        logger.error("File %s already exists and --force was not set.\n", args.positionals[2]);
         return 1;
     }
 
     std::ifstream input(args.positionals[1], std::ifstream::in | std::ifstream::binary);
     std::ofstream output(args.positionals[2], std::ifstream::out | std::ifstream::binary);
 
-    return paa2img(input, output);
+    return paa2img(input, output, logger);
 }

@@ -82,7 +82,7 @@ bool Preprocessor::constants_parse(ConstantMapType &constants, std::string_view 
     auto found = constants.find(std::string(name)); //#TODO string_view comparions
     if (found != constants.end()) {
         constants.erase(found);
-        lnwarningf(current_target, line, "redefinition-wo-undef",
+        logger.warning(current_file, line, LoggerMessageType::redefinition_wo_undef,
             "Constant \"%s\" is being redefined without an #undef.\n", name.data());
     }
 
@@ -93,7 +93,7 @@ bool Preprocessor::constants_parse(ConstantMapType &constants, std::string_view 
     if (*ptr == '(') {
         argstr = safe_strdup(ptr + 1);
         if (strchr(argstr, ')') == NULL) {
-            lerrorf(current_target, line,
+            logger.error(current_file, line,
                     "Missing ) in argument list of \"%s\".\n", name);
             return false;
         }
@@ -144,7 +144,7 @@ bool Preprocessor::constants_parse(ConstantMapType &constants, std::string_view 
                 ptr++;
 
                 if (*ptr == '#') {
-                    lnwarningf(current_target, line, "excessive-concatenation",
+                    logger.warning(current_file, line, LoggerMessageType::excessive_concatenation,
                             "Leading token concatenation operators (##) are not necessary.\n");
                     quoted = false;
                     ptr++;
@@ -154,7 +154,7 @@ bool Preprocessor::constants_parse(ConstantMapType &constants, std::string_view 
                     ptr += 2;
 
                 if (*ptr == '#') {
-                    lerrorf(current_target, line,
+                    logger.error(current_file, line,
                             "Token concatenations cannot be stringized.\n");
                     return false;
                 }
@@ -176,7 +176,7 @@ bool Preprocessor::constants_parse(ConstantMapType &constants, std::string_view 
 
             if (i == c.num_args) {
                 if (quoted) {
-                    lerrorf(current_target, line, "Stringizing is only allowed for arguments.\n");
+                    logger.error(current_file, line, "Stringizing is only allowed for arguments.\n");
                     return false;
                 }
                 len += ptr - start;
@@ -201,14 +201,14 @@ bool Preprocessor::constants_parse(ConstantMapType &constants, std::string_view 
             // Handle concatenation
             while (*ptr == '#' && *(ptr + 1) == '#') {
                 if (quoted) {
-                    lerrorf(current_target, line,
+                    logger.error(current_file, line,
                             "Token concatenations cannot be stringized.\n");
                     return false;
                 }
 
                 ptr += 2;
                 if (!IS_MACRO_CHAR(*ptr))
-                    lnwarningf(current_target, line, "excessive-concatenation",
+                    logger.warning(current_file, line, LoggerMessageType::excessive_concatenation,
                             "Trailing token concatenation operators (##) are not necessary.\n");
             }
         }
@@ -260,7 +260,7 @@ std::optional<std::string> Preprocessor::constants_preprocess(const ConstantMapT
 
     std::vector<std::variant<std::string_view, constToProcess>> result;
 
-    auto processConstants = [&line, &constant_stack, &result, &constants]() {
+    auto processConstants = [this, &line, &constant_stack, &result, &constants]() {
         const auto processConst = 
             [&](std::variant<std::string_view, constToProcess>& var) {
 
@@ -364,7 +364,7 @@ std::optional<std::string> Preprocessor::constants_preprocess(const ConstantMapT
             }
 
             if (*ptr == 0) {
-                lerrorf(current_target, line,
+                logger.error(current_file, line,
                         "Incomplete argument list for macro \"%s\".\n", c.name.c_str());
                 return {};
             } else {
@@ -393,7 +393,7 @@ std::optional<std::string> Preprocessor::constant_value(const ConstantMapType &c
 
     if (num_args != constant.num_args) {
         if (num_args)
-            lerrorf(current_target, line,
+            logger.error(current_file, line,
                     "Macro \"%s\" expects %i arguments, %i given.\n", constant.name.c_str(), constant.num_args, num_args);
         return {};
     }
@@ -602,7 +602,7 @@ int Preprocessor::preprocess(char *source, std::ostream &f_target, ConstantMapTy
     std::ifstream f_source(source, std::ifstream::in | std::ifstream::binary);
 
     if (!f_source.is_open() || f_source.fail()) {
-        errorf("Failed to open %s.\n", source);
+        logger.error("Failed to open %s.\n", source);
         return 1;
     }
 
@@ -619,11 +619,11 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
     int level_true = 0;
     int level_comment = 0;
 
-    current_target = sourceFileName.data();
+    current_file = sourceFileName;
 
     if (std::find(include_stack.begin(), include_stack.end(), std::string(sourceFileName)) != include_stack.end()) {
 
-        errorf("Circular dependency detected, printing include stack:\n", sourceFileName);
+        logger.error("Circular dependency detected, printing include stack:\n", sourceFileName);
         fprintf(stderr, "    !!! %s\n", sourceFileName.data());
         for (auto& it : reverse(include_stack)) {
             fprintf(stderr, "        %s\n", it.c_str()); //#TODO don't print to stderr. Make a global config thingy that contains the error stream (might be file or even network)
@@ -673,7 +673,7 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
         constant_stack c;
         std::optional<std::string> preprocessedLine = constants_preprocess(constants, curLine, line, c);
         if (!preprocessedLine) {
-            lerrorf(sourceFileName.data(), line, "Failed to resolve macros.\n");
+            logger.error(sourceFileName, line, "Failed to resolve macros.\n");
             //return 1; 
             //#TODO exceptions
         }
@@ -829,14 +829,14 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
 
                 auto firstQuote = directive_args.find_first_of('"');
                 if (firstQuote == std::string::npos) { //No quotes around path
-                    lerrorf(sourceFileName.data(), line, "Failed to parse #include.\n");
+                    logger.error(sourceFileName, line, "Failed to parse #include.\n");
                     __itt_task_end(preprocDomain);
                     return 5;
                 }
                 auto lastQuote = directive_args.find_last_of('"');
 
                 if (lastQuote == std::string::npos) {
-                    lerrorf(sourceFileName.data(), line, "Failed to parse #include.\n");
+                    logger.error(sourceFileName, line, "Failed to parse #include.\n");
                     __itt_task_end(preprocDomain);
                     return 6;
                 }
@@ -845,7 +845,7 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
 
                 auto fileFound = find_file(directive_args.c_str(), sourceFileName);
                 if (!fileFound) {
-                    lerrorf(sourceFileName.data(), line, "Failed to find %s.\n", directive_args.c_str());
+                    logger.error(sourceFileName, line, "Failed to find %s.\n", directive_args.c_str());
                     __itt_task_end(preprocDomain);
                     return 7;
                 }
@@ -853,7 +853,7 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
                 std::ifstream includefile(fileFound->string());
 
                 if (!includefile.is_open() || includefile.fail()) {
-                    errorf("Failed to open %s.\n", fileFound->string().c_str());
+                    logger.error("Failed to open %s.\n", fileFound->string().c_str());
                     __itt_task_end(preprocDomain);
                     return 1;
                 }
@@ -862,7 +862,7 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
 
                 include_stack.pop_back();
 
-                current_target = sourceFileName.data();
+                current_file = sourceFileName;
 
                 if (success) {
                     __itt_task_end(preprocDomain);
@@ -871,7 +871,7 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
                    
             } else if (directive == "define") { //#TODO directive string to enum
                 if (!constants_parse(constants, directive_args, line)) {
-                    lerrorf(sourceFileName.data(), line, "Failed to parse macro definition.\n");
+                    logger.error(sourceFileName, line, "Failed to parse macro definition.\n");
                     __itt_task_end(preprocDomain);
                     return 3;
                 }
@@ -895,7 +895,7 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
                     level_true = level;
             } else if (directive == "endif") {
                 if (level == 0) {
-                    lerrorf(sourceFileName.data(), line, "Unexpected #endif.\n");
+                    logger.error(sourceFileName, line, "Unexpected #endif.\n");
                     __itt_task_end(preprocDomain);
                     return 4;
                 }
@@ -903,7 +903,7 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
                     level_true--;
                 level--;
             } else {
-                lerrorf(sourceFileName.data(), line, "Unknown preprocessor directive \"%s\".\n", directive);
+                logger.error(sourceFileName, line, "Unknown preprocessor directive \"%s\".\n", directive.c_str());
                 __itt_task_end(preprocDomain);
                 return 5;
             }

@@ -25,7 +25,7 @@
 
 #include "utils.h"
 #include <string>
-
+#include "logger.h"
 
 struct shader_ref {
     uint32_t id;
@@ -54,9 +54,13 @@ struct stage_transform {
     float transform[4][3];
 };
 
-struct material {
-    material();
-    material(std::string p) : path(std::move(p)) {}
+class Material {
+    Logger& logger;
+public:
+    Material(Logger& logger) : logger(logger) {}
+    Material(Logger& logger, std::string p) : logger(logger), path(std::move(p)) {}
+
+
     std::string path;
     uint32_t type;
     struct color emissive;
@@ -78,7 +82,7 @@ struct material {
     std::vector<stage_texture> textures;
     std::vector<stage_transform> transforms;
     struct stage_texture dummy_texture;
+
+    int read();
+    void writeTo(std::ostream& output);
 };
-
-
-int read_material(struct material *material);

@@ -28,6 +28,7 @@
 #include <unordered_set>
 #include <execution>
 #include <utility> //std::hash
+#include "logger.h"
 
 #define MAXCLASSES 4096
 
@@ -362,11 +363,11 @@ public:
 class Config {
 public:
     //Does not preprocess the input text
-    static Config fromRawText(std::istream& input, bool buildParentTree = true);
-    static Config fromPreprocessedText(std::istream &input, struct lineref &lineref, bool buildParentTree = true);
-    static Config fromBinarized(std::istream &input, bool buildParentTree = true);
+    static Config fromRawText(std::istream& input, Logger& logger, bool buildParentTree = true);
+    static Config fromPreprocessedText(std::istream &input, struct lineref &lineref, Logger& logger, bool buildParentTree = true);
+    static Config fromBinarized(std::istream &input, Logger& logger, bool buildParentTree = true);
     void toBinarized(std::ostream &output);
-    void toPlainText(std::ostream &output, std::string_view indent = "    ");
+    void toPlainText(std::ostream &output, Logger& logger, std::string_view indent = "    ");
 
     bool hasConfig() const { return static_cast<bool>(config); }
     std::shared_ptr<ConfigClass> getConfig() const { return config; }
@@ -408,8 +409,8 @@ class Rapifier {
 
 public:
     static bool isRapified(std::istream &input);
-    static int rapify_file(const char* source, const char* target);
-    static int rapify_file(std::istream &source, std::ostream &target, const char* sourceFileName);
+    static int rapify_file(const char* source, const char* target, Logger& logger);
+    static int rapify_file(std::istream &source, std::ostream &target, const char* sourceFileName, Logger& logger);
 
     static int rapify(const ConfigClass& cls, std::ostream& output);
 };

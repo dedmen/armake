@@ -81,10 +81,14 @@
 
 //#include "utils.h"
 #include "model_config.h"
+#include "material.h"
 #include "matrix.h"
 #include <vector>
 #include <memory>
+#include "logger.h"
 
+
+struct model_info;
 
 struct uv_pair {
     float u;
@@ -137,7 +141,12 @@ struct mlod_selection {
     std::vector<uint8_t> faces;
 };
 
-struct mlod_lod {
+class mlod_lod {
+public:
+
+    float getBoundingSphere(const vector3& center);
+    bool read(std::istream& source);
+
     uint32_t num_points;
     uint32_t num_facenormals;
     uint32_t num_faces;
@@ -176,6 +185,10 @@ struct odol_bonelink {
 };
 
 struct odol_section {
+
+    void writeTo(std::ostream& output);
+
+
     uint32_t face_start;
     uint32_t face_end;
     uint32_t face_index_start;
@@ -192,6 +205,9 @@ struct odol_section {
 };
 
 struct odol_selection {
+
+    void writeTo(std::ostream& output);
+
     std::string name;
     uint32_t num_faces;
     std::vector<uint32_t> faces;
@@ -213,7 +229,13 @@ struct odol_vertexboneref {
     uint8_t weights[4][2];
 };
 
-struct odol_lod {
+class odol_lod {
+public:
+
+    uint32_t add_point(const mlod_lod &mlod_lod, const model_info &model_info,
+        uint32_t point_index_mlod, vector3 normal, struct uv_pair *uv_coords, Logger& logger);
+    void writeTo(std::ostream& output);
+
     uint32_t num_proxies;
     std::vector<odol_proxy> proxies;
     uint32_t num_bones_subskeleton;
@@ -231,7 +253,7 @@ struct odol_lod {
     uint32_t num_textures;
     char *textures;
     uint32_t num_materials;
-    std::vector<struct material> materials;
+    std::vector<Material> materials;
     std::vector<uint32_t> point_to_vertex;
     std::vector<uint32_t> vertex_to_point;
     std::vector<uint32_t> face_lookup;
@@ -276,6 +298,9 @@ struct lod_indices {
 };
 
 struct model_info {
+
+    void writeTo(std::ostream& output);
+
     std::vector<float> lod_resolutions;
     uint32_t index;
     float bounding_sphere;
@@ -321,6 +346,31 @@ struct model_info {
     uint32_t always_0;
 };
 
-int read_lods(FILE *f_source, std::vector<mlod_lod> &mlod_lods, uint32_t num_lods);
+int mlod2odol(const char *source, const char *target, Logger& logger);
 
-int mlod2odol(const char *source, const char *target);
+class P3DFile {
+    
+    Logger& logger;
+
+    int read_lods(std::istream &f_source, uint32_t num_lods);
+    //#TODO return the boxes with a pair
+    void getBoundingBox(vector3 &bbox_min, vector3 &bbox_max, bool visual_only, bool geometry_only);
+
+    void get_mass_data();
+    void build_model_info();
+
+    void write_animations(std::ostream& output);
+    void convert_lod(mlod_lod &mlod_lod, odol_lod &odol_lod);
+
+
+    uint32_t num_lods;
+    std::vector<mlod_lod> mlod_lods;
+    struct model_info model_info;
+
+public:
+    P3DFile(Logger& logger) : logger(logger){}
+
+    int readMLOD(std::filesystem::path sourceFile);
+    int writeODOL(std::filesystem::path targetFile);
+
+};

@@ -105,6 +105,7 @@ extern int yydebug;
 #include "filesystem.h"
 #include "preprocess.h"
 #include "rapify.h"
+#include "logger.h"
 
 #define YYDEBUG 0
 #define YYERROR_VERBOSE 1
@@ -113,6 +114,7 @@ struct parserStaticData {
     bool allow_val = false;
     bool allow_arr = false;
     bool last_was_class = false;
+    Logger* logger;
 };
 
 struct YYTypeStruct {
@@ -486,9 +488,9 @@ static const yytype_uint8 yytranslate[] =
   /* YYRLINE[YYN] -- Source line where rule number YYN was defined.  */
 static const yytype_uint8 yyrline[] =
 {
-       0,    81,    81,    83,    84,    85,    88,    89,    90,    91,
-      92,    95,    96,    97,   100,   101,   102,   103,   104,   105,
-     108,   109
+       0,    83,    83,    85,    86,    87,    90,    91,    92,    93,
+      94,    97,    98,    99,   102,   103,   104,   105,   106,   107,
+     110,   111
 };
 #endif
 
@@ -1179,6 +1181,7 @@ YYLTYPE yylloc = yyloc_default;
   int yytoken = 0;
   /* The variables used to return semantic value and location from the
      action routines.  */
+  YYSTYPE yyval;
   YYLTYPE yyloc;
 
 #if YYERROR_VERBOSE
@@ -1383,7 +1386,7 @@ yyreduce:
      users should not rely upon it.  Assigning to YYVAL
      unconditionally makes the parser a bit smaller, and it avoids a
      GCC warning that YYVAL may be used uninitialized.  */
-  YYSTYPE& yyval = yyvsp[1-yylen];
+  yyval = yyvsp[1-yylen];
 
   /* Default location. */
   YYLLOC_DEFAULT (yyloc, (yylsp - yylen), yylen);
@@ -1755,7 +1758,7 @@ void* yyget_extra(void* yyscanner);
 int yylex_init(void** ptr_yy_globals);
 int yylex_destroy(void* yyscanner);
 
-bool parse_file(std::istream& f, struct lineref &lineref, ConfigClass &result) {
+bool parse_file(std::istream& f, struct lineref &lineref, Logger& logger, ConfigClass &result) {
 #if YYDEBUG == 1
     yydebug = 1;
 #endif
@@ -1763,6 +1766,7 @@ bool parse_file(std::istream& f, struct lineref &lineref, ConfigClass &result) {
     yylex_init(&yyscanner);
     yyset_extra(&f, yyscanner);
     parserStaticData staticData;
+    staticData.logger = &logger;
 
 
     do { 
@@ -1794,9 +1798,9 @@ void yyerror(YYLTYPE* yylloc, ConfigClass &result, struct lineref &lineref, pars
 
 
     if (lineref.empty)
-        errorf("%s Line %i\n", s, yylloc->first_line);
+        staticData.logger->error("%s Line %i\n", s, yylloc->first_line);
     else
-        lerrorf(lineref.file_names[lineref.file_index[yylloc->first_line]].c_str(),
+        staticData.logger->error(lineref.file_names[lineref.file_index[yylloc->first_line]],
                 lineref.line_number[yylloc->first_line], "%s\n", s);
 
     fprintf(stderr, " %s", text.c_str());

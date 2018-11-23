@@ -23,6 +23,7 @@
 #include <string.h>
 #include <filesystem>
 #include "unpack.h"
+#include <iostream>
 //#include <unistd.h>
 
 #ifdef _WIN32
@@ -106,9 +107,7 @@ bool file_allowed(std::string_view filename) {
     return true;
 }
 
-
-
-int Builder::binarize_callback(const std::filesystem::path &root, const std::filesystem::path &source, const char *junk) {
+int Builder::binarize_callback(const std::filesystem::path &root, const std::filesystem::path &source) {
 
     std::string filename = source.string().substr(root.string().length() + 1);
 
@@ -124,7 +123,7 @@ int Builder::binarize_callback(const std::filesystem::path &root, const std::fil
         target.replace(target.length() - 3, 3, "bin");
 
 
-    const int success = binarize(source, target);
+    const int success = binarize(source, target, logger);
 
     std::string_view p3do(".p3do");
     if (std::equal(p3do.rbegin(), p3do.rend(), filename.rbegin()))
@@ -155,15 +154,15 @@ int Builder::buildDirectory(std::filesystem::path inputDirectory, std::filesyste
         //They will throw if something about the path is seriously wrong
 
         if (std::filesystem::exists(targetPbo) && !args.force) {
-            errorf("File %s already exists and --force was not set.\n", targetPbo.c_str());
+            logger.error("File %s already exists and --force was not set.\n", targetPbo.c_str());
             return 1;
         }
         if (!std::filesystem::exists(inputDirectory)) {
-            errorf("Source directory %s not found.\n", inputDirectory.c_str());
+            logger.error("Source directory %s not found.\n", inputDirectory.c_str());
             return 1;
         }
     } catch (const std::filesystem::filesystem_error& err) {
-        errorf("Failed to check existence of file %s. Error code: %u\n", err.path1().c_str(), err.code());
+        logger.error("Failed to check existence of file %s. Error code: %u\n", err.path1().c_str(), err.code());
         return 1;
     }
 
@@ -183,7 +182,7 @@ int Builder::buildDirectory(std::filesystem::path inputDirectory, std::filesyste
         auto seperatorOffset = ext.find_first_of('=');
 
         if (seperatorOffset == std::string::npos) { //no seperator found
-            errorf("Invalid header extension format (%s).\n", args.headerextensions[i]);
+            logger.error("Invalid header extension format (%s).\n", args.headerextensions[i]);
             return 6;
         }
 
@@ -205,7 +204,7 @@ int Builder::buildDirectory(std::filesystem::path inputDirectory, std::filesyste
         std::string prefixUnclean(found->value);
         std::replace(found->value.begin(), found->value.end(), '/', '\\');
         if (prefixUnclean != found->value)
-            warningf("Prefix name contains forward slashes: %s\n", prefixUnclean.c_str());
+            logger.warning("Prefix name contains forward slashes: %s\n", prefixUnclean.c_str());
         addonPrefix = found->value;
     }
     else {
@@ -218,7 +217,7 @@ int Builder::buildDirectory(std::filesystem::path inputDirectory, std::filesyste
         std::string prefixUnclean(tmp);
         std::replace(tmp.begin(), tmp.end(), '/', '\\');
         if (prefixUnclean != tmp)
-            warningf("Prefix name contains forward slashes: %s\n", prefixUnclean.c_str());
+            logger.warning("Prefix name contains forward slashes: %s\n", prefixUnclean.c_str());
 
         addonPrefix = pboProperties.emplace_back("prefix", std::move(tmp)).value;
         //#TODO verbose log that prefix was read from file
@@ -230,7 +229,7 @@ int Builder::buildDirectory(std::filesystem::path inputDirectory, std::filesyste
 
     std::ofstream outputFile(targetPbo, std::ofstream::binary);
     if (!outputFile.is_open()) {
-        errorf("Failed to open %s.\n", targetPbo.c_str());
+        logger.error("Failed to open %s.\n", targetPbo.c_str());
         return 2;
     }
 
@@ -242,7 +241,7 @@ int Builder::buildDirectory(std::filesystem::path inputDirectory, std::filesyste
     // create and prepare temp folder
     auto tempfolder = create_temp_folder(addonPrefix.data());
     if (!tempfolder) {
-        errorf("Failed to create temp folder.\n");
+        logger.error("Failed to create temp folder.\n");
         return 2;
     }
 
@@ -250,20 +249,31 @@ int Builder::buildDirectory(std::filesystem::path inputDirectory, std::filesyste
         remove_folder(*tempfolder);
     });
 
-    if (!copy_directory(args.positionals[1], *tempfolder)) {
-        errorf("Failed to copy to temp folder.\n");
+
+
+
+    static __itt_string_handle* handle_copy_directory = __itt_string_handle_create("copy_directory");
+
+    __itt_task_begin(fsDomain, __itt_null, __itt_null, handle_copy_directory);
+    try {
+        std::filesystem::copy(args.positionals[1], *tempfolder, std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing);
+    } catch (std::filesystem::filesystem_error& ex) {
+        logger.error("Failed to copy to temp folder. %s \nFrom: %s\nTo: %s", ex.what(), ex.path1().string().c_str(), ex.path2().string().c_str());
+        __itt_task_end(fsDomain);
         return 3;
     }
+
+    __itt_task_end(fsDomain);
 
     // preprocess and binarize stuff if required
     if (!args.packonly &&
         !std::filesystem::exists(inputDirectory / "$NOBIN$") &&
         !std::filesystem::exists(inputDirectory / "$NOBIN-NOTEST$")) {
-        if (traverse_directory(tempfolder->string().c_str(), [this](const std::filesystem::path& root, const std::filesystem::path& file, const char*) {
-            binarize_callback(root, file, "");
-        }, "")) {
+        if (traverse_directory(tempfolder->string().c_str(), [this](const std::filesystem::path& root, const std::filesystem::path& file) {
+            binarize_callback(root, file);
+        })) {
             current_target = args.positionals[1];
-            errorf("Failed to binarize some files.\n");
+            logger.error("Failed to binarize some files.\n");
             return 4;
         }
 
@@ -299,7 +309,7 @@ int Builder::buildDirectory(std::filesystem::path inputDirectory, std::filesyste
     tempFolderDeletionGuard.dismiss();
     // remove temp folder
     if (!remove_folder(*tempfolder)) {
-        errorf("Failed to remove temp folder.\n");
+        logger.error("Failed to remove temp folder.\n");
         return 11;
     }
 
@@ -309,7 +319,7 @@ int Builder::buildDirectory(std::filesystem::path inputDirectory, std::filesyste
         char path_signature[2048];
 
         if (strcmp(strrchr(args.privatekey, '.'), ".biprivatekey") != 0) {
-            errorf("File %s doesn't seem to be a valid private key.\n", args.positionals[1]);
+            logger.error("File %s doesn't seem to be a valid private key.\n", args.positionals[1]);
             return 1;
         }
 
@@ -333,12 +343,12 @@ int Builder::buildDirectory(std::filesystem::path inputDirectory, std::filesyste
 
         // check if target already exists
         if (std::filesystem::exists(path_signature) && !args.force) {
-            errorf("File %s already exists and --force was not set.\n", path_signature);
+            logger.error("File %s already exists and --force was not set.\n", path_signature);
             return 2;
         }
 
         if (sign_pbo(args.positionals[2], args.privatekey, path_signature)) {
-            errorf("Failed to sign file.\n");
+            logger.error("Failed to sign file.\n");
             return 3;
         }
     }
@@ -353,8 +363,8 @@ int Builder::buildDirectory(std::filesystem::path inputDirectory, std::filesyste
 
 }
 
-int cmd_build() {
-    extern const char *current_target;
+int cmd_build(Logger& logger) {
+    extern std::string current_target;
 
     if (args.num_positionals != 3)
         return 128;
@@ -370,10 +380,7 @@ int cmd_build() {
     }());
     std::string_view targetPbo = args.positionals[2];
 
-    Builder builder;
+    Builder builder(logger);
 
     return builder.buildDirectory(sourceDirectory, targetPbo);
-
-
-
 }

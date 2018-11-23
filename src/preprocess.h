@@ -28,6 +28,7 @@
 #include <map>
 #include <unordered_map>
 #include <filesystem>
+#include "logger.h"
 
 
 #define MAXCONSTS 4096
@@ -73,15 +74,18 @@ private:
     //Replace block comments by empty lines instead of ommiting them
     bool keepLineCount = true;
     struct lineref lineref;
-    static bool constants_parse(ConstantMapType &constants, std::string_view definition, int line);
-    static std::optional<std::string> constants_preprocess(const ConstantMapType &constants, std::string_view source, int line, constant_stack & constant_stack);
-    static std::optional<std::string> constant_value(const ConstantMapType &constants, ConstantMapType::const_iterator constant,
+    bool constants_parse(ConstantMapType &constants, std::string_view definition, int line);
+    std::optional<std::string> constants_preprocess(const ConstantMapType &constants, std::string_view source, int line, constant_stack & constant_stack);
+    std::optional<std::string> constant_value(const ConstantMapType &constants, ConstantMapType::const_iterator constant,
         int num_args, std::vector<std::string>& args, int value, constant_stack &constant_stack);
 
     char * resolve_macros(char *string, size_t buffsize, ConstantMapType &constants);
 
-public:
+    std::string_view current_file; //used for logging errors
 
+    Logger& logger;
+public:
+    Preprocessor(Logger& logger) : logger(logger){}
 
 
     int preprocess(char *source, std::ostream &f_target, ConstantMapType &constants);

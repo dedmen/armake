@@ -30,6 +30,7 @@
 #include "utils.h"
 #include "unpack.h"
 #include <numeric>
+#include "logger.h"
 
 
 bool is_garbage(struct header *header) {
@@ -118,7 +119,7 @@ void PboEntry::write(std::ostream& out, bool noDate) const {
         case PboEntryPackingMethod::encrypted: header.method = 'Encr'; break;
     }
     header.originalsize = original_size;
-    header.reserved = '3ECA'; //#TODO remove dis?
+    header.reserved = 0;// '3ECA'; //#TODO remove dis?
     //time is unused by Arma. We could write more misc stuff into there for a total of 8 bytes
     header.timestamp = 0;// noDate ? 0 : std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     header.datasize = data_size;
@@ -296,9 +297,9 @@ void PboWriter::writePbo(std::ostream& output) {
 
     pboEntryHeader versHeader {
         'Vers',
-        'amra','!!ek', 0, 0
+        //'amra','!!ek', 0, 0
         //'UHTC',' UHL', 0, 0
-        //0,0,0,0
+        0,0,0,0
     };
 
     //Write a "dummy" Entry which is used as header.
@@ -331,8 +332,8 @@ void PboWriter::writePbo(std::ostream& output) {
     out.put(0);
     //Rest of the header after that is ignored, so why not have fun?
     pboEntryHeader endHeader {
-        'sihT','t si','b eh',' tse','gnat'
-        //0,0,0,0,0
+        //'sihT','t si','b eh',' tse','gnat'
+        0,0,0,0,0
     };
     endHeader.write(out);
 
@@ -350,9 +351,9 @@ void PboWriter::writePbo(std::ostream& output) {
 
 }
 
-int cmd_inspect() {
+int cmd_inspect(Logger& logger) {
     extern struct arguments args;
-    extern const char *current_target;
+    extern std::string current_target;
     FILE *f_target;
     int num_files;
     long i;
@@ -374,7 +375,7 @@ int cmd_inspect() {
     // open file
     f_target = fopen(args.positionals[1], "rb");
     if (!f_target) {
-        errorf("Failed to open %s.\n", args.positionals[1]);
+        logger.error("Failed to open %s.\n", args.positionals[1]);
         free(headers);
         return 1;
     }
@@ -389,7 +390,7 @@ int cmd_inspect() {
             fp_tmp = ftell(f_target);
             fgets(buffer, 2048, f_target);
             if (strnlen(buffer, 2048) == 2048) {
-                errorf("Header extension exceeds maximum size.");
+                logger.error("Header extension exceeds maximum size.");
                 return 4;
             }
             fseek(f_target, fp_tmp + strlen(buffer) + 1, SEEK_SET);
@@ -402,7 +403,7 @@ int cmd_inspect() {
             fp_tmp = ftell(f_target);
             fgets(buffer, 2048, f_target);
             if (strnlen(buffer, 2048) == 2048) {
-                errorf("Header extension exceeds maximum size.");
+                logger.error("Header extension exceeds maximum size.");
                 return 4;
             }
             fseek(f_target, fp_tmp + strlen(buffer) + 1, SEEK_SET);
@@ -431,7 +432,7 @@ int cmd_inspect() {
         fread(&headers[num_files].data_size, sizeof(uint32_t), 1, f_target);
     }
     if (num_files > MAXFILES) {
-        errorf("Maximum number of files (%i) exceeded.\n", MAXFILES);
+        logger.error("Maximum number of files (%i) exceeded.\n", MAXFILES);
         fclose(f_target);
         free(headers);
         return 4;
@@ -456,9 +457,9 @@ int cmd_inspect() {
 }
 
 
-int cmd_unpack() {
+int cmd_unpack(Logger& logger) {
     extern struct arguments args;
-    extern const char *current_target;
+    extern std::string current_target;
     FILE *f_source;
     FILE *f_target;
     int num_files;
@@ -479,14 +480,14 @@ int cmd_unpack() {
     // open file
     f_source = fopen(args.positionals[1], "rb");
     if (!f_source) {
-        errorf("Failed to open %s.\n", args.positionals[1]);
+        logger.error("Failed to open %s.\n", args.positionals[1]);
         free(headers);
         return 1;
     }
 
     // create folder
     if (!create_folder(args.positionals[2])) {
-        errorf("Failed to create output folder %s.\n", args.positionals[2]);
+        logger.error("Failed to create output folder %s.\n", args.positionals[2]);
         fclose(f_source);
         free(headers);
         return 2;
@@ -497,7 +498,7 @@ int cmd_unpack() {
     strcat(full_path, PATHSEP_STR);
     strcat(full_path, "$PBOPREFIX$");
     if (std::filesystem::exists(full_path) && !args.force) {
-        errorf("File %s already exists and --force was not set.\n", full_path);
+        logger.error("File %s already exists and --force was not set.\n", full_path);
         fclose(f_source);
         free(headers);
         return 3;
@@ -512,7 +513,7 @@ int cmd_unpack() {
         // open header extensions file
         f_target = fopen(full_path, "wb");
         if (!f_target) {
-            errorf("Failed to open file %s.\n", full_path);
+            logger.error("Failed to open file %s.\n", full_path);
             fclose(f_source);
             free(headers);
             return 4;
@@ -523,7 +524,7 @@ int cmd_unpack() {
             fp_tmp = ftell(f_source);
             fgets(buffer, 2048, f_source);
             if (strnlen(buffer, 2048) == 2048) {
-                errorf("Header extension exceeds maximum size.");
+                logger.error("Header extension exceeds maximum size.");
                 return 4;
             }
             fseek(f_source, fp_tmp + strlen(buffer) + 1, SEEK_SET);
@@ -536,7 +537,7 @@ int cmd_unpack() {
             fp_tmp = ftell(f_source);
             fgets(buffer, 2048, f_source);
             if (strnlen(buffer, 2048) == 2048) {
-                errorf("Header extension exceeds maximum size.");
+                logger.error("Header extension exceeds maximum size.");
                 return 4;
             }
             fseek(f_source, fp_tmp + strlen(buffer) + 1, SEEK_SET);
@@ -564,7 +565,7 @@ int cmd_unpack() {
         fread(&headers[num_files].data_size, sizeof(uint32_t), 1, f_source);
     }
     if (num_files > MAXFILES) {
-        errorf("Maximum number of files (%i) exceeded.\n", MAXFILES);
+        logger.error("Maximum number of files (%i) exceeded.\n", MAXFILES);
         fclose(f_source);
         free(headers);
         return 5;
@@ -616,7 +617,7 @@ int cmd_unpack() {
         if (strrchr(buffer, PATHSEP) != NULL) {
             *strrchr(buffer, PATHSEP) = 0;
             if (!create_folder(buffer)) {
-                errorf("Failed to create folder %s.\n", buffer);
+                logger.error("Failed to create folder %s.\n", buffer);
                 fclose(f_source);
                 return 6;
             }
@@ -624,13 +625,13 @@ int cmd_unpack() {
 
         // open target file
         if (std::filesystem::exists(full_path) && !args.force) {
-            errorf("File %s already exists and --force was not set.\n", full_path);
+            logger.error("File %s already exists and --force was not set.\n", full_path);
             fclose(f_source);
             return 7;
         }
         f_target = fopen(full_path, "wb");
         if (!f_target) {
-            errorf("Failed to open file %s.\n", full_path);
+            logger.error("Failed to open file %s.\n", full_path);
             fclose(f_source);
             return 8;
         }
@@ -655,9 +656,9 @@ int cmd_unpack() {
 }
 
 
-int cmd_cat() {
+int cmd_cat(Logger& logger) {
     extern struct arguments args;
-    extern const char *current_target;
+    extern std::string current_target;
     FILE *f_source;
     int num_files;
     int file_index;
@@ -677,7 +678,7 @@ int cmd_cat() {
     // open file
     f_source = fopen(args.positionals[1], "rb");
     if (!f_source) {
-        errorf("Failed to open %s.\n", args.positionals[1]);
+        logger.error("Failed to open %s.\n", args.positionals[1]);
         free(headers);
         return 1;
     }
@@ -721,14 +722,14 @@ int cmd_cat() {
     }
 
     if (num_files > MAXFILES) {
-        errorf("Maximum number of files (%i) exceeded.\n", MAXFILES);
+        logger.error("Maximum number of files (%i) exceeded.\n", MAXFILES);
         fclose(f_source);
         free(headers);
         return 4;
     }
 
     if (file_index == -1) {
-        errorf("PBO does not contain the file %s.\n", args.positionals[2]);
+        logger.error("PBO does not contain the file %s.\n", args.positionals[2]);
         fclose(f_source);
         free(headers);
         return 5;

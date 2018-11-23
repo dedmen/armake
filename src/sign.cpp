@@ -22,6 +22,8 @@
 #include <stdint.h>
 #include <string.h>
 #include <filesystem>
+#include "logger.h"
+
 //#include <unistd.h>
 //#include <openssl/bn.h>
 
@@ -371,7 +373,7 @@ int sign_pbo(char *path_pbo, char *path_privatekey, char *path_signature) {
 return 1;
 }
 
-int cmd_sign() {
+int cmd_sign(Logger& logger) {
     extern struct arguments args;
     char keyname[512];
     char path_signature[2048];
@@ -381,7 +383,7 @@ int cmd_sign() {
         return 128;
 
     if (strcmp(strrchr(args.positionals[1], '.'), ".biprivatekey") != 0) {
-        errorf("File %s doesn't seem to be a valid private key.\n", args.positionals[1]);
+        logger.error("File %s doesn't seem to be a valid private key.\n", args.positionals[1]);
         return 1;
     }
 
@@ -404,7 +406,7 @@ int cmd_sign() {
 
     // check if target already exists
     if (std::filesystem::exists(path_signature) && !args.force) {
-        errorf("File %s already exists and --force was not set.\n", path_signature);
+        logger.error("File %s already exists and --force was not set.\n", path_signature);
         return 1;
     }
 
@@ -412,7 +414,7 @@ int cmd_sign() {
     success = 1;
 
     if (success)
-        errorf("Failed to sign file.\n");
+        logger.error("Failed to sign file.\n");
 
     return success;
 }

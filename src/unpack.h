@@ -167,9 +167,9 @@ public:
 };
 
 
+class Logger;
+int cmd_inspect(Logger& logger);
 
-int cmd_inspect();
+int cmd_unpack(Logger& logger);
 
-int cmd_unpack();
-
-int cmd_cat();
+int cmd_cat(Logger& logger);

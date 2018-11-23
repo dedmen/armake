@@ -29,5 +29,5 @@
 //int generate_keypair(char *name, char *path_private, char *path_public);
 
 //int custom_bn2lebinpad(const BIGNUM *a, unsigned char *to, int tolen);
-
-int cmd_keygen();
+class Logger;
+int cmd_keygen(Logger& logger);

@@ -26,6 +26,7 @@
 #include "vector.h"
 #include <string>
 #include <vector>
+#include "logger.h"
 
 struct bone {
     bone(std::string n, std::string p) : name(std::move(n)), parent(std::move(p)) {}
@@ -81,6 +82,12 @@ struct animation {
 };
 
 struct skeleton_ { //using std::vector and std::string reduced the size of this from 4,3MB to 192B
+
+    void writeTo(std::ostream& output);
+    int read(std::filesystem::path source, Logger& logger);
+
+
+
     std::string name;
     uint32_t num_bones;
     std::vector<struct bone> bones;
@@ -96,6 +103,3 @@ struct skeleton_ { //using std::vector and std::string reduced the size of this 
     float mf_act;
     float t_body;
 };
-
-
-int read_model_config(const char *path, struct skeleton_ *skeleton);

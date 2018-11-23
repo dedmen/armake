@@ -34,7 +34,7 @@
 #include <sstream>
 
 
-int read_animations(ConfigClass& cfg, char *config_path, struct skeleton_ *skeleton) {
+int read_animations(ConfigClass& cfg, struct skeleton_ *skeleton, Logger& logger) {
     /*
      * Reads the animation subclasses of the given config path into the struct
      * array.
@@ -62,7 +62,7 @@ int read_animations(ConfigClass& cfg, char *config_path, struct skeleton_ *skele
         // Read anim type
         auto type = anim->getString({ "type" }); //#TODO does this work?
         if (!type) {
-            lwarningf(current_target, -1, "Animation type for %s could not be found.\n", animName.data());
+            logger.warning(current_target, -1, "Animation type for %s could not be found.\n", animName.data());
             continue;
         }
 
@@ -87,12 +87,12 @@ int read_animations(ConfigClass& cfg, char *config_path, struct skeleton_ *skele
             newAnimation.type = AnimationType::TRANSLATION_Z;
         } else if (*type == "direct") {
             newAnimation.type = AnimationType::DIRECT;
-            lwarningf(current_target, -1, "Direct animations aren't supported yet.\n");
+            logger.warning(current_target, -1, "Direct animations aren't supported yet.\n");
             continue;
         } else if (*type == "hide") {
             newAnimation.type = AnimationType::HIDE;
         } else {
-            lwarningf(current_target, -1, "Unknown animation type: %s\n", *type);
+            logger.warning(current_target, -1, "Unknown animation type: %s\n", *type);
             continue;
         }
 
@@ -116,7 +116,7 @@ int read_animations(ConfigClass& cfg, char *config_path, struct skeleton_ *skele
         newAnimation.hide_value = 0.0f;
         newAnimation.unhide_value = -1.0f;
 
-#define ERROR_READING(key) lwarningf(current_target, -1, "Error reading %s for %s.\n", key, animName.data())
+#define ERROR_READING(key) logger.warning(current_target, -1, "Error reading %s for %s.\n", key, animName.data())
 
 #define TRY_GET_STRING(targ, key) auto key = anim->getString({ #key }); if (!key) ERROR_READING(#key); newAnimation.targ = *key;
 #define TRY_GET_FLOAT(targ, key) auto key = anim->getFloat({ #key }); if (!key) ERROR_READING(#key); newAnimation.targ = *key;
@@ -153,7 +153,7 @@ int read_animations(ConfigClass& cfg, char *config_path, struct skeleton_ *skele
             } else if (*sourceAddress == "loop") {
                 newAnimation.source_address = AnimationSourceAddress::loop;
             } else {
-                lwarningf(current_target, -1, "Unknown source address \"%s\" in \"%s\".\n", sourceAddress, newAnimation.name.c_str());
+                logger.warning(current_target, -1, "Unknown source address \"%s\" in \"%s\".\n", sourceAddress, newAnimation.name.c_str());
                 continue;
             }
         }
@@ -205,185 +205,196 @@ void sort_bones(const std::vector<bone>& src, std::vector<bone>& tgt, const char
 }
 
 
-int read_model_config(const char *path, struct skeleton_ *skeleton) {
+void skeleton_::writeTo(std::ostream& output) {
+    output.write(name.c_str(), name.length() + 1);
+
+    if (!name.empty()) {
+        output.put(0); // is inherited @todo ?
+        output.write(reinterpret_cast<char*>(&num_bones), sizeof(uint32_t));
+        for (int i = 0; i < num_bones; i++) { //#TODO ranged for
+            output.write(bones[i].name.c_str(), bones[i].name.length() + 1);
+            output.write(bones[i].parent.c_str(), bones[i].parent.length() + 1);
+        }
+        output.put(0);
+    }
+}
+
+int skeleton_::read(std::filesystem::path source, Logger& logger) {
+    
     /*
      * Reads the model config information for the given model path. If no
      * model config is found, -1 is returned. 0 is returned on success
      * and a positive integer on failure.
      */
 
-    extern const char *current_target;
+    extern std::string current_target;
     FILE *f;
     int i;
     int success;
-    char model_config_path[2048];
-    char rapified_path[2048];
-    char config_path[2048];
-    char model_name[512];
-    char buffer[512]; //#TODO use one buffer for all string reads and then save them into std::string
-    struct bone *bones_tmp;
 
-    current_target = path;
+    auto x = source.string();
+    const char* path = x.c_str();
+    current_target = source.string();
+    //Convert to filesystem::path
+
+
 
     // Extract model.cfg path
-    strncpy(model_config_path, path, sizeof(model_config_path));
-    if (strrchr(model_config_path, PATHSEP) != NULL)
-        strcpy(strrchr(model_config_path, PATHSEP) + 1, "model.cfg");
-    else
-        strcpy(model_config_path, "model.cfg");
-
-    strcpy(rapified_path, model_config_path);
-    strcat(rapified_path, ".armake.bin"); // it is assumed that this doesn't exist
+    auto model_config_path = source.parent_path() / "model.cfg";
 
     if (!std::filesystem::exists(model_config_path))
         return -1;
 
     // Rapify file
 
-    Preprocessor p;
+    Preprocessor p(logger);
     std::stringstream buf;
-    p.preprocess(model_config_path, std::ifstream(model_config_path), buf, Preprocessor::ConstantMapType());
+    p.preprocess(model_config_path.string(), std::ifstream(model_config_path), buf, Preprocessor::ConstantMapType());
     buf.seekg(0);
-    auto cfg = Config::fromPreprocessedText(buf, p.getLineref());
+    auto cfg = Config::fromPreprocessedText(buf, p.getLineref(), logger);
 
-    current_target = path;
+    current_target = source.string();
 
     // Extract model name and convert to lower case
-    if (strrchr(path, PATHSEP) != NULL)
-        strcpy(model_name, strrchr(path, PATHSEP) + 1);
-    else
-        strcpy(model_name, path);
-    *strrchr(model_name, '.') = 0;
 
-    lower_case(model_name);
+    std::string model_name = source.filename().stem().string();
+    std::transform(model_name.begin(), model_name.end(), model_name.begin(), ::tolower);
 
     // Check if model entry even exists
     auto modelConfig = cfg->getClass({ "CfgModels", model_name });
     if (!modelConfig) {
-        errorf("Failed to find model config entry.\n");
+        logger.error("Failed to find model config entry.\n");
         __debugbreak();
         return 1; //#TODO fix this error code. That's not the correct one
     }
 
-    if (strchr(model_name, '_') == NULL)
-        lnwarningf(path, -1, "model-without-prefix", "Model has a model config entry but doesn't seem to have a prefix (missing _).\n");
+
+    if (model_name.find('_') == std::string::npos)
+        logger.warning(std::string_view(path), 0u, LoggerMessageType::model_without_prefix, "Model has a model config entry but doesn't seem to have a prefix (missing _).\n");
 
     // Read name
-    auto skeletonName = cfg->getString({ "CfgModels", model_name , "skeletonName"});
+    auto skeletonName = cfg->getString({ "CfgModels", model_name , "skeletonName" });
     if (!skeletonName) {
-        errorf("Failed to read skeleton name.\n");
+        logger.error("Failed to read skeleton name.\n");
         return 1;//#TODO fix this error code. That's not the correct one
     }
-    skeleton->name = std::move(*skeletonName);
+    name = std::move(*skeletonName);
 
     // Read bones
-    if (!skeleton->name.empty()) {
-        auto skeletonInherit = cfg->getString({ "CfgSkeletons", skeleton->name , "skeletonInherit" });
+    if (!name.empty()) {
+        auto skeletonInherit = cfg->getString({ "CfgSkeletons", name, "skeletonInherit" });
         if (!skeletonInherit) {
             __debugbreak();
-            errorf("Failed to read bones.\n"); //#TODO fix this wrong error message
+            logger.error("Failed to read bones.\n"); //#TODO fix this wrong error message
             return success;//#TODO fix this error code. That's not the correct one
         }
 
-        auto isDiscrete = cfg->getInt({ "CfgSkeletons", skeleton->name, "isDiscrete" });
+        auto isDiscrete = cfg->getInt({ "CfgSkeletons", name, "isDiscrete" });
         if (isDiscrete)
-            skeleton->is_discrete = (*isDiscrete > 0);
+            is_discrete = (*isDiscrete > 0);
         else
-            skeleton->is_discrete = false;
+            is_discrete = false;
 
         if (skeletonInherit->length() > 1) { // @todo: more than 1 parent
             auto skeletonBones = cfg->getArrayOfStrings({ "CfgSkeletons", *skeletonInherit , "skeletonBones" });
             if (!skeletonBones) { //#TODO differentitate between empty and not found
                 __debugbreak();
-                errorf("Failed to read bones.\n");
+                logger.error("Failed to read bones.\n");
                 return success;//#TODO fix this error code. That's not the correct one
             }
             for (i = 0; i < skeletonBones->size(); i += 2) {
-                skeleton->bones.emplace_back((*skeletonBones)[i], (*skeletonBones)[i + 1]);
-                skeleton->num_bones++;
+                bones.emplace_back((*skeletonBones)[i], (*skeletonBones)[i + 1]);
+                num_bones++;
             }
         }
 
-        auto skeletonBones = cfg->getArrayOfStrings({ "CfgSkeletons", skeleton->name , "skeletonBones" });
+        auto skeletonBones = cfg->getArrayOfStrings({ "CfgSkeletons", name , "skeletonBones" });
         if (!skeletonBones) { //#TODO differentitate between empty and not found
-            errorf("Failed to read bones.\n");
+            logger.error("Failed to read bones.\n");
             return success;//#TODO fix this error code. That's not the correct one
         }
 
         for (i = 0; i < skeletonBones->size(); i += 2) {
-            skeleton->bones.emplace_back((*skeletonBones)[i], (*skeletonBones)[i + 1]);
-            skeleton->num_bones++;
+            bones.emplace_back((*skeletonBones)[i], (*skeletonBones)[i + 1]);
+            num_bones++;
         }
 
         // Sort bones by parent
         std::vector<bone> sortedBones;
-        sort_bones(skeleton->bones, sortedBones, "");
-        skeleton->bones = sortedBones;
+        sort_bones(bones, sortedBones, "");
+        bones = sortedBones;
 
         // Convert to lower case
-        for (auto& bone : skeleton->bones) {
+        for (auto& bone : bones) {
             std::transform(bone.name.begin(), bone.name.end(), bone.name.begin(), tolower);
             std::transform(bone.parent.begin(), bone.parent.end(), bone.parent.begin(), tolower);
         }
 
-        if (skeleton->bones.size() > MAXBONES) { //https://discordapp.com/channels/105462288051380224/105462541215358976/515129500124839956
-            errorf("max bone limit reached! %u out of 255 bones being used.", skeleton->bones.size());
+        if (bones.size() > MAXBONES) { //https://discordapp.com/channels/105462288051380224/105462541215358976/515129500124839956
+            logger.error("max bone limit reached! %u out of 255 bones being used.", bones.size());
         }
     }
 
     // Read sections
     auto sectionsInherit = cfg->getString({ "CfgModels", model_name, "sectionsInherit" });
     if (!sectionsInherit) {
-        errorf("Failed to read sections.\n");
+        logger.error("Failed to read sections.\n");
         return success;
     }
 
     if (sectionsInherit->length() > 0) {
-        auto sections = cfg->getArrayOfStrings({ "CfgModels", *sectionsInherit, "sections" });
-        if (!sections) { //#TODO differentiate between empty and not found
-            errorf("Failed to read sections.\n");
+        auto sectionsRd = cfg->getArrayOfStrings({ "CfgModels", *sectionsInherit, "sections" });
+        if (!sectionsRd) { //#TODO differentiate between empty and not found
+            logger.error("Failed to read sections.\n");
             return success;
         }
-        for (auto&& it : *sections)
+        for (auto&& it : *sectionsRd)
             if (!it.empty())
-                skeleton->sections.emplace_back(it);
+                sections.emplace_back(it);
     }
 
-    auto sections = cfg->getArrayOfStrings({ "CfgModels", model_name, "sections" });
-    if (!sections) {
-        errorf("Failed to read sections.\n");
+    auto sectionsRd = cfg->getArrayOfStrings({ "CfgModels", model_name, "sections" });
+    if (!sectionsRd) {
+        logger.error("Failed to read sections.\n");
         return success;
     }
 
-    for (auto&& it : *sections)
+    for (auto&& it : *sectionsRd)
         if (!it.empty())
-            skeleton->sections.emplace_back(it);
+            sections.emplace_back(it);
 
-    skeleton->num_sections = skeleton->sections.size();
+    num_sections = sections.size();
 
     // Read animations
-    skeleton->num_animations = 0;
+    num_animations = 0;
     auto animations = cfg->getClass({ "CfgModels", model_name, "Animations" });
     if (animations) {
         //#TODO inheritance?
-        success = read_animations(*animations, config_path, skeleton);
+        success = read_animations(*animations, this, logger);
         if (success > 0) {
-            errorf("Failed to read animations.\n");
+            logger.error("Failed to read animations.\n");
             return success;
         }
     }
 
 
-    if (skeleton->name.empty() && skeleton->num_animations > 0)
-        lwarningf(path, -1, "animated-without-skeleton", "Model doesn't have a skeleton but is animated.\n");
+    if (name.empty() && num_animations > 0)
+        logger.warning(std::string_view(path), 0u, LoggerMessageType::animated_without_skeleton, "Model doesn't have a skeleton but is animated.\n");
+
+
+    //default values are 0
 
     // Read thermal stuff
-    skeleton->ht_min = *cfg->getFloat({ "CfgModels",model_name, "htMin" }); //#TODO error checking. Should use exceptions
-    skeleton->ht_max = *cfg->getFloat({ "CfgModels",model_name, "htMax" }); //#TODO error checking. Should use exceptions
-    skeleton->af_max = *cfg->getFloat({ "CfgModels",model_name, "afMax" }); //#TODO error checking. Should use exceptions
-    skeleton->mf_max = *cfg->getFloat({ "CfgModels",model_name, "mfMax" }); //#TODO error checking. Should use exceptions
-    skeleton->mf_act = *cfg->getFloat({ "CfgModels",model_name, "mfAct" }); //#TODO error checking. Should use exceptions
-    skeleton->t_body = *cfg->getFloat({ "CfgModels",model_name, "tBody" }); //#TODO error checking. Should use exceptions
+    ht_min = *cfg->getFloat({ "CfgModels",model_name, "htMin" }); //#TODO error checking. Should use exceptions
+    ht_max = *cfg->getFloat({ "CfgModels",model_name, "htMax" }); //#TODO error checking. Should use exceptions
+    af_max = *cfg->getFloat({ "CfgModels",model_name, "afMax" }); //#TODO error checking. Should use exceptions
+    mf_max = *cfg->getFloat({ "CfgModels",model_name, "mfMax" }); //#TODO error checking. Should use exceptions
+    mf_act = *cfg->getFloat({ "CfgModels",model_name, "mfAct" }); //#TODO error checking. Should use exceptions
+    t_body = *cfg->getFloat({ "CfgModels",model_name, "tBody" }); //#TODO error checking. Should use exceptions
 
     return 0;
+
+
+
+
 }

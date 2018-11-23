@@ -35,6 +35,7 @@
 #include "utils.h"
 #include "rapify.h"
 #include "rapify.tab.hpp"
+#include "Logger.h"
 
 #define YY_NO_INPUT
 #define YY_NO_UNPUT
@@ -116,10 +117,10 @@
         REJECT;
 
     if (lineref.empty) 
-        nwarningf("unquoted-string", "String \"%s\" is not quoted properly. line: %i\n", yytext, yylineno);
+        staticData.logger->warning(LoggerMessageType::unquoted_string, "String \"%s\" is not quoted properly. line: %i\n", yytext, yylineno);
     else
-        lnwarningf(lineref.file_names[lineref.file_index[yylineno]].c_str(), lineref.line_number[yylineno],
-                "unquoted-string", "String \"%s\" is not quoted properly.\n", yytext);
+        staticData.logger->warning(lineref.file_names[lineref.file_index[yylineno]], lineref.line_number[yylineno],
+                LoggerMessageType::unquoted_string, "String \"%s\" is not quoted properly.\n", yytext);
 
     RESET_VARS;
     yylval->string_value = trim({yytext, static_cast<size_t>(yyleng)});
@@ -138,10 +139,10 @@
         REJECT;
 
     if (lineref.empty) 
-        nwarningf("unquoted-string", "String \"%s\" is not quoted properly.  line: %i\n", yytext, yylineno);
+        staticData.logger->warning(LoggerMessageType::unquoted_string, "String \"%s\" is not quoted properly.  line: %i\n", yytext, yylineno);
     else
-        lnwarningf(lineref.file_names[lineref.file_index[yylineno]].c_str(), lineref.line_number[yylineno],
-                "unquoted-string", "String \"%s\" is not quoted properly.\n", yytext);
+        staticData.logger->warning(lineref.file_names[lineref.file_index[yylineno]], lineref.line_number[yylineno],
+                LoggerMessageType::unquoted_string, "String \"%s\" is not quoted properly.\n", yytext);
 
     RESET_VARS;
     yylval->string_value = trim({yytext, static_cast<size_t>(yyleng)});

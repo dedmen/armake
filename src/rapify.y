@@ -27,6 +27,7 @@
 #include "filesystem.h"
 #include "preprocess.h"
 #include "rapify.h"
+#include "logger.h"
 
 #define YYDEBUG 0
 #define YYERROR_VERBOSE 1
@@ -35,6 +36,7 @@ struct parserStaticData {
     bool allow_val = false;
     bool allow_arr = false;
     bool last_was_class = false;
+    Logger* logger;
 };
 
 struct YYTypeStruct {
@@ -116,7 +118,7 @@ void* yyget_extra(void* yyscanner);
 int yylex_init(void** ptr_yy_globals);
 int yylex_destroy(void* yyscanner);
 
-bool parse_file(std::istream& f, struct lineref &lineref, ConfigClass &result) {
+bool parse_file(std::istream& f, struct lineref &lineref, Logger& logger, ConfigClass &result) {
 #if YYDEBUG == 1
     yydebug = 1;
 #endif
@@ -124,6 +126,7 @@ bool parse_file(std::istream& f, struct lineref &lineref, ConfigClass &result) {
     yylex_init(&yyscanner);
     yyset_extra(&f, yyscanner);
     parserStaticData staticData;
+    staticData.logger = &logger;
 
 
     do { 
@@ -155,9 +158,9 @@ void yyerror(YYLTYPE* yylloc, ConfigClass &result, struct lineref &lineref, pars
 
 
     if (lineref.empty)
-        errorf("%s Line %i\n", s, yylloc->first_line);
+        staticData.logger->error("%s Line %i\n", s, yylloc->first_line);
     else
-        lerrorf(lineref.file_names[lineref.file_index[yylloc->first_line]].c_str(),
+        staticData.logger->error(lineref.file_names[lineref.file_index[yylloc->first_line]],
                 lineref.line_number[yylloc->first_line], "%s\n", s);
 
     fprintf(stderr, " %s", text.c_str());

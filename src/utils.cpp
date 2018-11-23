@@ -29,7 +29,7 @@
 #include "filesystem.h"
 #include "utils.h"
 #include <vector>
-const char *current_target;
+std::string current_target;
 
 #ifdef _WIN32
 
@@ -72,171 +72,12 @@ int stricmp(char *a, char *b) {
 
 #endif
 
-
-void infof(const char *format, ...) {
-    char buffer[4096];
-    va_list argptr;
-
-    va_start(argptr, format);
-    vsnprintf(buffer, sizeof(buffer), format, argptr);
-    va_end(argptr);
-
-#ifdef _WIN32
-    fprintf(stdout, "info: %s", buffer);
-#else
-    fprintf(stdout, "%sinfo:%s %s", COLOR_GREEN, COLOR_RESET, buffer);
-#endif
-
-    fflush(stdout);
-}
-
-
-void debugf(const char *format, ...) {
-    char buffer[4096];
-    va_list argptr;
-
-    va_start(argptr, format);
-    vsnprintf(buffer, sizeof(buffer), format, argptr);
-    va_end(argptr);
-
-#ifdef _WIN32
-    fprintf(stdout, "debug: %s", buffer);
-#else
-    fprintf(stdout, "%sdebug:%s %s", COLOR_CYAN, COLOR_RESET, buffer);
-#endif
-
-    fflush(stdout);
-}
-
-
-void warningf(const char *format, ...) {
-    char buffer[4096];
-    va_list argptr;
-
-    va_start(argptr, format);
-    vsnprintf(buffer, sizeof(buffer), format, argptr);
-    va_end(argptr);
-
-#ifdef _WIN32
-    fprintf(stderr, "warning: %s", buffer);
-#else
-    fprintf(stderr, "%swarning:%s %s", COLOR_YELLOW, COLOR_RESET, buffer);
-#endif
-
-    fflush(stderr);
-}
-
-
-void lwarningf(const char *file, int line, const char *format, ...) {
-    char buffer[4096];
-    va_list argptr;
-
-    va_start(argptr, format);
-    vsprintf(buffer, format, argptr);
-    va_end(argptr);
-
-    if (line > 0)
-        fprintf(stderr, "In file %s:%i: ", file, line);
-    else
-        fprintf(stderr, "In file %s: ", file);
-
-    warningf(buffer);
-}
-
-
-bool warning_muted(const char *name) {
-    extern struct arguments args;
-    int i;
-
-    for (i = 0; i < args.num_mutedwarnings; i++) {
-        if (strcmp(args.mutedwarnings[i], name) == 0)
-            return true;
-    }
-    return false;
-}
-
-
-void nwarningf(const char *name, const char *format, ...) {
-    char buffer[4096];
-    char temp[4096];
-    va_list argptr;
-
-    if (warning_muted(name))
-        return;
-
-    va_start(argptr, format);
-    vsprintf(buffer, format, argptr);
-    va_end(argptr);
-
-    if (buffer[strlen(buffer) - 1] == '\n')
-        buffer[strlen(buffer) - 1] = 0;
-
-    sprintf(temp, "%s [%s]\n", buffer, name);
-
-    warningf(temp);
-}
-
-
-void lnwarningf(const char *file, int line, const char *name, const char *format, ...) {
-    return;
-    char buffer[4096];
-    va_list argptr;
-
-    va_start(argptr, format);
-    vsprintf(buffer, format, argptr);
-    va_end(argptr);
-
-    if (!warning_muted(name)) {
-        if (line > 0)
-            fprintf(stderr, "In file %s:%i: ", file, line);
-        else
-            fprintf(stderr, "In file %s: ", file);
-    }
-
-    nwarningf(name, buffer);
-}
-
-
-void errorf(const char *format, ...) {
-    char buffer[4096];
-    va_list argptr;
-
-    va_start(argptr, format);
-    vsprintf(buffer, format, argptr);
-    va_end(argptr);
-
-#ifdef _WIN32
-    fprintf(stderr, "error: %s", buffer);
-#else
-    fprintf(stderr, "%serror:%s %s", COLOR_RED, COLOR_RESET, buffer);
-#endif
-
-    fflush(stderr);
-}
-
-
-void lerrorf(const char *file, int line, const char *format, ...) {
-    char buffer[4096];
-    va_list argptr;
-
-    va_start(argptr, format);
-    vsprintf(buffer, format, argptr);
-    va_end(argptr);
-
-    if (line > 0)
-        fprintf(stderr, "In file %s:%i: ", file, line);
-    else
-        fprintf(stderr, "In file %s: ", file);
-
-    errorf(buffer);
-}
-
-
 void *safe_malloc(size_t size) {
     void *result = malloc(size);
 
     if (result == NULL) {
-        errorf("Failed to allocate %i bytes.\n", size);
+        __debugbreak();
+        //errorf("Failed to allocate %i bytes.\n", size);
         exit(127);
     }
 
@@ -248,7 +89,8 @@ void *safe_realloc(void *ptr, size_t size) {
     void *result = realloc(ptr, size);
 
     if (result == NULL) {
-        errorf("Failed to reallocate %i bytes.\n", size);
+        __debugbreak();
+        //errorf("Failed to reallocate %i bytes.\n", size);
         exit(127);
     }
 
@@ -260,7 +102,8 @@ char *safe_strdup(const char *s) {
     char *result = strdup(s);
 
     if (result == NULL) {
-        errorf("Failed to reallocate %i bytes.\n", strlen(s) + 1);
+        __debugbreak();
+        //errorf("Failed to reallocate %i bytes.\n", strlen(s) + 1);
         exit(127);
     }
 
@@ -272,7 +115,8 @@ char *safe_strndup(const char *s, size_t n) {
     char *result = strndup(s, n);
 
     if (result == NULL) {
-        errorf("Failed to reallocate %i bytes.\n", n + 1);
+        __debugbreak();
+        //errorf("Failed to reallocate %i bytes.\n", n + 1);
         exit(127);
     }
 
