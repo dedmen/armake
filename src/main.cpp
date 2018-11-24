@@ -232,11 +232,6 @@ int main(int argc, char *argv[]) {
     if (success > 0)
         goto error;
 
-    for (i = 0; i < args.num_positionals; i++) {
-        if (args.positionals[i][strlen(args.positionals[i]) - 1] == PATHSEP)
-            args.positionals[i][strlen(args.positionals[i]) - 1] = 0;
-    }
-
     if (args.num_positionals == 0 || args.num_positionals > 3)
         goto error;
 

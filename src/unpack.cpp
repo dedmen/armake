@@ -31,31 +31,31 @@
 #include "unpack.h"
 #include <numeric>
 #include "logger.h"
+#include <iostream>
+#include "rapify.h"
 
 
-bool is_garbage(struct header *header) {
+bool is_garbage(PboEntry entry) {
     int i;
     char c;
 
-    if (header->packing_method != 0)
+    if (entry.method != PboEntryPackingMethod::none)
         return true;
 
-    for (i = 0; i < strlen(header->name); i++) {
-        c = header->name[i];
-        if (c <= 31)
-            return true;
-        if (c == '"' ||
-                c == '*' ||
-                c == ':' ||
-                c == '<' ||
-                c == '>' ||
-                c == '?' ||
-                c == '/' ||
-                c == '|')
-            return true;
-    }
+    bool garbageName = std::any_of(entry.name.begin(), entry.name.end(), [](char c) {
+        return 
+            c <= ' ' ||
+            c == '"' ||
+            c == '*' ||
+            c == ':' ||
+            c == '<' ||
+            c == '>' ||
+            c == '?' ||
+            c == '/' ||
+            c == '|';
+    });
 
-    return false;
+    return garbageName;
 }
 
 bool PboProperty::read(std::istream& in) {
@@ -80,12 +80,8 @@ void PboEntry::read(std::istream& in) {
     } header {};
 
     std::getline(in, name, '\0');
-    //#TODO read in one go
-    in.read(reinterpret_cast<char*>(&header.method), 4);
-    in.read(reinterpret_cast<char*>(&header.originalsize), 4);
-    in.read(reinterpret_cast<char*>(&header.reserved), 4);
-    in.read(reinterpret_cast<char*>(&header.timestamp), 4);
-    in.read(reinterpret_cast<char*>(&header.datasize), 4);
+    in.read(reinterpret_cast<char*>(&header), sizeof(header));
+
     method = PboEntryPackingMethod::none;
 
     if (header.method == 'Encr') { //encrypted
@@ -132,13 +128,20 @@ void PboEntry::write(std::ostream& out, bool noDate) const {
     out.write(reinterpret_cast<char*>(&header.datasize), 4);
 }
 
+void PboEntryBuffer::setBufferSize(size_t newSize) {
+    size_t dataLeft = egptr() - gptr();
+    auto bufferOffset = gptr() - &buffer.front(); //Where we currently are inside the buffer
+    auto bufferStartInFile = bufferEndFilePos - (dataLeft + bufferOffset); //at which offset in the PboEntry file our buffer starts
+    bufferEndFilePos = bufferStartInFile; //Back to start.
+    setg(&buffer.front(), &buffer.front(), &buffer.front()); //no data available
+
+    buffer.clear(); //So we don't copy on realloc.
+    buffer.resize(newSize);
+}
+
 int PboEntryBuffer::underflow() {
     if (gptr() < egptr()) // buffer not exhausted
         return traits_type::to_int_type(*gptr());
-
-    //gptr Pointer to current position of input sequence
-    //egptr End of the buffered part of the input sequence
-    //Beginning of the buffered part of the input sequence
 
     reader.input.seekg(file.startOffset + bufferEndFilePos);
     size_t sizeLeft = file.data_size - bufferEndFilePos;
@@ -166,15 +169,110 @@ int64_t PboEntryBuffer::xsgetn(char* _Ptr, int64_t _Count) {
             auto sizeToRead = std::min(sizeLeft, buffer.size());
             reader.input.read(buffer.data(), sizeToRead);
             bufferEndFilePos += sizeToRead;
-            dataLeft = sizeToRead;
-        }
 
-        std::copy(gptr(), gptr()+dataLeft, _Ptr);
+            setg(&buffer.front(), &buffer.front(), &buffer.front() + sizeToRead);
+
+            dataLeft = std::min(sizeToRead, (size_t)_Count);
+        } else
+            dataLeft = std::min(dataLeft, (size_t)_Count);
+
+        std::copy(gptr(), gptr() + dataLeft, _Ptr);
         _Ptr += dataLeft;
+        _Count -= dataLeft;
         gbump(dataLeft);
     }
 
     return (_Start_count - _Count);
+}
+
+std::basic_streambuf<char>::pos_type PboEntryBuffer::seekoff(off_type offs, std::ios_base::seekdir dir, std::ios_base::openmode mode) {
+    auto test = egptr();
+    auto test2 = gptr();
+
+
+    switch (dir) {
+        case std::ios_base::beg: {
+            //#TODO negative offs is error
+
+
+            size_t dataLeft = egptr() - gptr();
+            auto bufferOffset = gptr() - &buffer.front(); //Where we currently are inside the buffer
+            auto bufferStartInFile = bufferEndFilePos - (dataLeft + bufferOffset); //at which offset in the PboEntry file our buffer starts
+
+
+
+            //offset is still inside buffer
+            if (bufferStartInFile <= offs && bufferEndFilePos > offs) { 
+                auto curFilePos = (bufferEndFilePos - dataLeft);
+
+                int64_t offsetToCurPos = offs - static_cast<int64_t>(curFilePos);
+                gbump(offsetToCurPos); //Jump inside buffer till we find offs
+                return offs;
+            }
+
+            //We are outside of buffer. Just reset and exit
+            bufferEndFilePos = offs;
+            setg(&buffer.front(), &buffer.front(), &buffer.front()); //no data available
+            return bufferEndFilePos;
+
+        }
+
+        break;
+        case std::ios_base::cur: {
+                size_t dataLeft = egptr() - gptr();
+                auto curFilePos = (bufferEndFilePos - dataLeft);
+
+                if (offs == 0) return curFilePos;
+
+                if (dataLeft == 0) {
+                    bufferEndFilePos += offs;
+                    return bufferEndFilePos;
+                }
+
+
+                if (offs > 0 && dataLeft > offs) { // offset is still inside buffer
+                    gbump(offs);
+                    return curFilePos + offs;
+                }
+                if (offs > 0) { //offset is outside of buffer
+                    bufferEndFilePos = curFilePos + offs;
+                    setg(&buffer.front(), &buffer.front(), &buffer.front()); //no data available
+                    return bufferEndFilePos;
+                }
+
+                if (offs < 0) {
+
+                    auto bufferOffset = gptr() - &buffer.front(); //Where we currently are inside the buffer
+                    if (bufferOffset >= -offs) {//offset is still in buffer
+                        gbump(offs);
+                        return bufferOffset + offs;
+                    }
+
+                    bufferEndFilePos = curFilePos + offs;
+                    setg(&buffer.front(), &buffer.front(), &buffer.front()); //no data available
+                    return bufferEndFilePos;
+                }
+            }
+        break;
+        case std::ios_base::end:
+            //#TODO positive offs is error
+            bufferEndFilePos = file.data_size + offs;
+            setg(&buffer.front(), &buffer.front(), &buffer.front()); //no data available
+            return bufferEndFilePos;
+        break;
+    }
+    return -1; //#TODO this is error
+}
+
+std::basic_streambuf<char>::pos_type PboEntryBuffer::seekpos(pos_type offs, std::ios_base::openmode mode) {
+    return seekoff(offs, std::ios_base::beg, mode);
+}
+
+std::streamsize PboEntryBuffer::showmanyc() {
+    //How many characters are left
+    size_t dataLeft = egptr() - gptr();
+    
+    return (file.data_size - bufferEndFilePos) + dataLeft;
 }
 
 void PboReader::readHeaders() {
@@ -353,18 +451,10 @@ void PboWriter::writePbo(std::ostream& output) {
 
 int cmd_inspect(Logger& logger) {
     extern struct arguments args;
-    extern std::string current_target;
-    FILE *f_target;
-    int num_files;
-    long i;
-    long fp_tmp;
-    char buffer[2048];
     struct header *headers;
 
     if (args.num_positionals != 2)
         return 128;
-
-    headers = (struct header *)safe_malloc(sizeof(struct header) * MAXFILES);
 
     current_target = args.positionals[1];
 
@@ -372,87 +462,39 @@ int cmd_inspect(Logger& logger) {
     if (args.positionals[1][strlen(args.positionals[1]) - 1] == PATHSEP)
         args.positionals[1][strlen(args.positionals[1]) - 1] = 0;
 
-    // open file
-    f_target = fopen(args.positionals[1], "rb");
-    if (!f_target) {
-        logger.error("Failed to open %s.\n", args.positionals[1]);
-        free(headers);
+    std::ifstream input(args.positionals[1], std::ifstream::binary);
+    if (!input.is_open()) {
         return 1;
     }
 
-    // read header extensions
-    fseek(f_target, 1, SEEK_SET);
-    fgets(buffer, 5, f_target);
-    if (strncmp(buffer, "sreV", 4) == 0) {
-        fseek(f_target, 21, SEEK_SET);
-        printf("Header extensions:\n");
-        while (true) {
-            fp_tmp = ftell(f_target);
-            fgets(buffer, 2048, f_target);
-            if (strnlen(buffer, 2048) == 2048) {
-                logger.error("Header extension exceeds maximum size.");
-                return 4;
-            }
-            fseek(f_target, fp_tmp + strlen(buffer) + 1, SEEK_SET);
+    PboReader reader(input);
 
-            if (strlen(buffer) == 0)
-                break;
+    reader.readHeaders();
+    input.close(); //Don't need it anymore
+    printf("Header extensions:\n");
 
-            printf("- %s=", buffer);
+    for (auto& prop : reader.getProperties())
+        printf("- %s=%s\n", prop.key.c_str(), prop.value.c_str());
+    printf("\n");
 
-            fp_tmp = ftell(f_target);
-            fgets(buffer, 2048, f_target);
-            if (strnlen(buffer, 2048) == 2048) {
-                logger.error("Header extension exceeds maximum size.");
-                return 4;
-            }
-            fseek(f_target, fp_tmp + strlen(buffer) + 1, SEEK_SET);
+    auto& files = reader.getFiles();
 
-            printf("%s\n", buffer);
-        }
-        printf("\n");
-    } else {
-        fseek(f_target, 0, SEEK_SET);
-    }
+    printf("# Files: %llu\n\n", files.size());
 
-    // read headers
-    for (num_files = 0; num_files <= MAXFILES; num_files++) {
-        fp_tmp = ftell(f_target);
-        fgets(buffer, sizeof(buffer), f_target);
-        fseek(f_target, fp_tmp + strlen(buffer) + 1, SEEK_SET);
-        if (strlen(buffer) == 0) {
-            fseek(f_target, sizeof(uint32_t) * 5, SEEK_CUR);
-            break;
+    printf("Path                                                Method   Original    Packed\n");
+    printf("                                                                 Size      Size\n");
+    printf("===============================================================================\n");
+    for (auto& it : files) {
+        std::string_view packMeth = "u";
+        switch (it.method) {
+            case PboEntryPackingMethod::none: packMeth = "n";  break;
+            case PboEntryPackingMethod::version: packMeth = "v"; break;
+            case PboEntryPackingMethod::compressed: packMeth = "c"; break;
+            case PboEntryPackingMethod::encrypted: packMeth = "e"; break;
         }
 
-        strcpy(headers[num_files].name, buffer);
-        fread(&headers[num_files].packing_method, sizeof(uint32_t), 1, f_target);
-        fread(&headers[num_files].original_size, sizeof(uint32_t), 1, f_target);
-        fseek(f_target, sizeof(uint32_t) * 2, SEEK_CUR);
-        fread(&headers[num_files].data_size, sizeof(uint32_t), 1, f_target);
+        printf("%-50s %7s %9u %9u\n", it.name.c_str(), packMeth.data(), it.original_size, it.data_size);
     }
-    if (num_files > MAXFILES) {
-        logger.error("Maximum number of files (%i) exceeded.\n", MAXFILES);
-        fclose(f_target);
-        free(headers);
-        return 4;
-    }
-
-    printf("# Files: %i\n\n", num_files);
-
-    printf("Path                                                  Method  Original    Packed\n");
-    printf("                                                                  Size      Size\n");
-    printf("================================================================================\n");
-    for (i = 0; i < num_files; i++) {
-        if (headers[i].original_size == 0)
-            headers[i].original_size = headers[i].data_size;
-        printf("%-50s %9u %9u %9u\n", headers[i].name, headers[i].packing_method, headers[i].original_size, headers[i].data_size);
-    }
-
-    // clean up
-    fclose(f_target);
-    free(headers);
-
     return 0;
 }
 
@@ -460,197 +502,116 @@ int cmd_inspect(Logger& logger) {
 int cmd_unpack(Logger& logger) {
     extern struct arguments args;
     extern std::string current_target;
-    FILE *f_source;
-    FILE *f_target;
-    int num_files;
-    long i;
-    long j;
-    long fp_tmp;
-    char full_path[2048];
-    char buffer[2048];
-    struct header *headers;
-
+   
     if (args.num_positionals < 3)
         return 128;
 
-    headers = (struct header *)safe_malloc(sizeof(struct header) * MAXFILES);
+    // remove trailing slash in target
+    if (args.positionals[1][strlen(args.positionals[1]) - 1] == PATHSEP)
+        args.positionals[1][strlen(args.positionals[1]) - 1] = 0;
 
-    current_target = args.positionals[1];
-
-    // open file
-    f_source = fopen(args.positionals[1], "rb");
-    if (!f_source) {
+    std::ifstream input(args.positionals[1], std::ifstream::binary);
+    if (!input.is_open()) {
         logger.error("Failed to open %s.\n", args.positionals[1]);
-        free(headers);
         return 1;
     }
 
+    std::filesystem::path outputFolder(args.positionals[2]);
+
+    PboReader reader(input);
+    reader.readHeaders();
+
+
     // create folder
-    if (!create_folder(args.positionals[2])) {
+    if (!std::filesystem::exists(outputFolder) && !create_folder(outputFolder)) {
         logger.error("Failed to create output folder %s.\n", args.positionals[2]);
-        fclose(f_source);
-        free(headers);
         return 2;
     }
 
     // create header extensions file
-    strcpy(full_path, args.positionals[2]);
-    strcat(full_path, PATHSEP_STR);
-    strcat(full_path, "$PBOPREFIX$");
-    if (std::filesystem::exists(full_path) && !args.force) {
-        logger.error("File %s already exists and --force was not set.\n", full_path);
-        fclose(f_source);
-        free(headers);
+    if (std::filesystem::exists(outputFolder / "$PBOPREFIX$") && !args.force) {
+        logger.error("File %s already exists and --force was not set.\n", (outputFolder / "$PBOPREFIX$").string().c_str());
         return 3;
     }
 
-    // read header extensions
-    fseek(f_source, 1, SEEK_SET);
-    fgets(buffer, 5, f_source);
-    if (strncmp(buffer, "sreV", 4) == 0) {
-        fseek(f_source, 21, SEEK_SET);
-
-        // open header extensions file
-        f_target = fopen(full_path, "wb");
-        if (!f_target) {
-            logger.error("Failed to open file %s.\n", full_path);
-            fclose(f_source);
-            free(headers);
-            return 4;
-        }
-
-        // read all header extensions
-        while (true) {
-            fp_tmp = ftell(f_source);
-            fgets(buffer, 2048, f_source);
-            if (strnlen(buffer, 2048) == 2048) {
-                logger.error("Header extension exceeds maximum size.");
-                return 4;
-            }
-            fseek(f_source, fp_tmp + strlen(buffer) + 1, SEEK_SET);
-
-            if (strlen(buffer) == 0)
-                break;
-
-            fprintf(f_target, "%s=", buffer);
-
-            fp_tmp = ftell(f_source);
-            fgets(buffer, 2048, f_source);
-            if (strnlen(buffer, 2048) == 2048) {
-                logger.error("Header extension exceeds maximum size.");
-                return 4;
-            }
-            fseek(f_source, fp_tmp + strlen(buffer) + 1, SEEK_SET);
-
-            fprintf(f_target, "%s\n", buffer);
-        }
-    } else {
-        fseek(f_source, 0, SEEK_SET);
+    std::ofstream pboprefix(outputFolder / "$PBOPREFIX$", std::ofstream::binary);
+    for (auto& it : reader.getProperties()) {
+        pboprefix << it.key << "=" << it.value << "\n";
     }
 
-    // read headers
-    for (num_files = 0; num_files <= MAXFILES; num_files++) {
-        fp_tmp = ftell(f_source);
-        fgets(buffer, sizeof(buffer), f_source);
-        fseek(f_source, fp_tmp + strlen(buffer) + 1, SEEK_SET);
-        if (strlen(buffer) == 0) {
-            fseek(f_source, sizeof(uint32_t) * 5, SEEK_CUR);
-            break;
-        }
+    std::vector<std::string_view> excludeFiles;
 
-        strcpy(headers[num_files].name, buffer);
-        fread(&headers[num_files].packing_method, sizeof(uint32_t), 1, f_source);
-        fread(&headers[num_files].original_size, sizeof(uint32_t), 1, f_source);
-        fseek(f_source, sizeof(uint32_t) * 2, SEEK_CUR);
-        fread(&headers[num_files].data_size, sizeof(uint32_t), 1, f_source);
-    }
-    if (num_files > MAXFILES) {
-        logger.error("Maximum number of files (%i) exceeded.\n", MAXFILES);
-        fclose(f_source);
-        free(headers);
-        return 5;
+    for (int j = 0; j < args.num_excludefiles; j++) {
+        excludeFiles.emplace_back(args.excludefiles[j]);
     }
 
-    // read files
-    for (i = 0; i < num_files; i++) {
-        // check for garbage
-        if (is_garbage(&headers[i])) {
-            fseek(f_source, headers[i].data_size, SEEK_CUR);
-            continue;
+    std::vector<std::string_view> includeFiles;
+
+    for (int j = 0; j < args.num_includefolders; j++) {
+        if (std::string_view(args.includefolders[j]) == ".") continue;
+        includeFiles.emplace_back(args.includefolders[j]);
+    }
+
+    for (auto& file : reader.getFiles()) {
+        if (is_garbage(file)) continue;
+
+        bool excluded = std::any_of(excludeFiles.begin(), excludeFiles.end(), [&name = file.name](std::string_view& ex) {
+            return matches_glob(name.c_str(), ex.data());
+        });
+        if (excluded) continue;
+
+        if (!includeFiles.empty()) {
+            bool included = std::any_of(includeFiles.begin(), includeFiles.end(), [&name = file.name](std::string_view& ex) {
+                return matches_glob(name.c_str(), ex.data());
+            });
+            if (!included) continue;
         }
 
-        // check if file is excluded
-        for (j = 0; j < args.num_excludefiles; j++) {
-            if (matches_glob(headers[i].name, args.excludefiles[j]))
-                break;
-        }
-        if (j < args.num_excludefiles) {
-            fseek(f_source, headers[i].data_size, SEEK_CUR);
-            continue;
-        }
+        std::filesystem::path outputPath = outputFolder / file.name;
 
-        // check if file is included
-        for (j = 1; j < args.num_includefolders; j++) {
-            if (matches_glob(headers[i].name, args.includefolders[j]))
-                break;
-        }
-        if (args.num_includefolders > 1 && j == args.num_includefolders) {
-            fseek(f_source, headers[i].data_size, SEEK_CUR);
-            continue;
-        }
-
-        // replace pathseps on linux
-#ifndef _WIN32
-        for (j = 0; j < strlen(headers[i].name); j++) {
-            if (headers[i].name[j] == '\\')
-                headers[i].name[j] = PATHSEP;
-        }
-#endif
-
-        // get full path
-        strcpy(full_path, args.positionals[2]);
-        strcat(full_path, PATHSEP_STR);
-        strcat(full_path, headers[i].name);
-
-        // create containing folder
-        strcpy(buffer, full_path);
-        if (strrchr(buffer, PATHSEP) != NULL) {
-            *strrchr(buffer, PATHSEP) = 0;
-            if (!create_folder(buffer)) {
-                logger.error("Failed to create folder %s.\n", buffer);
-                fclose(f_source);
-                return 6;
-            }
-        }
+        if (!std::filesystem::exists(outputPath.parent_path())) //Folder doesn't exist. Create it.
+            if (!std::filesystem::create_directories(outputPath.parent_path()))
+                logger.error("Failed to create folder %s.\n", outputPath.parent_path().string().c_str());
 
         // open target file
-        if (std::filesystem::exists(full_path) && !args.force) {
-            logger.error("File %s already exists and --force was not set.\n", full_path);
-            fclose(f_source);
+        if (std::filesystem::exists(outputPath) && !args.force) {
+            logger.error("File %s already exists and --force was not set.\n", outputPath.string().c_str());
             return 7;
         }
-        f_target = fopen(full_path, "wb");
-        if (!f_target) {
-            logger.error("Failed to open file %s.\n", full_path);
-            fclose(f_source);
-            return 8;
+
+
+        auto& fs = reader.getFileBuffer(file);
+        std::istream source(&fs);
+
+        if (file.name == "config.bin") {
+            fs.setBufferSize(std::min(file.data_size, 1024*1024u));//increase buffer size to max 1MB. So that seeking around is fast while parsing the config
+
+            std::ofstream target(outputPath.parent_path() / "config.cpp", std::ofstream::binary);
+
+            auto config = Config::fromBinarized(source, logger, false);
+
+            config.toPlainText(target, logger);
+        } else if(outputPath.extension() == ".rvmat") { //We want to debinarize rvmat's on extract
+            fs.setBufferSize(std::min(file.data_size, 1024 * 1024u));//increase buffer size to max 1MB. So that seeking around is fast while parsing the config
+
+            std::ofstream target(outputPath, std::ofstream::binary);
+
+            auto config = Config::fromBinarized(source, logger, false);
+
+            config.toPlainText(target, logger);
+        }
+        else {
+            std::ofstream target(outputPath, std::ofstream::binary);
+            std::array<char, 4096 * 4> buf;
+            do {
+                source.read(buf.data(), buf.size());
+                target.write(buf.data(), source.gcount());
+            } while (source.gcount() == buf.size()); //if gcount is not full buffer, we reached EOF before filling the buffer till end
         }
 
-        // write to file
-        for (j = 0; headers[i].data_size - j >= sizeof(buffer); j += sizeof(buffer)) {
-            fread(buffer, sizeof(buffer), 1, f_source);
-            fwrite(buffer, sizeof(buffer), 1, f_target);
-        }
-        fread(buffer, headers[i].data_size - j, 1, f_source);
-        fwrite(buffer, headers[i].data_size - j, 1, f_target);
 
-        // clean up
-        fclose(f_target);
+
     }
-
-    // clean up
-    fclose(f_source);
-    free(headers);
 
     return 0;
 }
@@ -658,102 +619,45 @@ int cmd_unpack(Logger& logger) {
 
 int cmd_cat(Logger& logger) {
     extern struct arguments args;
-    extern std::string current_target;
-    FILE *f_source;
-    int num_files;
-    int file_index;
-    long i;
-    long j;
-    long fp_tmp;
-    char buffer[2048];
-    struct header *headers;
 
     if (args.num_positionals < 3)
         return 128;
 
-    headers = (struct header *)safe_malloc(sizeof(struct header) * MAXFILES);
+    // remove trailing slash in target
+    if (args.positionals[1][strlen(args.positionals[1]) - 1] == PATHSEP)
+        args.positionals[1][strlen(args.positionals[1]) - 1] = 0;
 
-    current_target = args.positionals[1];
-
-    // open file
-    f_source = fopen(args.positionals[1], "rb");
-    if (!f_source) {
+    std::ifstream input(args.positionals[1], std::ifstream::binary);
+    if (!input.is_open()) {
         logger.error("Failed to open %s.\n", args.positionals[1]);
-        free(headers);
         return 1;
     }
 
-    // read header extensions
-    fseek(f_source, 1, SEEK_SET);
-    fgets(buffer, 5, f_source);
-    if (strncmp(buffer, "sreV", 4) == 0) {
-        fseek(f_source, 21, SEEK_SET);
-        i = 0;
-        while (true) {
-            fp_tmp = ftell(f_source);
-            buffer[i++] = fgetc(f_source);
-            buffer[i] = '\0';
-            if (buffer[i - 1] == '\0' && buffer[i - 2] == '\0')
-                break;
-        }
-    } else {
-        fseek(f_source, 0, SEEK_SET);
-    }
+    std::string findFile = args.positionals[2];
 
-    // read headers
-    file_index = -1;
-    for (num_files = 0; num_files <= MAXFILES; num_files++) {
-        fp_tmp = ftell(f_source);
-        fgets(buffer, sizeof(buffer), f_source);
-        fseek(f_source, fp_tmp + strlen(buffer) + 1, SEEK_SET);
-        if (strlen(buffer) == 0) {
-            fseek(f_source, sizeof(uint32_t) * 5, SEEK_CUR);
-            break;
-        }
+    PboReader reader(input);
+    reader.readHeaders();
+    auto& files = reader.getFiles();
 
-        if (stricmp(args.positionals[2], buffer) == 0)
-            file_index = num_files;
+    auto found = std::find_if(files.begin(), files.end(),[&findFile](const PboEntry& entry)
+    {
+        return iequals(entry.name,findFile);
+    });
 
-        strcpy(headers[num_files].name, buffer);
-        fread(&headers[num_files].packing_method, sizeof(uint32_t), 1, f_source);
-        fread(&headers[num_files].original_size, sizeof(uint32_t), 1, f_source);
-        fseek(f_source, sizeof(uint32_t) * 2, SEEK_CUR);
-        fread(&headers[num_files].data_size, sizeof(uint32_t), 1, f_source);
-    }
 
-    if (num_files > MAXFILES) {
-        logger.error("Maximum number of files (%i) exceeded.\n", MAXFILES);
-        fclose(f_source);
-        free(headers);
-        return 4;
-    }
-
-    if (file_index == -1) {
+    if (found == files.end()) {
         logger.error("PBO does not contain the file %s.\n", args.positionals[2]);
-        fclose(f_source);
-        free(headers);
         return 5;
     }
 
-    // read files
-    for (i = 0; i < num_files; i++) {
-        if (i != file_index) {
-            fseek(f_source, headers[i].data_size, SEEK_CUR);
-            continue;
-        }
+    auto& fs = reader.getFileBuffer(*found);
+    std::istream source(&fs);
 
-        // write to file
-        for (j = 0; headers[i].data_size - j >= sizeof(buffer); j += sizeof(buffer)) {
-            fread(buffer, sizeof(buffer), 1, f_source);
-            fwrite(buffer, sizeof(buffer), 1, stdout);
-        }
-        fread(buffer, headers[i].data_size - j, 1, f_source);
-        fwrite(buffer, headers[i].data_size - j, 1, stdout);
-    }
-
-    // clean up
-    fclose(f_source);
-    free(headers);
+    std::array<char, 4096*2> buf;
+    do {
+        source.read(buf.data(), buf.size());
+        std::cout.write(buf.data(), source.gcount());
+    } while (source.gcount() == buf.size()); //if gcount is not full buffer, we reached EOF before filling the buffer till end
 
     return 0;
 }

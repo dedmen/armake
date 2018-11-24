@@ -65,7 +65,7 @@ std::shared_ptr<ConfigClass> ConfigClass::findInheritedParent(std::string_view  
 
     if (inheritedParent.index() == 1) {
         auto& parentName = std::get<std::string>(inheritedParent);
-        auto inhPar = treeParent.lock()->findInheritedParent(parentName, ConfigClassEntry::iequals(parentName, getName()));
+        auto inhPar = treeParent.lock()->findInheritedParent(parentName, iequals(parentName, getName()));
         if (!inhPar) __debugbreak();
         inheritedParent = inhPar;
     }
@@ -112,7 +112,7 @@ void ConfigClass::buildParentTree() {
         if (c->inheritedParent.index() == 2) return; //already resolved
         auto& parentName = std::get<std::string>(c->inheritedParent);
 
-        if (auto par = c->treeParent.lock()->findInheritedParent(parentName, ConfigClassEntry::iequals(parentName,c->getName()))) {
+        if (auto par = c->treeParent.lock()->findInheritedParent(parentName, iequals(parentName,c->getName()))) {
             c->inheritedParent = par;
         } else
             __debugbreak();
@@ -379,18 +379,21 @@ Config Config::fromBinarized(std::istream & input, Logger& logger, bool buildPar
     } catch( Rapifier::DerapifyException& ex) {
         
         std::stringstream buf;
-        buf << "Exception occured in Config::fromBinarized: " << ex.what();
+        buf << "Exception occured in Config::fromBinarized: \n" << ex.what();
         if (ex.getType() != 255)
             buf << " " << static_cast<unsigned>(ex.getType());
-        buf << "\nTrace: ";
-        auto& stack = ex.getStack();
-        std::reverse(stack.begin(), stack.end());
-        for (auto& it : stack) {
-            buf << "/" << it;
+        if (!ex.getStack().empty()) {
+            buf << "\nTrace: ";
+            auto& stack = ex.getStack();
+            std::reverse(stack.begin(), stack.end());
+            for (auto& it : stack) {
+                buf << "/" << it;
+            }
         }
+
         buf << "\nFile Offset: " << input.tellg();
 
-        logger.error(buf.str().c_str());
+        logger.error(buf.str());
         return {};
     }
 
@@ -810,7 +813,7 @@ int Rapifier::rapify_file(std::istream &source, std::ostream &target, const char
         do {
             source.read(buf.data(), buf.size());
             target.write(buf.data(), source.gcount());
-        } while (source.gcount() > 0);
+        } while (source.gcount() == buf.size()); //if gcount is not full buffer, we reached EOF before filling the buffer till end
         return 0;
     }
 

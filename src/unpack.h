@@ -75,17 +75,20 @@ class PboEntryBuffer : public std::streambuf {
     const PboEntry& file;
     const PboReader& reader;
     //What position the character after the last character that's currently in our buffer, corresponds to in the pbofile
-    //Meeaning on next read, the first character read is that pos
+    //Meaning on next read, the first character read is that pos
     size_t bufferEndFilePos{0}; 
-    // context for the compression
 public:
     PboEntryBuffer(const PboReader& rd, const PboEntry& ent, uint32_t bufferSize = 4096u) : buffer(std::min(ent.data_size, bufferSize)), file(ent), reader(rd) {
-        char *end = &buffer.front() + buffer.size();
-        setg(end, end, end);
+        char *start = &buffer.front();
+        setg(start, start, start);
     }
 
+    void setBufferSize(size_t newSize);
     int underflow() override;
-    int64_t __CLR_OR_THIS_CALL xsgetn(char* _Ptr, int64_t _Count) override;
+    int64_t xsgetn(char* _Ptr, int64_t _Count) override;
+    pos_type seekoff(off_type, std::ios_base::seekdir, std::ios_base::openmode) override;
+    pos_type seekpos(pos_type, std::ios_base::openmode) override;
+    std::streamsize showmanyc() override;
 
     void setBuffersize(size_t newSize) {
         buffer.resize(newSize);
@@ -107,6 +110,7 @@ public:
     PboEntryBuffer getFileBuffer(const PboEntry& ent) const {
         return PboEntryBuffer(*this, ent);
     }
+    const auto& getProperties() const { return properties; }
 
 
 };

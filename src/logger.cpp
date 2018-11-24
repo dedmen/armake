@@ -26,7 +26,6 @@ void Logger::info(std::string_view message) {
     std::unique_lock lock(streamLock);
 #ifdef _WIN32
     logTarget << "info: " << message;
-    logTarget << COLOR_GREEN << "info:" << COLOR_RESET << " " << message;
 #else
 
     logTarget << COLOR_GREEN << "info:" << COLOR_RESET << " " << message;
@@ -75,7 +74,6 @@ void Logger::warning(std::string_view message) {
     std::unique_lock lock(streamLock);
 #ifdef _WIN32
     logTarget << "warning: " << message;
-    logTarget << COLOR_YELLOW << "warning:" << COLOR_RESET << " " << message;
 #else
     logTarget << COLOR_YELLOW << "warning:" << COLOR_RESET << " " << message;
 #endif
@@ -144,7 +142,6 @@ void Logger::error(std::string_view message) {
     std::unique_lock lock(streamLock);
 #ifdef _WIN32
     logTarget << "error: " << message;
-    logTarget << COLOR_RED << "error:" << COLOR_RESET << " " << message;
 #else
     logTarget << COLOR_RED << "error:" << COLOR_RESET << " " << message;
 #endif

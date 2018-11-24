@@ -166,15 +166,6 @@ class ConfigClassEntry {
         ConfigEntry,
         std::string_view //placeholder for lookups
     > value;
-
-    static bool iequals(std::string_view a, std::string_view b)
-    {
-        return std::equal(a.begin(), a.end(),
-            b.begin(), b.end(),
-            [](char a, char b) {
-            return tolower(a) == tolower(b);
-        });
-    }
 public:
     ConfigClassEntry(std::shared_ptr<ConfigClass> cls) : value(cls) {}
     ConfigClassEntry(ConfigEntry &&val) : value(val) {}
