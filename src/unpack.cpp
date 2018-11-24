@@ -275,7 +275,12 @@ std::streamsize PboEntryBuffer::showmanyc() {
     return (file.data_size - bufferEndFilePos) + dataLeft;
 }
 
+
+__itt_domain* unpackDomain = __itt_domain_create("armake.unpack");
+__itt_string_handle* handle_readHeaders = __itt_string_handle_create("PboReader::readHeaders");
+
 void PboReader::readHeaders() {
+    __itt_task_begin(unpackDomain, __itt_null, __itt_null, handle_readHeaders);
     PboEntry intro;
     intro.read(input);
 
@@ -309,7 +314,7 @@ void PboReader::readHeaders() {
     }
     auto fileEnd = curPos;
     //After end there is checksum 20 bytes. Grab that too. cmd_inspect might want to display that or check it
-
+    __itt_task_end(unpackDomain);
 }
 
 
@@ -499,12 +504,22 @@ int cmd_inspect(Logger& logger) {
 }
 
 
+__itt_string_handle* handle_cmd_unpack = __itt_string_handle_create("cmd_unpack");
+__itt_string_handle* handle_cmd_unpackF = __itt_string_handle_create("cmd_unpack_F");
 int cmd_unpack(Logger& logger) {
     extern struct arguments args;
     extern std::string current_target;
    
     if (args.num_positionals < 3)
         return 128;
+
+    ScopeGuard ittS([]() {
+        __itt_task_end(unpackDomain);
+    });
+    __itt_task_begin(unpackDomain, __itt_null, __itt_null, handle_cmd_unpack);
+
+
+
 
     // remove trailing slash in target
     if (args.positionals[1][strlen(args.positionals[1]) - 1] == PATHSEP)
@@ -599,17 +614,17 @@ int cmd_unpack(Logger& logger) {
             auto config = Config::fromBinarized(source, logger, false);
 
             config.toPlainText(target, logger);
-        }
-        else {
+        } else {
+            __itt_task_begin(unpackDomain, __itt_null, __itt_null, handle_cmd_unpackF);
+
             std::ofstream target(outputPath, std::ofstream::binary);
-            std::array<char, 4096 * 4> buf;
+            std::array<char, 4096> buf;
             do {
                 source.read(buf.data(), buf.size());
                 target.write(buf.data(), source.gcount());
             } while (source.gcount() == buf.size()); //if gcount is not full buffer, we reached EOF before filling the buffer till end
+            __itt_task_end(unpackDomain);
         }
-
-
 
     }
 

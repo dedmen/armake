@@ -410,6 +410,7 @@ void Config::toBinarized(std::ostream& output) {
     __itt_task_end(configDomain);
 }
 
+__itt_string_handle* handle_toPlainText = __itt_string_handle_create("Config::toPlainText");
 void Config::toPlainText(std::ostream& output, Logger& logger, std::string_view indent) {
 
     uint8_t indentLevel = 0;
@@ -502,7 +503,10 @@ void Config::toPlainText(std::ostream& output, Logger& logger, std::string_view 
         }
 
     };
+
+    __itt_task_begin(configDomain, __itt_null, __itt_null, handle_toPlainText);
     printClass(getConfig());
+    __itt_task_end(configDomain);
 }
 
 
