@@ -779,8 +779,22 @@ int Rapifier::rapify_file(const char* source, const char* target, Logger& logger
 
     if (strcmp(target, "-") == 0) {
         return rapify_file(sourceFile, std::cout, source, logger);
-    }
-    else {
+    } else {
+
+
+        if (std::string_view(source) == target) { //Can't write at same time as reading
+            std::stringstream temp;
+            auto res = rapify_file(sourceFile, temp, source, logger);
+            sourceFile.close();
+            std::ofstream targetFile(target, std::ofstream::out | std::ofstream::binary);
+            std::array<char, 4096> buf;
+            do {
+                temp.read(buf.data(), buf.size());
+                targetFile.write(buf.data(), temp.gcount());
+            } while (temp.gcount() == buf.size());
+            return res;
+        }
+
         std::ofstream targetFile(target, std::ofstream::out | std::ofstream::binary);
 
         //#TODO grab exceptions in case disk is full

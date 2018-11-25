@@ -354,6 +354,10 @@ int binarize(std::filesystem::path source, std::filesystem::path target, Logger&
         fileExtension == ".ext") //#TODO not ext! only description.ext
         return Rapifier::rapify_file(source.string().c_str(), target.string().c_str(), logger);
 
+    //#TODO rvmat's with >7 stages that are not using texGens are errors!
+    //Should warn user about that.
+    //also warn when using texGen's but not in every stage
+
     if (fileExtension == ".p3d" ||
         fileExtension == ".rtm") {
 #ifdef _WIN32

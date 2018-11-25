@@ -94,7 +94,7 @@ bool remove_folder(const std::filesystem::path &folder) {
      */
 
     __itt_task_begin(fsDomain, __itt_null, __itt_null, handle_remove_folder);
-    std::filesystem::remove_all(folder);
+    std::filesystem::remove_all(folder); //#TODO catch filesystem exception. Can happen if folder is in use or open
     __itt_task_end(fsDomain);
 
     return true;
