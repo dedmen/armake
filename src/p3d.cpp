@@ -77,6 +77,7 @@ float mlod_lod::getBoundingSphere(const vector3& center) {
             sphere = dist;
     }
     __itt_task_end(p3dDomain);
+
     return sqrt(sphere);
 }
 
@@ -486,16 +487,17 @@ void odol_lod::writeTo(std::ostream& output) {
     // neighbor bone ref
     output.write("\0\0\0\0", 4);
 
+    temp = static_cast<size_t>(output.tellp()) - fp_vertextable_size;
+    output.seekp(fp_vertextable_size);
+    WRITE_CASTED(temp, 4);
+    output.seekp(0, std::ostream::end);
+
+
     // has Collimator info?
     output.write("\0\0\0\0", sizeof(uint32_t)); //If 1 then need to write CollimatorInfo structure
 
     // unknown byte
     output.write("\0", 1);
-
-    temp = static_cast<size_t>(output.tellp()) - fp_vertextable_size;
-    output.seekp(fp_vertextable_size);
-    WRITE_CASTED(temp, 4);
-    output.seekp(0, std::ostream::end);
 }
 
 
@@ -1074,7 +1076,9 @@ void model_info::writeTo(std::ostream& output) {
     WRITE_CASTED(lock_autocenter, sizeof(bool));
     WRITE_CASTED(can_occlude, sizeof(bool));
     WRITE_CASTED(can_be_occluded, sizeof(bool));
-    // WRITE_CASTED(ai_cover,            sizeof(bool));  // v73
+#if P3DVERSION > 71
+    WRITE_CASTED(ai_cover,            sizeof(bool));  // v73
+#endif
     WRITE_CASTED(skeleton->ht_min, sizeof(float));
     WRITE_CASTED(skeleton->ht_max, sizeof(float));
     WRITE_CASTED(skeleton->af_max, sizeof(float));
@@ -1088,7 +1092,11 @@ void model_info::writeTo(std::ostream& output) {
     WRITE_CASTED(animated, sizeof(bool));
     skeleton->writeTo(output);
     WRITE_CASTED(map_type, sizeof(char));
-    WRITE_CASTED(n_floats, sizeof(uint32_t));
+    WRITE_CASTED(n_floats, sizeof(uint32_t)); //_massArray size
+    //! array of mass assigned to all points of geometry level
+    //! this is used to calculate angular inertia tensor (_invInertia)
+
+
     //output.write("\0\0\0\0\0", 4); // compression header for empty array
     WRITE_CASTED(mass, sizeof(float));
     WRITE_CASTED(mass_reciprocal, sizeof(float));
@@ -1102,8 +1110,13 @@ void model_info::writeTo(std::ostream& output) {
     WRITE_CASTED(property_frequent, sizeof(bool));
     WRITE_CASTED(always_0, sizeof(uint32_t)); //@todo Array of unused Selection Names
 
+#if P3DVERSION > 71
     // v73 adds another 4 bytes here
+    output.write("\0\0\0\0", 4); // v73 data
+#endif
 
+    //first lodNumber*ShadowVolume then  lodNumber*ShadowBuffer then  lodNumber*ShadowBufferLodVis
+    //for each it's a 32bit int. -1 signifies unknown
     //sets preferredShadowVolumeLod, preferredShadowBufferLod, and preferredShadowBufferLodVis for each LOD
     for (int i = 0; i < num_lods; i++)
         output.write("\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff", 12);
@@ -1604,7 +1617,7 @@ int P3DFile::readMLOD(std::filesystem::path sourceFile) {
     input.read(reinterpret_cast<char*>(&num_lods), 4);
 
     num_lods = read_lods(input, num_lods);
-    if (num_lods < 0) {
+    if (num_lods <= 0) {
         logger.error("Failed to read LODs.\n");
         return 4;
     }
@@ -1649,26 +1662,42 @@ int P3DFile::writeODOL(std::filesystem::path targetFile) {
 
     // Write animations
     if (model_info.skeleton->num_animations > 0) {
-        output.put(1);
+        output.put(1); //bool hasAnims
         write_animations(output);
     } else {
         output.put(0);
     }
 
     // Write place holder LOD addresses
-    size_t fp_lods = output.tellp();
+    size_t fp_lods_starts = output.tellp();
+
+    //lod start addresses
     for (uint32_t i = 0; i < num_lods; i++)
-        output.write("\0\0\0\0\0\0\0\0", 8);
+        output.write("\0\0\0\0", 4);
+    //lod end addresses
+    size_t fp_lods_ends = output.tellp();
+    for (uint32_t i = 0; i < num_lods; i++)
+        output.write("\0\0\0\0", 4);
+
+    //^ that there is structured like the following
+    //lod start
+    //lod start
+    //lod start
+    //...
+    //lod end
+    //lod end
+    //lod end
+
 
     // Write LOD face defaults (or rather, don't)
     for (uint32_t i = 0; i < num_lods; i++)
-        output.put(1);
+        output.put(1); //bool array, telling engine if it should load the LOD right away, or rather stream it in later
 
     // Write LODs
     for (uint32_t i = 0; i < num_lods; i++) {
         // Write start address
         auto fp_temp = output.tellp();
-        output.seekp(fp_lods + i * 4);
+        output.seekp(fp_lods_starts + i * 4);
         output.write(reinterpret_cast<char*>(&fp_temp), 4);
         output.seekp(0, std::ofstream::end);
 
@@ -1681,7 +1710,7 @@ int P3DFile::writeODOL(std::filesystem::path targetFile) {
 
         // Write end address
         fp_temp = output.tellp();
-        output.seekp(fp_lods + (num_lods + i) * 4);
+        output.seekp(fp_lods_ends + i * 4);
         output.write(reinterpret_cast<char*>(&fp_temp), 4);
         output.seekp(0, std::ofstream::end);
     }

@@ -278,12 +278,12 @@ int Material::read() {
 
     textures.resize(num_textures);
     transforms.resize(num_transforms);
-
+    
     textures[0].path[0] = 0;
     textures[0].texture_filter = 3;
     textures[0].transform_index = 0;
     textures[0].type11_bool = 0;
-
+    
     transforms[0].uv_source = 1;
     memset(transforms[0].transform, 0, 12 * sizeof(float));
     memcpy(transforms[0].transform, &identity_matrix, sizeof(identity_matrix));
@@ -371,6 +371,18 @@ int Material::read() {
         textures[i].type11_bool = 0;
 
         transforms[i].uv_source = 1;
+        //#TODO transforms uv source enum
+//    XX(type, prefix, None) \
+    //    XX(type, prefix, Tex) \
+    //    XX(type, prefix, TexWaterAnim) \
+    //    XX(type, prefix, Pos) \
+    //    XX(type, prefix, Norm) \
+    //    XX(type, prefix, Tex1) \
+    //    XX(type, prefix, WorldPos) \
+    //    XX(type, prefix, WorldNorm) \
+    //    XX(type, prefix, TexShoreAnim) \
+
+
         memset(transforms[i].transform, 0, 12 * sizeof(float));
         memcpy(transforms[i].transform, &identity_matrix, sizeof(identity_matrix));
 
@@ -404,7 +416,9 @@ int Material::read() {
         }
     }
 
-    //read_string(f, "StageTI >> texture", material->dummy_texture.path, sizeof(material->dummy_texture.path));
+    auto texture = cfg->getString({ "StageTi", "texture" });
+    if (texture)
+        dummy_texture.path = *texture;
 
     return 0;
 }
@@ -425,11 +439,74 @@ void Material::writeTo(std::ostream& output) {
     WRITE_CASTED(specular_power, sizeof(float));
     WRITE_CASTED(pixelshader_id, sizeof(uint32_t));
     WRITE_CASTED(vertexshader_id, sizeof(uint32_t));
-    WRITE_CASTED(depr_1, sizeof(uint32_t));
-    WRITE_CASTED(depr_2, sizeof(uint32_t));
+    WRITE_CASTED(depr_1, sizeof(uint32_t)); //mainlight
+    /**
+     *enum
+      None,          
+      Sun,           
+      Sky,           
+      Horizon,       
+      Stars,         
+      SunObject,     
+      SunHaloObject, 
+      MoonObject,    
+      MoonHaloObject,
+     */
+    //https://community.bistudio.com/wiki/RVMAT_basics#Light_Mode
+
+    WRITE_CASTED(depr_2, sizeof(uint32_t)); //fogmode
+    //#TODO this and mainLight come from rvmat entry
+    /*
+     enum
+        /// No fog is being used 
+        //None
+        /// Ordinary fog 
+        //Fog
+        /// Fog as alpha
+        //Alpha
+        /// Fog as both alpha and fog
+        //FogAlpha
+        /// Fog for sky objects (moon, stars)
+        //FogSky
+     */
+
+
     output.write(surface.c_str(), surface.length() + 1);
-    WRITE_CASTED(depr_3, sizeof(uint32_t));
+    WRITE_CASTED(depr_3, sizeof(uint32_t)); //render flags size. number of int's to store render flags
     WRITE_CASTED(render_flags, sizeof(uint32_t));
+    //1 render flag size means 1 32bit int. Meaning 32 different flags. Currently only 13 exist.
+    //#TODO from rvmat
+    /*
+      AlwaysInShadow
+      NoZWrite
+      LandShadow
+      Dummy0
+      NoColorWrite
+      NoAlphaWrite
+      AddBlend
+      AlphaTest32
+      AlphaTest64
+      AlphaTest128
+      Road
+      NoTiWrite
+      NoReceiveShadow
+     *
+     */
+
+
+
+    if (num_transforms > 8) {
+        logger.error("Too many texGen's being used in RVMAT! Armake will clip excess off and cause weird behaviour! %s\n", path.c_str());
+
+        num_transforms = 8;
+        transforms.resize(8);
+
+        for (auto& it : textures) {
+            if (it.transform_index > 7) it.transform_index = 7;
+        }
+    }
+
+
     WRITE_CASTED(num_textures, sizeof(uint32_t));
     WRITE_CASTED(num_transforms, sizeof(uint32_t));
 
@@ -437,13 +514,44 @@ void Material::writeTo(std::ostream& output) {
         WRITE_CASTED(textures[i].texture_filter, sizeof(uint32_t));
         output.write(textures[i].path.c_str(), textures[i].path.length() + 1);
         WRITE_CASTED(textures[i].transform_index, sizeof(uint32_t));
-        WRITE_CASTED(dummy_texture.type11_bool, sizeof(bool));
+        WRITE_CASTED(textures[i].type11_bool, sizeof(bool)); //world env map. Added in version 11.
     }
 
+
+
+    //#TODO properly save them by iterating?
     output.write(reinterpret_cast<char*>(transforms.data()), sizeof(struct stage_transform) * num_transforms);
+    //#TODO get uv source from rvmat
+    /*
+     uv source
+
+      None
+      Tex
+      TexWaterAnim
+      Pos
+      Norm
+      Tex1
+      WorldPos
+      WorldNorm
+      TexShoreAnim
+     */
 
     WRITE_CASTED(dummy_texture.texture_filter, sizeof(uint32_t));
+    //FILTER
+   //    Point = 0
+   //    Linear = 1
+   //    Trilinear
+   //    Anizotropic << this is default
+   //    Anizotropic2
+   //    Anizotropic4
+   //    Anizotropic8
+   //    Anizotropic16
+
+    //TI stage. Added in version 11
     output.write(dummy_texture.path.c_str(), dummy_texture.path.length() + 1);
-    WRITE_CASTED(dummy_texture.transform_index, sizeof(uint32_t));
-    WRITE_CASTED(dummy_texture.type11_bool, sizeof(bool));
+    WRITE_CASTED(dummy_texture.transform_index, sizeof(uint32_t)); //tex gen. doesn't matter for ti
+    WRITE_CASTED(dummy_texture.type11_bool, sizeof(bool)); //useWorldEnvMap grab from config entry "useWorldEnvMap"
+
+    //#MinorTask we can save as version 10 instead and omit TI stage and the worldEnvMap to save a couple bytes filesize
+
 }

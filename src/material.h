@@ -62,7 +62,7 @@ public:
 
 
     std::string path;
-    uint32_t type;
+    uint32_t type{0};
     struct color emissive;
     struct color ambient;
     struct color diffuse;
@@ -70,15 +70,15 @@ public:
     struct color specular;
     struct color specular2;
     float specular_power;
-    uint32_t pixelshader_id;
-    uint32_t vertexshader_id;
-    uint32_t depr_1;
-    uint32_t depr_2;
+    uint32_t pixelshader_id{0};
+    uint32_t vertexshader_id{0};
+    uint32_t depr_1{0};
+    uint32_t depr_2{0};
     std::string surface;
-    uint32_t depr_3;
-    uint32_t render_flags;
-    uint32_t num_textures;
-    uint32_t num_transforms;
+    uint32_t depr_3{0};
+    uint32_t render_flags{0};
+    uint32_t num_textures{0};
+    uint32_t num_transforms{0};
     std::vector<stage_texture> textures;
     std::vector<stage_transform> transforms;
     struct stage_texture dummy_texture;

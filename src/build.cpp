@@ -115,21 +115,19 @@ int Builder::binarize_callback(const std::filesystem::path &root, const std::fil
         return 0;
 
     std::string target(source.string());
-    std::string_view cpp("config.cpp");
-
 
     if (target.length() > 10 &&
-        std::equal(cpp.rbegin(), cpp.rend(), target.rbegin()))
+        source.extension().string() == ".cpp")
         target.replace(target.length() - 3, 3, "bin");
 
 
     const int success = binarize(source, target, logger);
 
     std::string_view p3do(".p3do");
-    if (std::equal(p3do.rbegin(), p3do.rend(), filename.rbegin()))
+    if (source.extension().string() == ".p3do")
         filename.pop_back();
 
-    if (std::equal(cpp.rbegin(), cpp.rend(), filename.rbegin()))
+    if (source.extension().string() == ".cpp")
         filename.replace(filename.length()-3,3,"bin");
 
     //#TODO store binarized config directly via membuf
