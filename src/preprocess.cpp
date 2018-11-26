@@ -541,7 +541,7 @@ std::optional<std::filesystem::path> find_file_helper(std::string_view includepa
 __itt_string_handle* handle_find_file = __itt_string_handle_create("find_file");
 std::optional<std::filesystem::path> find_file(std::string_view includepath, std::string_view origin) {
     __itt_task_begin(preprocDomain, __itt_null, __itt_null, handle_find_file);
-
+    static std::map<std::string, std::filesystem::path, std::less<>> cache;
 
     /*
      * Finds the file referenced in includepath in the includefolder. origin
@@ -563,12 +563,19 @@ std::optional<std::filesystem::path> find_file(std::string_view includepath, std
             return result;
     }
 
+    if (auto found = cache.find(includepath); found != cache.end()) {
+        __itt_task_end(preprocDomain);
+        return found->second;
+    }
+
+
     extern struct arguments args;
     for (int i = 0; i < args.num_includefolders; i++) {
         auto result = find_file_helper(includepath, origin, args.includefolders[i]);
 
         if (result) {
             __itt_task_end(preprocDomain);
+            cache.insert_or_assign(std::string(includepath), *result);
             return result;
         }
     }
