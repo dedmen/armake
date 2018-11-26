@@ -252,8 +252,8 @@ int Material::read() {
 
     // Write default values
     type = MATERIALTYPE;
-    depr_1 = 1;
-    depr_2 = 1;
+    mainLight = 1;
+    fogMode = FogMode::Fog;
     depr_3 = 1;
     emissive = default_color;
     ambient = default_color;
@@ -273,12 +273,12 @@ int Material::read() {
     textures[0].path[0] = 0;
     textures[0].texture_filter = 3;
     textures[0].transform_index = 0;
-    textures[0].type11_bool = 0;
+    textures[0].useWorldEnvMap = 0;
 
     dummy_texture.path[0] = 0;
     dummy_texture.texture_filter = 3;
     dummy_texture.transform_index = 0;
-    dummy_texture.type11_bool = 0;
+    dummy_texture.useWorldEnvMap = 0;
 
 
     std::string readPath = path; //need to copy cuz `path` is used to check if a material already exists, we cannot change that
@@ -310,7 +310,6 @@ int Material::read() {
 
 #define TRY_READ_ARRAY(tgt, src) {auto x = cfg->getArrayOfFloats({ #src }); if (!x.empty()) tgt = x;}
 
-    current_target = path;
     // Read colors
     TRY_READ_ARRAY(emissive, emmisive);// "Did you mean: emissive?"
     TRY_READ_ARRAY(ambient, ambient);
@@ -320,16 +319,61 @@ int Material::read() {
 
     {auto x = cfg->getFloat({ "specularPower" }); if (x) specular_power = *x; }
 
+
+    auto cfg_renderFlagsArray = cfg->getArrayOfStringViews({ "renderFlags" });
+    if (cfg_renderFlagsArray) {
+        for (auto& it : *cfg_renderFlagsArray) {
+            auto found = std::find_if(IndexToRenderFlag.begin(), IndexToRenderFlag.end(), [&it](const auto& it) {
+                return iequals(it.second, it);
+            });
+            if (found == IndexToRenderFlag.end()) {
+                logger.warning(path, -1, "Unrecognized render flag: \"%.*s\".\n", static_cast<int>(it.size()), it.data());
+                continue;
+            }
+            render_flags.set(found->first, true);
+        }
+    }
+
+    auto cfg_surfaceInfo = cfg->getString({ "surfaceInfo" });
+    if (cfg_surfaceInfo) {
+        surface = *cfg_surfaceInfo;
+    }
+    //#TODO move enum resolution to template or macro
+    auto cfg_mainLight = cfg->getString({ "mainLight" });
+    if (cfg_mainLight) {
+
+        auto found = std::find_if(LightModeToName.begin(), LightModeToName.end(), [&searchName = *cfg_mainLight](const auto& it) {
+            return iequals(it.second, searchName);
+        });
+        if (found == LightModeToName.end()) {
+            logger.warning(path, -1, "Unrecognized LightMode: \"%s\".\n", cfg_mainLight->c_str());
+        } else
+            mainLight = found->first;
+    }
+
+    auto cfg_fogMode = cfg->getString({ "fogMode" });
+    if (cfg_fogMode) {
+
+        auto found = std::find_if(FogModeToName.begin(), FogModeToName.end(), [&searchName = *cfg_fogMode](const auto& it) {
+            return iequals(it.second, searchName);
+        });
+        if (found == FogModeToName.end()) {
+            logger.warning(path, -1, "Unrecognized FogMode: \"%s\".\n", cfg_fogMode->c_str());
+        } else
+            fogMode = found->first;
+    }
+
+
     // Read shaders
     auto pixelShaderID = cfg->getString({ "PixelShaderID" });
     if (pixelShaderID) {
 
-        auto found = std::find_if(std::begin(pixelshaders), std::end(pixelshaders),[&searchName = *pixelShaderID](const shader_ref& sha) {
+        auto found = std::find_if(pixelshaders.begin(), pixelshaders.end(),[&searchName = *pixelShaderID](const auto& sha) {
             return iequals(sha.name, searchName);
         });
-        if (found == std::end(pixelshaders)) {
-            logger.warning(current_target, -1, "Unrecognized pixel shader: \"%s\", assuming \"Normal\".\n", pixelShaderID->c_str());
-            found = std::begin(pixelshaders); //normal is always at front
+        if (found == pixelshaders.end()) {
+            logger.warning(path, -1, "Unrecognized pixel shader: \"%s\", assuming \"Normal\".\n", pixelShaderID->c_str());
+            found = pixelshaders.begin(); //normal is always at front
         }
 
         pixelshader_id = found->id;
@@ -337,13 +381,13 @@ int Material::read() {
 
     auto VertexShaderID = cfg->getString({ "VertexShaderID" });
     if (VertexShaderID) {
-        auto found = std::find_if(std::begin(vertexshaders), std::end(vertexshaders), [&searchName = *VertexShaderID](const shader_ref& sha) {
+        auto found = std::find_if(vertexshaders.begin(), vertexshaders.end(), [&searchName = *VertexShaderID](const auto& sha) {
             return iequals(sha.name, searchName);
         });
 
-        if (found == std::end(vertexshaders)) {
-            logger.warning(current_target, -1, "Unrecognized vertex shader: \"%s\", assuming \"Basic\".\n", VertexShaderID->c_str());
-            found = std::begin(vertexshaders); //normal is always at front
+        if (found == vertexshaders.end()) {
+            logger.warning(path, -1, "Unrecognized vertex shader: \"%s\", assuming \"Basic\".\n", VertexShaderID->c_str());
+            found = vertexshaders.begin(); //normal is always at front
         }
 
         vertexshader_id = found->id;
@@ -362,9 +406,7 @@ int Material::read() {
     for (uint32_t i = 0u; i < num_textures; i++) { //#TODO ranged for
         if (i == 0) {
             textures[i].path[0] = 0;
-            textures[i].texture_filter = 3;
             textures[i].transform_index = i;
-            textures[i].type11_bool = 0;
             continue;
         }
 
@@ -372,10 +414,20 @@ int Material::read() {
 
         auto texture = stageCfg->getString({"texture"});
         textures[i].path = *texture;
-
-        textures[i].texture_filter = 3;
         textures[i].transform_index = i;
-        textures[i].type11_bool = 0;
+
+        auto cfg_Filter = stageCfg->getString({ "Filter" });
+        if (cfg_Filter) {
+
+            auto found = std::find_if(TextureFilterToName.begin(), TextureFilterToName.end(), [&searchName = *cfg_Filter](const auto& it) {
+                return iequals(it.second, searchName);
+            });
+            if (found == TextureFilterToName.end()) {
+                logger.warning(path, -1, "Unrecognized TextureFilter: \"%s\" in Stage%u.\n", cfg_Filter->c_str(), i);
+            } else
+                textures[i].texture_filter = found->first;
+        }
+
 
         uint8_t texGen = 0xFF;
         auto cfg_texGen = stageCfg->getFloat({ "TexGen" });
@@ -429,7 +481,7 @@ int Material::read() {
         auto uvTransform = transformCfg->getClass({ "uvTransform" });
         if (uvTransform) {
             auto aside = uvTransform->getArrayOfFloats({ "aside" });
-            if (!aside.empty()) {
+            if (!aside.empty()) { //#TODO verify that arrays are min size 3
                 stageTrans.transform.m00 = aside[0]; //#TODO make this easier use a actual matrix. And then read the parts as vectors using a vector<float> constructor
                 stageTrans.transform.m01 = aside[1];
                 stageTrans.transform.m02 = aside[2];
@@ -492,61 +544,14 @@ void Material::writeTo(std::ostream& output) {
     WRITE_CASTED(specular_power, sizeof(float));
     WRITE_CASTED(pixelshader_id, sizeof(uint32_t));
     WRITE_CASTED(vertexshader_id, sizeof(uint32_t));
-    WRITE_CASTED(depr_1, sizeof(uint32_t)); //mainlight
-    /**
-     *enum
-      None,          
-      Sun,           
-      Sky,           
-      Horizon,       
-      Stars,         
-      SunObject,     
-      SunHaloObject, 
-      MoonObject,    
-      MoonHaloObject,
-     */
-    //https://community.bistudio.com/wiki/RVMAT_basics#Light_Mode
-
-    WRITE_CASTED(depr_2, sizeof(uint32_t)); //fogmode
-    //#TODO this and mainLight come from rvmat entry
-    /*
-     enum
-        /// No fog is being used 
-        //None
-        /// Ordinary fog 
-        //Fog
-        /// Fog as alpha
-        //Alpha
-        /// Fog as both alpha and fog
-        //FogAlpha
-        /// Fog for sky objects (moon, stars)
-        //FogSky
-     */
+    WRITE_CASTED(mainLight, sizeof(uint32_t));
+    WRITE_CASTED(fogMode, sizeof(uint32_t));
 
 
     output.write(surface.c_str(), surface.length() + 1);
     WRITE_CASTED(depr_3, sizeof(uint32_t)); //render flags size. number of int's to store render flags
-    WRITE_CASTED(render_flags, sizeof(uint32_t));
-    //1 render flag size means 1 32bit int. Meaning 32 different flags. Currently only 13 exist.
-    //#TODO from rvmat
-    /*
-      AlwaysInShadow
-      NoZWrite
-      LandShadow
-      Dummy0
-      NoColorWrite
-      NoAlphaWrite
-      AddBlend
-      AlphaTest32
-      AlphaTest64
-      AlphaTest128
-      Road
-      NoTiWrite
-      NoReceiveShadow
-     *
-     */
-
-
+    uint32_t renderFlags = render_flags.to_ulong();
+    WRITE_CASTED(renderFlags, sizeof(uint32_t));
 
     if (num_transforms > 8) {
         logger.error("Too many texGen's being used in RVMAT! Armake will clip excess off and cause weird behaviour! %s\n", path.c_str());
@@ -567,43 +572,20 @@ void Material::writeTo(std::ostream& output) {
         WRITE_CASTED(textures[i].texture_filter, sizeof(uint32_t));
         output.write(textures[i].path.c_str(), textures[i].path.length() + 1);
         WRITE_CASTED(textures[i].transform_index, sizeof(uint32_t));
-        WRITE_CASTED(textures[i].type11_bool, sizeof(bool)); //world env map. Added in version 11.
+        WRITE_CASTED(textures[i].useWorldEnvMap, sizeof(bool)); //world env map. Added in version 11.
     }
 
 
 
     //#TODO properly save them by iterating?
     output.write(reinterpret_cast<char*>(transforms.data()), sizeof(struct stage_transform) * num_transforms);
-    //#TODO get uv source from rvmat
-    /*
-     uv source
-
-      None
-      Tex
-      TexWaterAnim
-      Pos
-      Norm
-      Tex1
-      WorldPos
-      WorldNorm
-      TexShoreAnim
-     */
 
     WRITE_CASTED(dummy_texture.texture_filter, sizeof(uint32_t));
-    //FILTER
-   //    Point = 0
-   //    Linear = 1
-   //    Trilinear
-   //    Anizotropic << this is default
-   //    Anizotropic2
-   //    Anizotropic4
-   //    Anizotropic8
-   //    Anizotropic16
 
     //TI stage. Added in version 11
     output.write(dummy_texture.path.c_str(), dummy_texture.path.length() + 1);
     WRITE_CASTED(dummy_texture.transform_index, sizeof(uint32_t)); //tex gen. doesn't matter for ti
-    WRITE_CASTED(dummy_texture.type11_bool, sizeof(bool)); //useWorldEnvMap grab from config entry "useWorldEnvMap"
+    WRITE_CASTED(dummy_texture.useWorldEnvMap, sizeof(bool)); //useWorldEnvMap grab from config entry "useWorldEnvMap"
 
     //#MinorTask we can save as version 10 instead and omit TI stage and the worldEnvMap to save a couple bytes filesize
 

@@ -238,7 +238,7 @@ int main(int argc, char *argv[]) {
     if (strcmp(args.positionals[0], "binarize") == 0)
         success = cmd_binarize(mainLogger);
     else if (strcmp(args.positionals[0], "build") == 0)
-        success = cmd_build(mainLogger);
+        success = cmd_build(mainLogger); //#TODO add source folder to includefolders
     else if (strcmp(args.positionals[0], "inspect") == 0)
         success = cmd_inspect(mainLogger);
     else if (strcmp(args.positionals[0], "unpack") == 0)
