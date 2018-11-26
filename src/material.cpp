@@ -299,19 +299,29 @@ int Material::read() {
         return 1;
     }
 
-    current_target = temp;
+    std::ifstream rvmatInput(foundFile->string(), std::ifstream::in | std::ifstream::binary);
+    if (!rvmatInput.is_open()) {
+        logger.warning(current_target, 0u, "Failed to open material \"%s\".\n", temp);
+        return 1;
+    }
 
-    ;
+    Config cfg;
+    if (Rapifier::isRapified(rvmatInput)) {
+        cfg = Config::fromBinarized(rvmatInput, logger);
+    } else {
+        Preprocessor p(logger);
+        std::stringstream buf;
+        p.preprocess(foundFile->string(), rvmatInput, buf, Preprocessor::ConstantMapType());
+        buf.seekg(0);
+        cfg = Config::fromPreprocessedText(buf, p.getLineref(), logger);
+    }
 
-    Preprocessor p(logger);
-    std::stringstream buf;
-    p.preprocess(foundFile->string(), std::ifstream(foundFile->string(), std::ifstream::in | std::ifstream::binary), buf, Preprocessor::ConstantMapType());
-    buf.seekg(0);
-    auto cfg = Config::fromPreprocessedText(buf, p.getLineref(), logger);
+
+
 
 #define TRY_READ_ARRAY(tgt, src) {auto x = cfg->getArrayOfFloats({ #src }); if (!x.empty()) tgt = x;}
 
-    current_target = path.c_str();
+    current_target = path;
     // Read colors
     TRY_READ_ARRAY(emissive, emmisive);// "Did you mean: emissive?"
     TRY_READ_ARRAY(ambient, ambient);
