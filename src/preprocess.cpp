@@ -479,7 +479,7 @@ bool matches_includepath(std::filesystem::path startPath, std::string_view inclu
 }
 
 
-std::optional<std::filesystem::path> find_file_helper(std::string_view includepath, std::string_view origin, std::string_view includefolder) {
+std::optional<std::filesystem::path> find_file_helper(std::string_view includepath, std::string_view includefolder) {
     /*
      * Finds the file referenced in includepath in the includefolder. origin
      * describes the file in which the include is used (used for relative
@@ -571,7 +571,7 @@ std::optional<std::filesystem::path> find_file(std::string_view includepath, std
 
     extern struct arguments args;
     for (int i = 0; i < args.num_includefolders; i++) {
-        auto result = find_file_helper(includepath, origin, args.includefolders[i]);
+        auto result = find_file_helper(includepath, args.includefolders[i]);
 
         if (result) {
             __itt_task_end(preprocDomain);

@@ -317,90 +317,6 @@ void quote(char *string) {
     strncpy(string, tmp, 1024);
 }
 
-
-char lookahead_c(FILE *f) {
-    /*
-     * Gets the next character for the given file pointer without changing
-     * the file pointer position.
-     *
-     * Returns a char on success, 1 on failure.
-     */
-
-    char result;
-    int fpos;
-
-    if (feof(f))
-        return -1;
-
-    fpos = ftell(f);
-    result = fgetc(f);
-    fseek(f, fpos, SEEK_SET);
-
-    return result;
-}
-
-
-int lookahead_word(FILE *f, char *buffer, size_t buffsize) {
-    /*
-     * Gets the next word for the given file pointer without changing the
-     * file pointer position.
-     *
-     * Returns 0 on success, a positive integer on failure.
-     */
-
-    int fpos;
-    int i;
-
-    if (feof(f))
-        return 1;
-
-    fpos = ftell(f);
-    if (fgets(buffer, buffsize, f) == NULL)
-        return 2;
-    fseek(f, fpos, SEEK_SET);
-
-    for (i = 0; i < buffsize; i++) {
-        if (buffer[i] == 0)
-            break;
-        if (buffer[i] <= ' ' || buffer[i] == '\t' || buffer[i] == '\r' || buffer[i] == '\n' ||
-                buffer[i] == ',' || buffer[i] == ';' || buffer[i] == '{' ||
-                buffer[i] == '}' || buffer[i] == '(' || buffer[i] == ')' ||
-                buffer[i] == '=' || buffer[i] == '[' || buffer[i] == ']' ||
-                buffer[i] == ':') {
-            buffer[i] = 0;
-            break;
-        }
-    }
-
-    if (i == buffsize)
-        return 4;
-
-    return 0;
-}
-
-
-int skip_whitespace(FILE *f) {
-    /*
-     * Advances the pointer to the next non-whitespace character.
-     *
-     * Returns 0 on success and a positive integer on failure.
-     */
-
-    char current;
-
-    do {
-        if (feof(f))
-            return 1;
-        current = fgetc(f);
-        if (feof(f))
-            return 1;
-    } while (current == ' ' || current == '\t' || current == '\r' || current == '\n');
-
-    fseek(f, -1, SEEK_CUR);
-    return 0;
-}
-
-
 void escape_string(char *buffer, size_t buffsize) {
     char *tmp;
     char *ptr;
@@ -496,31 +412,6 @@ std::string unescape_string(std::string_view buffer) {
     return tmp;
 }
 
-void write_compressed_int(uint32_t integer, FILE *f) {
-    uint64_t temp;
-    char c;
-
-    temp = (uint64_t)integer;
-
-    if (temp == 0) {
-        fwrite(&temp, 1, 1, f);
-    }
-
-    while (temp > 0) {
-        if (temp > 0x7f) {
-            // there are going to be more entries
-            c = 0x80 | (temp & 0x7f);
-            fwrite(&c, 1, 1, f);
-            temp = temp >> 7;
-        } else {
-            // last entry
-            c = temp;
-            fwrite(&c, 1, 1, f);
-            temp = 0;
-        }
-    }
-}
-
 void write_compressed_int(uint32_t integer, std::ostream &f) {
     uint64_t temp;
     char c;
@@ -545,24 +436,6 @@ void write_compressed_int(uint32_t integer, std::ostream &f) {
             temp = 0;
         }
     }
-}
-
-uint32_t read_compressed_int(FILE *f) {
-    int i;
-    uint64_t result;
-    uint8_t temp;
-
-    result = 0;
-
-    for (i = 0; i <= 4; i++) {
-        temp = fgetc(f);
-        result = result | ((temp & 0x7f) << (i * 7));
-
-        if (temp < 0x80)
-            break;
-    }
-
-    return (uint32_t)result;
 }
 
 uint32_t read_compressed_int(std::istream & f) {

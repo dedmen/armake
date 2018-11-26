@@ -22,10 +22,9 @@
 #define MATERIALTYPE 11
 #define MAXSTAGES 16
 
-
-#include "utils.h"
 #include <string>
 #include "logger.h"
+#include "matrix.h"
 
 struct shader_ref {
     uint32_t id;
@@ -49,9 +48,53 @@ struct stage_texture {
     bool type11_bool;
 };
 
+enum class uv_source : uint32_t {
+    None,
+    Tex,
+    TexWaterAnim,
+    Pos,
+    Norm,
+    Tex1,
+    WorldPos,
+    WorldNorm,
+    TexShoreAnim
+};
+
+inline constexpr std::array<std::pair<uv_source, std::string_view>, 8> uvSourceToName{
+    std::pair<uv_source, std::string_view>
+    
+    {uv_source::None, "None"},
+    {uv_source::Tex, "Tex"},
+    {uv_source::TexWaterAnim, "TexWaterAnim"},
+    {uv_source::Pos, "Pos"},
+    {uv_source::Tex1, "Tex1"},
+    {uv_source::WorldPos, "WorldPos"},
+    {uv_source::WorldNorm, "WorldNorm"},
+    {uv_source::TexShoreAnim, "TexShoreAnim"}
+};
+
+
+
 struct stage_transform {
-    uint32_t uv_source;
-    float transform[4][3];
+    uv_source uv_source{ uv_source::Tex };
+    matrix4 transform{ identity_matrix4 };
+
+    bool operator==(const stage_transform& o) const {
+        return uv_source == o.uv_source &&
+            ComparableFloat<std::micro>(transform.m00) == o.transform.m00 &&
+            ComparableFloat<std::micro>(transform.m01) == o.transform.m01 &&
+            ComparableFloat<std::micro>(transform.m02) == o.transform.m02 &&
+            ComparableFloat<std::micro>(transform.m10) == o.transform.m10 &&
+            ComparableFloat<std::micro>(transform.m11) == o.transform.m11 &&
+            ComparableFloat<std::micro>(transform.m12) == o.transform.m12 &&
+            ComparableFloat<std::micro>(transform.m20) == o.transform.m20 &&
+            ComparableFloat<std::micro>(transform.m21) == o.transform.m21 &&
+            ComparableFloat<std::micro>(transform.m22) == o.transform.m22 &&
+            ComparableFloat<std::micro>(transform.m30) == o.transform.m30 &&
+            ComparableFloat<std::micro>(transform.m31) == o.transform.m31 &&
+            ComparableFloat<std::micro>(transform.m32) == o.transform.m32;
+    }
+
 };
 
 class Material {

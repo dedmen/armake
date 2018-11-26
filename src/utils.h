@@ -168,21 +168,13 @@ void replace_string(char *string, size_t buffsize, char *search, char *replace, 
 
 void quote(char *string);
 
-char lookahead_c(FILE *f);
-
-int lookahead_word(FILE *f, char *buffer, size_t buffsize);
-
-int skip_whitespace(FILE *f);
-
 void escape_string(char *buffer, size_t buffsize);
 std::string escape_string(std::string_view input);
 
 std::string unescape_string(std::string_view buffer);
 
-void write_compressed_int(uint32_t integer, FILE *f);
 void write_compressed_int(uint32_t integer, std::ostream &f);
 
-uint32_t read_compressed_int(FILE *f);
 uint32_t read_compressed_int(std::istream& f);
 
 

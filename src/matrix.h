@@ -22,15 +22,46 @@
 #include "vector.h"
 
 
-typedef struct {
+struct matrix {
     float m00, m01, m02;
     float m10, m11, m12;
     float m20, m21, m22;
-} matrix;
+};
 
 
-static const matrix empty_matrix = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
-static const matrix identity_matrix = { 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f };
+static const matrix empty_matrix = {
+    0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f 
+};
+static const matrix identity_matrix = {
+    1.0f, 0.0f, 0.0f, 
+    0.0f, 1.0f, 0.0f,
+    0.0f, 0.0f, 1.0f 
+};
+
+struct matrix4 {
+    float m00, m01, m02;
+    float m10, m11, m12;
+    float m20, m21, m22;
+    float m30, m31, m32;
+};
+
+
+static const matrix4 empty_matrix4 = { 
+    0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 
+    0.0f, 0.0f, 0.0f 
+};
+
+static const matrix4 identity_matrix4 = { 
+    1.0f, 0.0f, 0.0f, 
+    0.0f, 1.0f, 0.0f, 
+    0.0f, 0.0f, 1.0f,
+    0.0f, 0.0f, 0.0f
+};
+
 
 
 matrix vector_tilda(const vector3 v);

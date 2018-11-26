@@ -655,6 +655,7 @@ void P3DFile::convert_lod(mlod_lod &mlod_lod, odol_lod &odol_lod) {
        
         odol_lod.num_materials++;
         mat.read();//#TODO exceptions Though we don't seem to check for errors there? Maybe we should?
+        //YES! We should! mat.read will fail if material file isn't found.
         odol_lod.materials.emplace_back(std::move(mat)); //#CHECK new element should be at index j now.
 
         current_target = temp;

@@ -36,8 +36,8 @@
 #include "material.h"
 
 
-const struct shader_ref pixelshaders[153] = {
-    { 0, "Normal" },
+static constexpr std::array<shader_ref, 153> pixelshaders{
+    shader_ref{ 0, "Normal" },
     { 1, "NormalDXTA" },
     { 2, "NormalMap" },
     { 3, "NormalMapThrough" },
@@ -192,8 +192,8 @@ const struct shader_ref pixelshaders[153] = {
     { 152, "DepthOnly" }
 };
 
-const struct shader_ref vertexshaders[45] = {
-    { 0, "Basic" },
+static constexpr std::array<shader_ref, 45> vertexshaders{
+    shader_ref{ 0, "Basic" },
     { 1, "NormalMap" },
     { 2, "NormalMapDiffuse" },
     { 3, "Grass" },
@@ -248,16 +248,7 @@ int Material::read() {
      */
 
     extern std::string current_target;
-    char temp[2048];
-    int i;
     const struct color default_color = { 0.0f, 0.0f, 0.0f, 1.0f };
-
-    if (path[0] != '\\') {
-        strcpy(temp, "\\");//#TODO use std::filesystem::path
-        strcat(temp, path.c_str());
-    } else {
-        strcpy(temp, path.c_str());
-    }
 
     // Write default values
     type = MATERIALTYPE;
@@ -283,25 +274,26 @@ int Material::read() {
     textures[0].texture_filter = 3;
     textures[0].transform_index = 0;
     textures[0].type11_bool = 0;
-    
-    transforms[0].uv_source = 1;
-    memset(transforms[0].transform, 0, 12 * sizeof(float));
-    memcpy(transforms[0].transform, &identity_matrix, sizeof(identity_matrix));
 
     dummy_texture.path[0] = 0;
     dummy_texture.texture_filter = 3;
     dummy_texture.transform_index = 0;
     dummy_texture.type11_bool = 0;
 
-    auto foundFile = find_file(temp, "");
+
+    std::string readPath = path; //need to copy cuz `path` is used to check if a material already exists, we cannot change that
+    if (readPath[0] != '\\') {
+        readPath.insert(readPath.begin(), '\\');
+    }
+    auto foundFile = find_file(readPath, "");
     if (!foundFile) {
-        logger.warning(current_target, 0u, "Failed to find material \"%s\".\n", temp);
+        logger.warning(current_target, 0u, "Failed to find material \"%s\".\n", path.c_str());
         return 1;
     }
 
     std::ifstream rvmatInput(foundFile->string(), std::ifstream::in | std::ifstream::binary);
     if (!rvmatInput.is_open()) {
-        logger.warning(current_target, 0u, "Failed to open material \"%s\".\n", temp);
+        logger.warning(current_target, 0u, "Failed to open material \"%s\".\n", path.c_str());
         return 1;
     }
 
@@ -315,9 +307,6 @@ int Material::read() {
         buf.seekg(0);
         cfg = Config::fromPreprocessedText(buf, p.getLineref(), logger);
     }
-
-
-
 
 #define TRY_READ_ARRAY(tgt, src) {auto x = cfg->getArrayOfFloats({ #src }); if (!x.empty()) tgt = x;}
 
@@ -334,96 +323,150 @@ int Material::read() {
     // Read shaders
     auto pixelShaderID = cfg->getString({ "PixelShaderID" });
     if (pixelShaderID) {
-        for (i = 0; i < sizeof(pixelshaders) / sizeof(struct shader_ref); i++) {
-            if (pixelshaders[i].name == *pixelShaderID)
-                break;
+
+        auto found = std::find_if(std::begin(pixelshaders), std::end(pixelshaders),[&searchName = *pixelShaderID](const shader_ref& sha) {
+            return iequals(sha.name, searchName);
+        });
+        if (found == std::end(pixelshaders)) {
+            logger.warning(current_target, -1, "Unrecognized pixel shader: \"%s\", assuming \"Normal\".\n", pixelShaderID->c_str());
+            found = std::begin(pixelshaders); //normal is always at front
         }
-        if (i == sizeof(pixelshaders) / sizeof(struct shader_ref)) {
-            logger.warning(current_target, -1, "Unrecognized pixel shader: \"%s\", assuming \"Normal\".\n", *pixelShaderID);
-            i = 0;
-        }
-        pixelshader_id = pixelshaders[i].id;
+
+        pixelshader_id = found->id;
     }
 
     auto VertexShaderID = cfg->getString({ "VertexShaderID" });
     if (VertexShaderID) {
-        for (i = 0; i < sizeof(vertexshaders) / sizeof(struct shader_ref); i++) {
-            if (vertexshaders[i].name == *VertexShaderID)
-                break;
+        auto found = std::find_if(std::begin(vertexshaders), std::end(vertexshaders), [&searchName = *VertexShaderID](const shader_ref& sha) {
+            return iequals(sha.name, searchName);
+        });
+
+        if (found == std::end(vertexshaders)) {
+            logger.warning(current_target, -1, "Unrecognized vertex shader: \"%s\", assuming \"Basic\".\n", VertexShaderID->c_str());
+            found = std::begin(vertexshaders); //normal is always at front
         }
-        if (i == sizeof(vertexshaders) / sizeof(struct shader_ref)) {
-            logger.warning(current_target, -1, "Unrecognized vertex shader: \"%s\", assuming \"Basic\".\n", *VertexShaderID);
-            i = 0;
-        }
-        vertexshader_id = vertexshaders[i].id;
+
+        vertexshader_id = found->id;
     }
 
     // Read stages
-    for (i = 1; i < MAXSTAGES; i++) {
+    for (int i = 1; i < MAXSTAGES; i++) {
         if (!cfg->getString({ "Stage" + std::to_string(i), "texture" }))
             break;
         num_textures++;
         num_transforms++;
     }
     textures.resize(num_textures);
-    transforms.resize(num_transforms);
+    transforms.resize(0);
 
-    for (i = 0; i < num_textures; i++) { //#TODO ranged for
+    for (uint32_t i = 0u; i < num_textures; i++) { //#TODO ranged for
         if (i == 0) {
             textures[i].path[0] = 0;
-        } else {
-            auto texture = cfg->getString({ "Stage" + std::to_string(i), "texture" });
-            textures[i].path = *texture;
+            textures[i].texture_filter = 3;
+            textures[i].transform_index = i;
+            textures[i].type11_bool = 0;
+            continue;
         }
+
+        auto stageCfg = cfg->getClass({ "Stage" + std::to_string(i) });
+
+        auto texture = stageCfg->getString({"texture"});
+        textures[i].path = *texture;
 
         textures[i].texture_filter = 3;
         textures[i].transform_index = i;
         textures[i].type11_bool = 0;
 
-        transforms[i].uv_source = 1;
-        //#TODO transforms uv source enum
-//    XX(type, prefix, None) \
-    //    XX(type, prefix, Tex) \
-    //    XX(type, prefix, TexWaterAnim) \
-    //    XX(type, prefix, Pos) \
-    //    XX(type, prefix, Norm) \
-    //    XX(type, prefix, Tex1) \
-    //    XX(type, prefix, WorldPos) \
-    //    XX(type, prefix, WorldNorm) \
-    //    XX(type, prefix, TexShoreAnim) \
-
-
-        memset(transforms[i].transform, 0, 12 * sizeof(float));
-        memcpy(transforms[i].transform, &identity_matrix, sizeof(identity_matrix));
-
-        if (i != 0) {
-            //#TODO retrieve uvTransform entry. So we don't re-resolve the whole path everytime
-
-            auto aside = cfg->getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "aside" });
-            if (!aside.empty()) {
-                transforms[i].transform[0][0] = aside[0]; //#TODO make this easier use a actual matrix. And then read the parts as vectors using a vector<float> constructor
-                transforms[i].transform[0][1] = aside[1];
-                transforms[i].transform[0][2] = aside[2];
-            }
-            auto up = cfg->getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "up" });
-            if (!up.empty()) {
-                transforms[i].transform[1][0] = up[0];
-                transforms[i].transform[1][1] = up[1];
-                transforms[i].transform[1][2] = up[2];
-            }
-            auto dir = cfg->getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "dir" });
-            if (!dir.empty()) {
-                transforms[i].transform[2][0] = dir[0];
-                transforms[i].transform[2][1] = dir[1];
-                transforms[i].transform[2][2] = dir[2];
-            }
-            auto pos = cfg->getArrayOfFloats({ "Stage" + std::to_string(i), "uvTransform", "pos" });
-            if (!pos.empty()) {
-                transforms[i].transform[3][0] = pos[0];
-                transforms[i].transform[3][1] = pos[1];
-                transforms[i].transform[3][2] = pos[2];
+        uint8_t texGen = 0xFF;
+        auto cfg_texGen = stageCfg->getFloat({ "TexGen" });
+        if (cfg_texGen) {
+            texGen = *cfg_texGen;
+        } else {
+            auto cfg_texGenString = stageCfg->getString({ "texGen" });
+            if (cfg_texGenString) {
+                logger.warning(path, 0, "TexGen is String, should be Number! Stage%u.\n", i);
+                texGen = std::stoi(*cfg_texGenString);
             }
         }
+        auto transformCfg = stageCfg;
+
+        if (texGen != 0xFF) {
+            if (texGen > 8) {
+                logger.warning(path, 0, "TexGen too big! Stage%u tried to get texGen%u.\n", i, texGen);
+                return 1;
+            }
+            auto cfg_texGenClass = cfg->getClass({ "TexGen" + std::to_string(texGen) });
+            if (!cfg_texGenClass) {
+                logger.warning(path, 0, "TexGen not found! Stage%u tried to get texGen%u.\n", i, texGen);
+                return 1;
+            }
+            transformCfg = cfg_texGenClass;
+        }
+
+        stage_transform stageTrans;
+
+
+        auto cfg_uvSourceNumber = transformCfg->getFloat({ "uvSource" });
+
+        if (cfg_uvSourceNumber) {
+            stageTrans.uv_source = static_cast<uv_source>(static_cast<uint32_t>(*cfg_uvSourceNumber));
+        } else {
+            auto cfg_uvSourceString = transformCfg->getString({ "uvSource" });
+
+            if (cfg_uvSourceString) {
+                auto found = std::find_if(uvSourceToName.begin(), uvSourceToName.end(), [&name = *cfg_uvSourceString](const auto& it){
+                    return iequals(it.second, name);
+                });
+
+                if (found == uvSourceToName.end()) {
+                    logger.warning(path, 0, "Invalid uvSource in Stage%u\n", i);
+                } else {
+                    stageTrans.uv_source = found->first;
+                }
+            }
+        }
+
+        auto uvTransform = transformCfg->getClass({ "uvTransform" });
+        if (uvTransform) {
+            auto aside = uvTransform->getArrayOfFloats({ "aside" });
+            if (!aside.empty()) {
+                stageTrans.transform.m00 = aside[0]; //#TODO make this easier use a actual matrix. And then read the parts as vectors using a vector<float> constructor
+                stageTrans.transform.m01 = aside[1];
+                stageTrans.transform.m02 = aside[2];
+            }
+            auto up = uvTransform->getArrayOfFloats({ "up" });
+            if (!up.empty()) {
+                stageTrans.transform.m10 = up[0];
+                stageTrans.transform.m11 = up[1];
+                stageTrans.transform.m12 = up[2];
+            }
+            auto dir = uvTransform->getArrayOfFloats({ "dir" });
+            if (!dir.empty()) {
+                stageTrans.transform.m20 = dir[0];
+                stageTrans.transform.m21 = dir[1];
+                stageTrans.transform.m22 = dir[2];
+            }
+            auto pos = uvTransform->getArrayOfFloats({ "pos" });
+            if (!pos.empty()) {
+                stageTrans.transform.m30 = pos[0];
+                stageTrans.transform.m31 = pos[1];
+                stageTrans.transform.m32 = pos[2];
+            }
+        }
+
+        auto found = std::find(transforms.begin(), transforms.end(), stageTrans);
+        if (found == transforms.end()) {
+            transforms.emplace_back(stageTrans);
+            textures[i].transform_index = transforms.size() - 1;
+        } else
+            textures[i].transform_index = found - transforms.begin();
+
+    }
+    num_transforms = transforms.size();
+
+    if (num_transforms > 8) {
+        logger.error(path, 0, "Too many texGen's! Trying to use %u out of maximum 8.\n", num_transforms);
+        return 1;
     }
 
     auto texture = cfg->getString({ "StageTi", "texture" });
