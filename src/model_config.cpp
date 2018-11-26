@@ -116,7 +116,7 @@ int read_animations(ConfigClass& cfg, struct skeleton_ *skeleton, Logger& logger
         newAnimation.hide_value = 0.0f;
         newAnimation.unhide_value = -1.0f;
 
-#define ERROR_READING(key) logger.warning(current_target, -1, "Error reading %s for %s.\n", key, animName.data())
+#define ERROR_READING(key) logger.debug("Error reading %s for %s in %s\n", key, animName.data(), current_target.c_str())
 
 #define TRY_GET_STRING(targ, key) auto key = anim->getString({ #key }); if (!key) ERROR_READING(#key); newAnimation.targ = *key;
 #define TRY_GET_FLOAT(targ, key) auto key = anim->getFloat({ #key }); if (!key) ERROR_READING(#key); newAnimation.targ = *key;

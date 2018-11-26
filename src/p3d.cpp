@@ -194,6 +194,7 @@ bool mlod_lod::read(std::istream& source) {
     num_selections = selections.size();
 
     source.read(reinterpret_cast<char*>(&resolution), 4);
+    return true;
 }
 
 void odol_section::writeTo(std::ostream& output) {
@@ -648,7 +649,7 @@ void P3DFile::convert_lod(mlod_lod &mlod_lod, odol_lod &odol_lod) {
         if (mlod_lod.faces[i].material_name.empty() || matExists) //Only create material if we have a material. And if it doesn't exist already
             continue;
 
-        std::string_view temp = current_target;
+        auto temp = current_target;
 
         Material mat(logger, mlod_lod.faces[i].material_name);
        
@@ -1597,7 +1598,7 @@ int P3DFile::readMLOD(std::filesystem::path sourceFile) {
 
 
     if (!input.is_open()) {
-        logger.error("Failed to open source file.\n");
+        logger.error(sourceFile.string(), 0, "Failed to open source file.\n");
         return 2;
     }
 
@@ -1608,7 +1609,7 @@ int P3DFile::readMLOD(std::filesystem::path sourceFile) {
 
     if (strncmp(typeBuffer, "MLOD", 4) != 0) {
         if (strcmp(args.positionals[0], "binarize") == 0)
-            logger.error("Source file is not MLOD.\n");
+            logger.error(sourceFile.string(), 0, "Source file is not MLOD.\n");
         return -3;
     }
 
@@ -1618,7 +1619,7 @@ int P3DFile::readMLOD(std::filesystem::path sourceFile) {
 
     num_lods = read_lods(input, num_lods);
     if (num_lods <= 0) {
-        logger.error("Failed to read LODs.\n");
+        logger.error(sourceFile.string(), 0, "Failed to read LODs.\n");
         return 4;
     }
 
@@ -1626,7 +1627,7 @@ int P3DFile::readMLOD(std::filesystem::path sourceFile) {
     build_model_info();
     auto success = model_info.skeleton->read(sourceFile, logger);
     if (success > 0) {
-        logger.error("Failed to read model config.\n");
+        logger.error(sourceFile.string(), 0, "Failed to read model config.\n");
         return success;
     }
     return 0;
@@ -1637,7 +1638,7 @@ int P3DFile::writeODOL(std::filesystem::path targetFile) {
 
 
     if (!output.is_open()) {
-        logger.error("Failed to open target file.\n");
+        logger.error(targetFile.string(), 0, "Failed to open target file.\n");
         return 1;
     }
 

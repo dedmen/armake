@@ -40,6 +40,7 @@ void Logger::info(const char* format, ...) {
 }
 
 void Logger::debug(std::string_view message) {
+    if (!debugLogEnabled) return;
     std::unique_lock lock(streamLock);
 #ifdef _WIN32
     logTarget << "debug: " << message;
@@ -51,6 +52,7 @@ void Logger::debug(std::string_view message) {
 }
 
 void Logger::debug(const char* format, ...) {
+    if (!debugLogEnabled) return;
     PRINTF;
 
     debug(std::string_view(buffer));

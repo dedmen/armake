@@ -54,6 +54,7 @@ class Logger {
     std::mutex streamLock;
 
     std::array<bool, numberOfWarningTypes> warningEnabled{ true };
+    bool debugLogEnabled{false};
 
     void printInFile(std::string_view file, size_t line);
 
