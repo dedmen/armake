@@ -186,7 +186,7 @@ std::map<std::string_view, std::shared_ptr<ConfigClass>> ConfigClass::getSubclas
     return ret;
 }
 
-std::optional<ConfigClassEntry> ConfigClass::getEntry(ConfigPath path) const {
+std::optional<std::reference_wrapper<ConfigClassEntry>> ConfigClass::getEntry(ConfigPath path) const {
     const std::string_view subelement = *path.begin();
 
     auto found = order.find(subelement);
@@ -213,20 +213,20 @@ std::optional<ConfigClassEntry> ConfigClass::getEntry(ConfigPath path) const {
 std::shared_ptr<ConfigClass> ConfigClass::getClass(ConfigPath path) const {
     auto entry = getEntry(path);
     if (!entry) return {};
-    auto& def = *entry;
+    auto& def = entry->get();
 
-    if (entry->isClass())
-        return entry->getAsClass();
+    if (def.isClass())
+        return def.getAsClass();
     return {};
 }
 
 std::optional<int32_t> ConfigClass::getInt(ConfigPath path) const {
     auto entry = getEntry(path);
     if (!entry) return {};
-    auto& def = *entry;
-    if (!entry->isEntry()) return {}; //entry is not a value
+    auto& def = entry->get();
+    if (!def.isEntry()) return {}; //entry is not a value
 
-    auto& var = entry->getAsEntry();
+    auto& var = def.getAsEntry();
     if (var.getType() == rap_type::rap_int || var.getType() == rap_type::rap_float)
         return var.getValue().getAsInt();  //getAsInt automatically converts float to int
 
@@ -236,10 +236,10 @@ std::optional<int32_t> ConfigClass::getInt(ConfigPath path) const {
 std::optional<float> ConfigClass::getFloat(ConfigPath path) const {
     auto entry = getEntry(path);
     if (!entry) return {};
-    auto& def = *entry;
-    if (!entry->isEntry()) return {}; //entry is not a value
+    auto& def = entry->get();
+    if (!def.isEntry()) return {}; //entry is not a value
 
-    auto& var = entry->getAsEntry();
+    auto& var = def.getAsEntry();
     if (var.getType() == rap_type::rap_int || var.getType() == rap_type::rap_float)
         return var.getValue().getAsFloat();  //getAsFloat automatically converts int to float
 
@@ -249,10 +249,10 @@ std::optional<float> ConfigClass::getFloat(ConfigPath path) const {
 std::optional<std::string> ConfigClass::getString(ConfigPath path) const {
     auto entry = getEntry(path);
     if (!entry) return {};
-    auto& def = *entry;
-    if (!entry->isEntry()) return {}; //entry is not a value
+    auto& def = entry->get();
+    if (!def.isEntry()) return {}; //entry is not a value
 
-    auto& var = entry->getAsEntry();
+    auto& var = def.getAsEntry();
     if (var.getType() == rap_type::rap_string)
         return var.getValue().getAsString();
 
@@ -262,10 +262,10 @@ std::optional<std::string> ConfigClass::getString(ConfigPath path) const {
 std::optional<std::vector<std::string>> ConfigClass::getArrayOfStrings(ConfigPath path) const {
     auto entry = getEntry(path);
     if (!entry) return {};
-    auto& def = *entry;
-    if (!entry->isEntry()) return {}; //entry is not a value
+    auto& def = entry->get();
+    if (!def.isEntry()) return {}; //entry is not a value
 
-    auto& var = entry->getAsEntry();
+    auto& var = def.getAsEntry();
     if (var.getType() == rap_type::rap_array) {
         auto& arr = var.getValue().getAsArray();
         std::vector<std::string> ret;
@@ -282,10 +282,10 @@ std::optional<std::vector<std::string>> ConfigClass::getArrayOfStrings(ConfigPat
 std::optional<std::vector<std::string_view>> ConfigClass::getArrayOfStringViews(ConfigPath path) const {
     auto entry = getEntry(path);
     if (!entry) return {};
-    auto& def = *entry;
-    if (!entry->isEntry()) return {}; //entry is not a value
+    auto& def = entry->get();
+    if (!def.isEntry()) return {}; //entry is not a value
 
-    auto& var = entry->getAsEntry();
+    auto& var = def.getAsEntry();
     if (var.getType() == rap_type::rap_array) {
         auto& arr = var.getValue().getAsArray();
         std::vector<std::string_view> ret;
@@ -302,11 +302,11 @@ std::optional<std::vector<std::string_view>> ConfigClass::getArrayOfStringViews(
 std::vector<float> ConfigClass::getArrayOfFloats(ConfigPath path) const {
     auto entry = getEntry(path);
     if (!entry) return {};
-    auto& def = *entry;
-    if (!entry->isEntry()) return {}; //entry is not a value
+    auto& def = entry->get();
+    if (!def.isEntry()) return {}; //entry is not a value
 
 
-    auto& var = entry->getAsEntry();
+    auto& var = def.getAsEntry();
     if (var.getType() == rap_type::rap_array) {
         auto& arr = var.getValue().getAsArray();
         std::vector<float> ret;
