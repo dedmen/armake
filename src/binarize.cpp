@@ -98,7 +98,7 @@ int attempt_bis_binarize(char *source, char *target, Logger& logger) {
     char command[2048];
     char temp[2048];
     char filename[2048];
-    char *dependencies[MAXTEXTURES];
+    std::vector <std::string> dependencies;
     char *root;
     FILE *f_source;
     std::vector<mlod_lod> mlod_lods;
@@ -131,57 +131,8 @@ int attempt_bis_binarize(char *source, char *target, Logger& logger) {
 
     // Read P3D and create a list of required files
     if (!is_rtm) {
-        //f_source = fopen(source, "rb");
-        //if (!f_source) {
-        //    printf("Failed to open %s.\n", source);
-        //    return 1;
-        //}
-
-
-        //P3DFile f(logger);
-        //f.readMLOD(f_source); //#TODO compact variant that just reads lods without modelinfo
-
-        //fseek(f_source, 8, SEEK_SET);
-        //fread(&num_lods, 4, 1, f_source);
-        //mlod_lods.resize(num_lods);
-        //num_lods = read_lods(f_source, mlod_lods, num_lods);
-        //fflush(stdout);
-        //if (num_lods < 0) {
-        //    printf("Source file seems to be invalid P3D.\n");
-        //    return 2;
-        //}
-        //
-        //fclose(f_source);
-
-        memset(dependencies, 0, sizeof(dependencies));
-        for (i = 0; i < num_lods; i++) {
-            for (j = 0; j < mlod_lods[i].num_faces; j++) {
-                if (!mlod_lods[i].faces[j].texture_name.empty() && mlod_lods[i].faces[j].texture_name[0] != '#') {
-                    for (k = 0; k < MAXTEXTURES; k++) {
-                        if (dependencies[k] == 0)
-                            break;
-                        if (stricmp(mlod_lods[i].faces[j].texture_name.c_str(), dependencies[k]) == 0)
-                            break;
-                    }
-                    if (k < MAXTEXTURES && dependencies[k] == 0) {
-                        dependencies[k] = (char *)safe_malloc(2048);
-                        strcpy(dependencies[k], mlod_lods[i].faces[j].texture_name.c_str());
-                    }
-                }
-                if (!mlod_lods[i].faces[j].material_name.empty() && mlod_lods[i].faces[j].material_name[0] != '#') {
-                    for (k = 0; k < MAXTEXTURES; k++) {
-                        if (dependencies[k] == 0)
-                            break;
-                        if (stricmp(mlod_lods[i].faces[j].material_name.c_str(), dependencies[k]) == 0)
-                            break;
-                    }
-                    if (k < MAXTEXTURES && dependencies[k] == 0) {
-                        dependencies[k] = (char *)safe_malloc(2048);
-                        strcpy(dependencies[k], mlod_lods[i].faces[j].material_name.c_str());
-                    }
-                }
-            }
-        }
+        P3DFile f(logger);
+        dependencies = f.retrieveDependencies(source);
     }
 
     // Create a temporary folder to isolate the target file and copy it there
@@ -242,31 +193,22 @@ int attempt_bis_binarize(char *source, char *target, Logger& logger) {
     free(root);
 
     if (!is_rtm) {
-        for (i = 0; i < MAXTEXTURES; i++) {
-            if (dependencies[i] == 0)
-                break;
 
+        for (auto& it : dependencies) {
             *filename = 0;
-            if (dependencies[i][0] != '\\')
-                strcpy(filename, "\\");
-            strcat(filename, dependencies[i]);
+            if (it.front() != '\\')
+                it.insert(it.begin(), '\\');
 
-            auto fileFound = find_file(filename, "");
+            auto fileFound = find_file(it, "");
             if (!fileFound) {
                 logger.warning(std::string_view(source), 0u, "Failed to find file %s.\n", filename);
-                free(dependencies[i]);
                 continue;
             }
 
-            strcpy(filename, tempfolder->string().c_str());
-            strcat(filename, dependencies[i]);
-
-            if (!copy_file(fileFound->string().c_str(), filename)) {
+            if (!::copy_file(*fileFound, *tempfolder / it)) {
                 logger.error("Failed to copy %s to temp folder.\n", temp);
                 return 3;
             }
-
-            free(dependencies[i]);
         }
     }
 

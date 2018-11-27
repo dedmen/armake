@@ -818,7 +818,6 @@ int Rapifier::rapify_file(std::istream &source, std::ostream &target, const char
      *
      * Returns 0 on success and a positive integer on failure.
      */
-    current_target = sourceFileName;
 
     // Check if the file is already rapified
     if (isRapified(source)) {
@@ -839,8 +838,6 @@ int Rapifier::rapify_file(std::istream &source, std::ostream &target, const char
     Preprocessor::ConstantMapType constants;
     std::stringstream fileToPreprocess;
     int success = preproc.preprocess(sourceFileName, source, fileToPreprocess, constants);
-
-    current_target = sourceFileName;
 
     if (success) {
         logger.error("Failed to preprocess %s.\n", sourceFileName);

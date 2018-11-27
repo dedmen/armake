@@ -43,6 +43,7 @@
 #include "p3d.h"
 #include <numeric>
 #include <fstream>
+#include <unordered_set>
 
 __itt_domain* p3dDomain = __itt_domain_create("armake.p3d");
 __itt_string_handle* handle_mlod2odol = __itt_string_handle_create("mlod2odol");
@@ -1593,6 +1594,58 @@ void P3DFile::getBoundingBox(vector3 &bbox_min, vector3 &bbox_max, bool visual_o
         }
     }
 }
+
+std::vector<std::string> P3DFile::retrieveDependencies(std::filesystem::path sourceFile) {
+    //Copy of readMLOD without model info
+
+    std::ifstream input(sourceFile, std::ifstream::binary);
+
+
+    if (!input.is_open()) {
+        logger.error(sourceFile.string(), 0, "Failed to open source file.\n");
+        return {};
+    }
+
+    current_target = sourceFile.string();
+
+    char typeBuffer[5];
+    input.read(typeBuffer, 5);
+
+    if (strncmp(typeBuffer, "MLOD", 4) != 0) {
+        if (strcmp(args.positionals[0], "binarize") == 0)
+            logger.error(sourceFile.string(), 0, "Source file is not MLOD.\n");
+        return {};
+    }
+
+    input.seekg(8);
+
+    input.read(reinterpret_cast<char*>(&num_lods), 4);
+
+    num_lods = read_lods(input, num_lods);
+    if (num_lods <= 0) {
+        logger.error(sourceFile.string(), 0, "Failed to read LODs.\n");
+        return {};
+    }
+    //^^^^^^ Copy of readMLOD without model info
+
+    std::unordered_set<std::string> dependencies; //we don't want duplicates, and doing it with a set is much faster
+
+
+    for (const auto& it : mlod_lods)
+        for (const mlod_face& face : it.faces) {
+            if (!face.texture_name.empty() && face.texture_name.front() != '#')
+                dependencies.insert(face.texture_name);
+            if (!face.material_name.empty() && face.material_name.front() != '#')
+                dependencies.insert(face.material_name);
+        }
+
+    std::vector<std::string> depVec;
+    depVec.resize(dependencies.size());
+
+    std::move(dependencies.begin(), dependencies.end(), std::back_inserter(depVec));
+    return depVec;
+}
+
 
 int P3DFile::readMLOD(std::filesystem::path sourceFile) {
     std::ifstream input(sourceFile, std::ifstream::binary);

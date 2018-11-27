@@ -461,8 +461,6 @@ int cmd_inspect(Logger& logger) {
     if (args.num_positionals != 2)
         return 128;
 
-    current_target = args.positionals[1];
-
     // remove trailing slash in target
     if (args.positionals[1][strlen(args.positionals[1]) - 1] == PATHSEP)
         args.positionals[1][strlen(args.positionals[1]) - 1] = 0;
@@ -508,7 +506,6 @@ __itt_string_handle* handle_cmd_unpack = __itt_string_handle_create("cmd_unpack"
 __itt_string_handle* handle_cmd_unpackF = __itt_string_handle_create("cmd_unpack_F");
 int cmd_unpack(Logger& logger) {
     extern struct arguments args;
-    extern std::string current_target;
    
     if (args.num_positionals < 3)
         return 128;

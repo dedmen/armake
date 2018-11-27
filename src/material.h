@@ -70,7 +70,7 @@ inline constexpr std::array<std::pair<TextureFilter, std::string_view>, 8> Textu
 struct stage_texture {
     TextureFilter texture_filter { TextureFilter::Anizotropic };
     std::string path;
-    uint32_t transform_index;
+    uint32_t transform_index { 0 };
     bool useWorldEnvMap { false };
 };
 
@@ -193,7 +193,7 @@ public:
 
 
     std::string path;
-    uint32_t type{0};
+    uint32_t type { MATERIALTYPE }; //This is actually version
     struct color emissive;
     struct color ambient;
     struct color diffuse;

@@ -370,6 +370,8 @@ class P3DFile {
 public:
     P3DFile(Logger& logger) : logger(logger){}
 
+    std::vector<std::string> retrieveDependencies(std::filesystem::path sourceFile);
+
     int readMLOD(std::filesystem::path sourceFile);
     int writeODOL(std::filesystem::path targetFile);
 

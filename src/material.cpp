@@ -251,9 +251,6 @@ int Material::read() {
     const struct color default_color = { 0.0f, 0.0f, 0.0f, 1.0f };
 
     // Write default values
-    type = MATERIALTYPE;
-    mainLight = 1;
-    fogMode = FogMode::Fog;
     depr_3 = 1;
     emissive = default_color;
     ambient = default_color;
@@ -269,17 +266,6 @@ int Material::read() {
 
     textures.resize(num_textures);
     transforms.resize(num_transforms);
-    
-    textures[0].path[0] = 0;
-    textures[0].texture_filter = 3;
-    textures[0].transform_index = 0;
-    textures[0].useWorldEnvMap = 0;
-
-    dummy_texture.path[0] = 0;
-    dummy_texture.texture_filter = 3;
-    dummy_texture.transform_index = 0;
-    dummy_texture.useWorldEnvMap = 0;
-
 
     std::string readPath = path; //need to copy cuz `path` is used to check if a material already exists, we cannot change that
     if (readPath[0] != '\\') {
@@ -322,12 +308,12 @@ int Material::read() {
 
     auto cfg_renderFlagsArray = cfg->getArrayOfStringViews({ "renderFlags" });
     if (cfg_renderFlagsArray) {
-        for (auto& it : *cfg_renderFlagsArray) {
-            auto found = std::find_if(IndexToRenderFlag.begin(), IndexToRenderFlag.end(), [&it](const auto& it) {
-                return iequals(it.second, it);
+        for (auto& flag : *cfg_renderFlagsArray) {
+            auto found = std::find_if(IndexToRenderFlag.begin(), IndexToRenderFlag.end(), [&flag](const auto& it) {
+                return iequals(it.second, flag);
             });
             if (found == IndexToRenderFlag.end()) {
-                logger.warning(path, -1, "Unrecognized render flag: \"%.*s\".\n", static_cast<int>(it.size()), it.data());
+                logger.warning(path, -1, "Unrecognized render flag: \"%.*s\".\n", static_cast<int>(flag.size()), flag.data());
                 continue;
             }
             render_flags.set(found->first, true);
