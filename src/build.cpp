@@ -93,18 +93,13 @@ __itt_string_handle* handle_prepWrite = __itt_string_handle_create("prepWrite");
 
 
 
-bool file_allowed(std::string_view filename) {
-    extern struct arguments args;
-
+bool Builder::file_allowed(std::string_view filename) {
     if (filename == "$PBOPREFIX$")
         return false;
 
-    for (int i = 0; i < args.num_excludefiles; i++) {
-        if (matches_glob(filename.data(), args.excludefiles[i]))
-            return false;
-    }
-
-    return true;
+    return std::none_of(excludeFiles.begin(), excludeFiles.end(), [&filename](std::string_view& ex) {
+        return matches_glob(filename, ex.data());
+    });
 }
 
 int Builder::binarize_callback(const std::filesystem::path &root, const std::filesystem::path &source) {
@@ -379,6 +374,12 @@ int cmd_build(Logger& logger) {
     std::string_view targetPbo = args.positionals[2];
 
     Builder builder(logger);
+
+    for (int j = 0; j < args.num_excludefiles; j++) {
+        builder.excludeFiles.emplace_back(args.excludefiles[j]);
+    }
+
+
 
     return builder.buildDirectory(sourceDirectory, targetPbo);
 }

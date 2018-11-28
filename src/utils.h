@@ -149,7 +149,7 @@ int get_line_number(FILE *f_source);
 
 void reverse_endianness(void *ptr, size_t buffsize);
 
-bool matches_glob(const char *string, const char *pattern);
+bool matches_glob(std::string_view string, std::string_view pattern);
 
 int fsign(float f);
 

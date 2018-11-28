@@ -159,27 +159,27 @@ void reverse_endianness(void *ptr, size_t buffsize) {
 }
 
 
-bool matches_glob(const char *string, const char *pattern) {
-    const char *ptr1 = string;
-    const char *ptr2 = pattern;
+bool matches_glob(std::string_view string, std::string_view pattern) {
+    auto ptr1 = string.begin();
+    auto ptr2 = pattern.begin();
 
-    while (*ptr1 != 0 && *ptr2 != 0) {
+    while (ptr1 != string.end() && ptr2 != pattern.end()) {
         if (*ptr2 == '*') {
-            ptr2++;
+            ++ptr2;
             while (true) {
-                if (matches_glob(ptr1, ptr2))
+                if (matches_glob(string.substr(ptr1 - string.begin()), pattern.substr(ptr2 - pattern.begin())))
                     return true;
                 if (*ptr1 == 0)
                     return false;
-                ptr1++;
+                ++ptr1;
             }
         }
 
         if (*ptr2 != '?' && *ptr1 != *ptr2)
             return false;
 
-        ptr1++;
-        ptr2++;
+        ++ptr1;
+        ++ptr2;
     }
 
     return (*ptr1 == *ptr2);

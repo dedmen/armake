@@ -31,8 +31,14 @@ class Builder {
     int binarize_callback(const std::filesystem::path &root, const std::filesystem::path &source) noexcept(false);
     Logger& logger;
 public:
+    bool file_allowed(std::string_view filename);
+
+
     Builder(Logger& log) : logger(log) {};
     int buildDirectory(std::filesystem::path inputDirectory, std::filesystem::path targetPbo);
+
+
+    std::vector<std::string_view> excludeFiles;
 
 };
 
