@@ -468,11 +468,18 @@ void Config::toPlainText(std::ostream& output, Logger& logger, std::string_view 
                         output << ": " << c->getInheritedParentName() << " {\n";
                     else
                         output << " {\n";
-                    indentLevel++;
-                    printClass(c);
-                    indentLevel--;
-                    pushIndent();
-                    output << "};\n";
+
+                    if (c->entries.empty()) {
+                        output.seekp(-1, std::ostream::cur);
+                        output << "};\n";
+                    } else {
+                        indentLevel++;
+                        printClass(c);
+                        indentLevel--;
+                        pushIndent();
+                        output << "};\n";
+                    }
+
                     if (indentLevel == 0)
                         output << "\n"; //Seperate classes on root level. Just for fancyness
                 }
