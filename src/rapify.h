@@ -47,7 +47,7 @@ class ConfigValue {
     friend class Rapifier;
     rap_type type{ rap_type::invalid };
     using ArrayValueT = std::vector<ConfigValue>;
-    std::variant<int32_t, float, std::string, ArrayValueT> value;
+    std::variant<std::monostate, int32_t, float, std::string, ArrayValueT> value;
 public:
     ConfigValue() = default;
     ConfigValue(rap_type t, int32_t x) : type(t), value(x) {
