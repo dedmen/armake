@@ -432,7 +432,8 @@ void Config::toPlainText(std::ostream& output, Logger& logger, std::string_view 
         for (auto& it : data) {
             switch (it.getType()) {
             case rap_type::rap_string:
-                output << "\"" << it.getAsString() << "\", ";
+                
+                output << "\"" << escape_string(it.getAsString()) << "\", ";
                 break;
             case rap_type::rap_int:
                 output << it.getAsInt() << ", ";
@@ -488,7 +489,7 @@ void Config::toPlainText(std::ostream& output, Logger& logger, std::string_view 
                 pushIndent();
                 switch (var.getType()) {
                 case rap_type::rap_string:
-                    output << var.getName() << " = \"" << var.getAsString() << "\";\n";
+                    output << var.getName() << " = \"" << escape_string(var.getAsString()) << "\";\n";
                     break;
                 case rap_type::rap_int:
                     output << var.getName() << " = " << var.getAsInt() << ";\n";
