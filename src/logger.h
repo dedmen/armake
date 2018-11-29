@@ -53,13 +53,13 @@ class Logger {
     std::ostream& logErr;
     std::mutex streamLock;
 
-    std::array<bool, numberOfWarningTypes> warningEnabled{ true };
+    std::array<bool, numberOfWarningTypes> warningEnabled;
     bool debugLogEnabled{false};
 
     void printInFile(std::string_view file, size_t line);
 
 public:
-	Logger(std::ostream& target) : logTarget(target), logErr(target) {}
+    Logger(std::ostream& target) : logTarget(target), logErr(target) { std::fill(warningEnabled.begin(), warningEnabled.end(), true); }
 	Logger(std::ostream& target, std::ostream& targetErr) : logTarget(target), logErr(targetErr) {}
 
     void disableWarning(LoggerMessageType type) {

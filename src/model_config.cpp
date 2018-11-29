@@ -285,7 +285,7 @@ int skeleton_::read(std::filesystem::path source, Logger& logger) {
         auto skeletonInherit = cfg->getString({ "CfgSkeletons", name, "skeletonInherit" });
         if (!skeletonInherit) {
             __debugbreak();
-            logger.error("Failed to read bones.\n"); //#TODO fix this wrong error message
+            logger.error("Failed to read bones.\n");
             return success;//#TODO fix this error code. That's not the correct one
         }
 
