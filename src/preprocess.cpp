@@ -60,11 +60,11 @@ char *strchrnul(const char *s, int c) {
 }
 #endif
 
-bool Preprocessor::constants_parse(ConstantMapType &constants, std::string_view  definition, int line) {
+bool Preprocessor::constants_parse(ConstantMapType &constants, std::string_view definition, int line) {
     
     char *argstr;
     char *tok;
-    char **args;
+    std::vector<std::string> args;
     int i;
     int len;
     bool quoted;
@@ -89,6 +89,7 @@ bool Preprocessor::constants_parse(ConstantMapType &constants, std::string_view 
     auto iter = constants.emplace(name, constant());
     constant& c = iter.first->second;
 
+    //c.name = name; //#TODO remove this. Duplciate memory usage and not required for operation. Just here for debug
     c.num_args = 0;
     if (*ptr == '(') {
         argstr = safe_strdup(ptr + 1);
@@ -100,14 +101,9 @@ bool Preprocessor::constants_parse(ConstantMapType &constants, std::string_view 
         *strchr(argstr, ')') = 0;
         ptr += strlen(argstr) + 2;
 
-        args = (char **)safe_malloc(sizeof(char *) * 4);
-
         tok = strtok(argstr, ",");
         while (tok) {
-            if (c.num_args % 4 == 0)
-                args = (char **)safe_realloc(args, sizeof(char *) * (c.num_args + 4));
-            args[c.num_args] = safe_strdup(tok);
-            trim(args[c.num_args], strlen(args[c.num_args]) + 1);
+            auto& ins = args.emplace_back(trim(std::string_view(tok)));
             c.num_args++;
             tok = strtok(NULL, ",");
         }
@@ -120,7 +116,7 @@ bool Preprocessor::constants_parse(ConstantMapType &constants, std::string_view 
 
     c.num_occurences = 0;
     if (c.num_args > 0) {
-        c.value = safe_strdup("");
+        c.value = "";
         len = 0;
 
         while (true) {
@@ -170,7 +166,7 @@ bool Preprocessor::constants_parse(ConstantMapType &constants, std::string_view 
 
             tok = safe_strndup(start, ptr - start);
             for (i = 0; i < c.num_args; i++) {
-                if (strcmp(tok, args[i]) == 0)
+                if (tok == args[i])
                     break;
             }
 
@@ -239,12 +235,6 @@ bool Preprocessor::constants_parse(ConstantMapType &constants, std::string_view 
         }
     }
 
-    if (c.num_args > 0) {
-        for (i = 0; i < c.num_args; i++)
-            free(args[i]);
-        free(args);
-    }
-
     return true;
 }
 
@@ -306,8 +296,11 @@ std::optional<std::string> Preprocessor::constants_preprocess(const ConstantMapT
             ptr++; //also skips ending "
         }
 
+        //#TODO support for #<macroval> needs to add quotes here
         if (ptr - start > 0) {
-            result.emplace_back(std::string_view(start, ptr - start));
+            auto val = std::string_view(start, ptr - start);
+            if (val != "##") //These are supposed to disappear
+                result.emplace_back(val);
         }
 
         if (*ptr == 0)
@@ -319,6 +312,14 @@ std::optional<std::string> Preprocessor::constants_preprocess(const ConstantMapT
             ptr++;
 
         std::string_view src(start, ptr - start);
+
+        if (src.front() == '_') {
+
+            //#TODO __LINE__ macro
+            //#TODO __FILE__ macro
+
+        }
+
         auto found = constants.find(std::string(src));
 
         if (found == constants.end() || (found->second.num_args > 0 && *ptr != '(')) {
