@@ -317,61 +317,31 @@ void quote(char *string) {
     strncpy(string, tmp, 1024);
 }
 
-void escape_string(char *buffer, size_t buffsize) {
-    char *tmp;
-    char *ptr;
-    char tmp_array[3];
-
-    tmp = (char*)safe_malloc(buffsize * 2);
-    tmp[0] = 0;
-    tmp_array[2] = 0;
-
-    for (ptr = buffer; *ptr != 0; ptr++) {
-        tmp_array[0] = '\\';
-        if (*ptr == '\r') {
-            tmp_array[1] = 'r';
-        } else if (*ptr == '\n') {
-            tmp_array[1] = 'n';
-        } else if (*ptr == '"') {
-            tmp_array[0] = '"';
-            tmp_array[1] = '"';
-        } else {
-            tmp_array[0] = *ptr;
-            tmp_array[1] = 0;
-        }
-        strcat(tmp, tmp_array);
-    }
-
-    strncpy(buffer, tmp, buffsize);
-
-    free(tmp);
-}
-
 std::string escape_string(std::string_view input) {
     char tmp_array[3];
 
     std::string tmp;
-    tmp.resize(input.size());
-    tmp_array[2] = 0;
+    const auto extraCount = std::count_if(input.begin(), input.end(), [](char t) {
+        return t == '\r' || t == '\n' || t == '"';
+    });
+    tmp.reserve(input.size()+extraCount);
 
-    for (const char* ptr = input.data(); *ptr != 0; ptr++) {
+    for (auto& ch : input) {
         tmp_array[0] = '\\';
-        if (*ptr == '\r') {
+        if (ch == '\r') {
             tmp_array[1] = 'r';
-        }
-        else if (*ptr == '\n') {
+        } else if (ch == '\n') {
             tmp_array[1] = 'n';
-        }
-        else if (*ptr == '"') {
+        } else if (ch == '"') {
             tmp_array[0] = '"';
             tmp_array[1] = '"';
+        } else {
+            tmp.push_back(ch);
+            continue;
         }
-        else {
-            tmp_array[0] = *ptr;
-            tmp_array[1] = 0;
-        }
-        tmp += tmp_array;
+        tmp.append(tmp_array, 2);
     }
+
     return tmp;
 }
 

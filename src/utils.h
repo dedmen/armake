@@ -168,7 +168,6 @@ void replace_string(char *string, size_t buffsize, char *search, char *replace, 
 
 void quote(char *string);
 
-void escape_string(char *buffer, size_t buffsize);
 std::string escape_string(std::string_view input);
 
 std::string unescape_string(std::string_view buffer);
