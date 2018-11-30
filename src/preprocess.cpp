@@ -44,6 +44,8 @@
 
 __itt_domain* preprocDomain = __itt_domain_create("armake.preproc");
 
+//std::execution::seq std::execution::par_unseq
+#define MULTITHREADED_EXC std::execution::par_unseq
 
 #define IS_MACRO_CHAR(x) ( (x) == '_' || \
     ((x) >= 'a' && (x) <= 'z') || \
@@ -249,6 +251,7 @@ std::optional<std::string> Preprocessor::constants_preprocess(const ConstantMapT
     };
 
     std::vector<std::variant<std::string_view, constToProcess>> result;
+    result.reserve(8);
 
     auto processConstants = [this, &line, &constant_stack, &result, &constants]() {
         const auto processConst = 
@@ -263,12 +266,12 @@ std::optional<std::string> Preprocessor::constants_preprocess(const ConstantMapT
             auto value = constant_value(constants, cnst.constant, cnst.args.size(), cnst.args, line, substack);
             if (!value)
                 return static_cast<size_t>(0u); //#TODO exception
-            cnst.processed = *value;
-            return value->length();
+            cnst.processed = std::move(*value);
+            return cnst.processed.length();
         };
 
         auto finalSize = (result.size() > 5) ?
-            std::transform_reduce(std::execution::par_unseq, result.begin(), result.end(), static_cast<size_t>(0u), [](size_t l, size_t r) {return l + r; }, processConst)
+            std::transform_reduce(MULTITHREADED_EXC, result.begin(), result.end(), static_cast<size_t>(0u), [](size_t l, size_t r) {return l + r; }, processConst)
             :
             std::transform_reduce(std::execution::seq, result.begin(), result.end(), static_cast<size_t>(0u), [](size_t l, size_t r) {return l + r; }, processConst);
         std::string res;
@@ -282,7 +285,6 @@ std::optional<std::string> Preprocessor::constants_preprocess(const ConstantMapT
         }
         return res;
     };
-
 
     while (true) {
         // Non-tokens
@@ -323,7 +325,7 @@ std::optional<std::string> Preprocessor::constants_preprocess(const ConstantMapT
         auto found = constants.find(std::string(src));
 
         if (found == constants.end() || (found->second.num_args > 0 && *ptr != '(')) {
-            result.emplace_back(std::string_view(start, ptr - start));
+            result.emplace_back(src);
             continue;
         }
 
@@ -338,6 +340,7 @@ std::optional<std::string> Preprocessor::constants_preprocess(const ConstantMapT
         auto& args = curConst.args;
         curConst.constant = found;
         if (*ptr == '(') {
+            args.reserve(4);
             ptr++;
             start = ptr;
 
@@ -354,7 +357,6 @@ std::optional<std::string> Preprocessor::constants_preprocess(const ConstantMapT
                 } else if (level > 0 && *ptr == ')') {
                     level--;
                 } else if (level == 0 && (*ptr == ',' || *ptr == ')')) {
-
                     args.emplace_back(start, ptr - start);
                     if (*ptr == ')') {
                         break;
@@ -403,7 +405,8 @@ std::optional<std::string> Preprocessor::constant_value(const ConstantMapType &c
         auto ret = constants_preprocess(constants, args[i], line, constant_stack);
         if (!ret)
             return {};
-        args[i] = trim(*ret); //trim tabs and spaces from both ends
+        trimRef(*ret); //trim tabs and spaces from both ends
+        args[i] = std::move(*ret);
     }
 
 
@@ -429,7 +432,8 @@ std::optional<std::string> Preprocessor::constant_value(const ConstantMapType &c
 
     if (res && !res->empty()) {
         //trim tabs and spaces from both ends
-        return trim(*res);
+        trimRef(*res);
+        return res;
     }
 
     return res;
@@ -560,8 +564,10 @@ std::optional<std::filesystem::path> find_file(std::string_view includepath, std
     if (includepath[0] != '\\') {
         std::filesystem::path originPath(origin);
         auto result = originPath.parent_path() / includepath;
-        if (std::filesystem::exists(result))
+        if (std::filesystem::exists(result)) {
+            __itt_task_end(preprocDomain);
             return result;
+        }
     }
 
     if (auto found = cache.find(includepath); found != cache.end()) {
@@ -628,6 +634,8 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
     int level_comment = 0;
 
     current_file = sourceFileName;
+    include_stack.reserve(8);
+    constants.reserve(64);
 
     if (std::find(include_stack.begin(), include_stack.end(), std::string(sourceFileName)) != include_stack.end()) {
 
@@ -679,6 +687,7 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
 
     auto processLine = [&](const std::string& curLine, int line) -> std::string {
         constant_stack c;
+        c.stack.reserve(8);
         std::optional<std::string> preprocessedLine = constants_preprocess(constants, curLine, line, c);
         if (!preprocessedLine) {
             logger.error(sourceFileName, line, "Failed to resolve macros.\n");
@@ -694,7 +703,7 @@ int Preprocessor::preprocess(std::string_view sourceFileName, std::istream &inpu
         std::vector<std::string> ret;
         ret.resize(linesToProcess.size());
 
-        std::transform(std::execution::par_unseq, linesToProcess.begin(),linesToProcess.end(), ret.begin(),[&](std::tuple<std::string, bool, int>& element) {
+        std::transform(MULTITHREADED_EXC, linesToProcess.begin(),linesToProcess.end(), ret.begin(),[&](std::tuple<std::string, bool, int>& element) {
             auto&[str, shouldPreproc, line] = element;
             if (!shouldPreproc)
                 return std::move(str);

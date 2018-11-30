@@ -249,10 +249,13 @@ std::string_view trim(std::string_view string) {
 }
 
 void trimRef(std::string& string) {
-    
     auto begin = string.find_first_not_of("\t ");
+    if (begin != 0)
+        string.erase(string.begin(), string.begin() + begin);
+
     auto end = string.find_last_not_of("\t ");
-    string = string.substr(begin, end - begin + 1);
+    if (end != string.length() - 1)
+        string.erase(string.begin() + end + 1, string.end());
 }
 
 void replace_string(char *string, size_t buffsize, char *search, char *replace, int max, bool macro) {

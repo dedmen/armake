@@ -67,7 +67,7 @@ public:
     using ConstantMapType = std::unordered_map<std::string, constant>;//, std::less<>
 
     struct constant_stack {
-        std::list<ConstantMapType::const_iterator> stack;
+        std::vector<ConstantMapType::const_iterator> stack;
     };
 private:
     std::vector<std::string> include_stack;
