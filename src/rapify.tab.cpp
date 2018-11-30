@@ -1181,7 +1181,6 @@ YYLTYPE yylloc = yyloc_default;
   int yytoken = 0;
   /* The variables used to return semantic value and location from the
      action routines.  */
-  YYSTYPE yyval;
   YYLTYPE yyloc;
 
 #if YYERROR_VERBOSE
@@ -1386,7 +1385,7 @@ yyreduce:
      users should not rely upon it.  Assigning to YYVAL
      unconditionally makes the parser a bit smaller, and it avoids a
      GCC warning that YYVAL may be used uninitialized.  */
-  yyval = yyvsp[1-yylen];
+  YYSTYPE& yyval = yyvsp[1-yylen];
 
   /* Default location. */
   YYLLOC_DEFAULT (yyloc, (yylsp - yylen), yylen);
