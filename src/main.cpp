@@ -50,6 +50,7 @@ void print_usage() {
            "    armake sign [-f] [-s <signature>] <privatekey> <pbo>\n"
            "    armake paa2img [-f] <source> <target>\n"
            "    armake img2paa [-f] [-z] [-t <paatype>] <source> <target>\n"
+           "    armake preprocess [-f] <source> <target>\n"
            "    armake (-h | --help)\n"
            "    armake (-v | --version)\n"
            "\n"
@@ -64,6 +65,7 @@ void print_usage() {
            "    sign        Sign a PBO with the given private key.\n"
            "    paa2img     Convert PAA to image (PNG only).\n"
            "    img2paa     Convert image to PAA.\n"
+           "    preprocess  Preprocess file.\n"
            "\n"
            "Options:\n"
            "    -f --force      Overwrite the target file/folder if it already exists.\n"
@@ -255,6 +257,8 @@ int main(int argc, char *argv[]) {
         success = PAAConverter::cmd_paa2img(mainLogger);
     else if (strcmp(args.positionals[0], "img2paa") == 0)
         success = PAAConverter::cmd_img2paa(mainLogger);
+    else if (strcmp(args.positionals[0], "preprocess") == 0)
+        success = cmd_preprocess(mainLogger);
     else
         goto error;
 

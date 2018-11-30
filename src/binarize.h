@@ -22,3 +22,4 @@
 int binarize(std::filesystem::path source, std::filesystem::path target, Logger& logger);
 
 int cmd_binarize(Logger& logger);
+int cmd_preprocess(Logger& logger);

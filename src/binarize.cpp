@@ -347,3 +347,33 @@ int cmd_binarize(Logger& logger) {
 
     return success;
 }
+
+#include <fstream>
+
+int cmd_preprocess(Logger& logger) {
+    if (args.num_positionals != 3) {
+        return 128;//missing path arguments
+    }
+
+
+    // check if target already exists
+    if (std::filesystem::exists(args.positionals[2]) && !args.force) {
+        logger.error("File %s already exists and --force was not set.\n", args.positionals[2]);
+        return 1;
+    }
+
+    std::ifstream sourceFile(args.positionals[1], std::ifstream::in | std::ifstream::binary);
+    std::ofstream targetFile(args.positionals[2], std::ofstream::out | std::ofstream::binary);
+
+    Preprocessor preproc(logger);
+    Preprocessor::ConstantMapType constants;
+    int success = preproc.preprocess(args.positionals[1], sourceFile, targetFile, constants);
+
+    if (success) {
+        logger.error("Failed to preprocess %s.\n", args.positionals[1]);
+        return success;
+    }
+
+
+    return success;
+}
