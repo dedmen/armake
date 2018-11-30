@@ -32,6 +32,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <iostream>
+#include <charconv>
 #include "utils.h"
 #include "rapify.h"
 #include "rapify.tab.hpp"
@@ -111,9 +112,9 @@
 
     auto trimmedString = trim({yytext, static_cast<size_t>(yyleng)});
 
-    char *endptr;
-    strtof(trimmedString.c_str(), &endptr);
-    if (*endptr == 0)
+    float val;
+    auto res = std::from_chars(trimmedString.data(), trimmedString.data() + trimmedString.size(), val);
+    if (res.ec != std::errc::invalid_argument) //Not a number
         REJECT;
 
     if (lineref.empty) 
@@ -133,9 +134,9 @@
 
     auto trimmedString = trim({yytext, static_cast<size_t>(yyleng)});
 
-    char *endptr;
-    strtof(trimmedString.c_str(), &endptr);
-    if (*endptr == 0)
+    float val;
+    auto res = std::from_chars(trimmedString.data(), trimmedString.data() + trimmedString.size(), val);
+    if (res.ec != std::errc::invalid_argument) //Not a number
         REJECT;
 
     if (lineref.empty) 

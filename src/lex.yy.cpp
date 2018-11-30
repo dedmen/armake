@@ -1,6 +1,6 @@
-#line 1 "lex.yy.cpp"
 
-#line 3 "lex.yy.cpp"
+
+
 
 #define  YY_INT_ALIGNED short int
 
@@ -33,6 +33,7 @@
 #include <string.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <charconv>
 
 /* end standard C headers. */
 
@@ -553,7 +554,7 @@ goto find_rule; \
 #define yymore() yymore_used_but_not_detected
 #define YY_MORE_ADJ 0
 #define YY_RESTORE_YY_MORE_OFFSET
-#line 1 "rapify.l"
+
 /*
  * Copyright (C)  2016  Felix "KoffeinFlummi" Wiegand
  *
@@ -571,7 +572,7 @@ goto find_rule; \
  * with this program; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
-#line 27 "rapify.l"
+
 #define YY_DECL int yylex(YYTypeStruct* yylval_param, YYLTYPE* yylloc, ConfigClass &result, struct lineref &lineref, parserStaticData& staticData, void* yyscanner)
 //char *buffer, int numBytesRead, int maxBytesToRead
 #define YY_INPUT(b,r,s)  auto& inStr = *static_cast<std::istream*>(yyget_extra(yyscanner)); inStr.read(b, s); r = inStr.gcount()
@@ -595,8 +596,8 @@ goto find_rule; \
     staticData.allow_val = false; \
     staticData.allow_arr = false; \
     staticData.last_was_class = false;
-#line 598 "lex.yy.cpp"
-#line 599 "lex.yy.cpp"
+
+
 
 #define INITIAL 0
 
@@ -887,10 +888,10 @@ YY_DECL
 		}
 
 	{
-#line 52 "rapify.l"
 
 
-#line 893 "lex.yy.cpp"
+
+
 
 	while ( /*CONSTCOND*/1 )		/* loops until end-of-file is reached */
 		{
@@ -987,73 +988,73 @@ do_action:	/* This label is used only to access EOF actions. */
 	{ /* beginning of action switch */
 case 1:
 YY_RULE_SETUP
-#line 54 "rapify.l"
+
 {}
 	YY_BREAK
 case 2:
 /* rule 2 can match eol */
 YY_RULE_SETUP
-#line 55 "rapify.l"
+
 {}
 	YY_BREAK
 case 3:
 YY_RULE_SETUP
-#line 57 "rapify.l"
+
 {RESET_VARS; return T_SEMICOLON;}
 	YY_BREAK
 case 4:
 YY_RULE_SETUP
-#line 58 "rapify.l"
+
 {auto tmp = staticData.last_was_class; RESET_VARS; staticData.last_was_class = tmp; return T_COLON;}
 	YY_BREAK
 case 5:
 YY_RULE_SETUP
-#line 59 "rapify.l"
+
 {RESET_VARS; staticData.allow_arr = true; return T_COMMA;}
 	YY_BREAK
 case 6:
 YY_RULE_SETUP
-#line 60 "rapify.l"
+
 {RESET_VARS; return T_PLUS;}
 	YY_BREAK
 case 7:
 YY_RULE_SETUP
-#line 61 "rapify.l"
+
 {RESET_VARS; staticData.allow_val = true; return T_EQUALS;}
 	YY_BREAK
 case 8:
 YY_RULE_SETUP
-#line 62 "rapify.l"
+
 {RESET_VARS; return T_RBRACKET;}
 	YY_BREAK
 case 9:
 YY_RULE_SETUP
-#line 63 "rapify.l"
+
 {RESET_VARS; return T_LBRACKET;}
 	YY_BREAK
 case 10:
 YY_RULE_SETUP
-#line 64 "rapify.l"
+
 {RESET_VARS; return T_RBRACE;}
 	YY_BREAK
 case 11:
 YY_RULE_SETUP
-#line 65 "rapify.l"
+
 {auto tmp = !staticData.last_was_class; RESET_VARS; staticData.allow_arr = tmp; return T_LBRACE;}
 	YY_BREAK
 case 12:
 YY_RULE_SETUP
-#line 67 "rapify.l"
+
 {RESET_VARS; staticData.last_was_class = true; return T_CLASS;}
 	YY_BREAK
 case 13:
 YY_RULE_SETUP
-#line 68 "rapify.l"
+
 {RESET_VARS; return T_DELETE;}
 	YY_BREAK
 case 14:
 YY_RULE_SETUP
-#line 70 "rapify.l"
+
 {
     if (!staticData.allow_val && !staticData.allow_arr)
         REJECT;
@@ -1064,7 +1065,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 15:
 YY_RULE_SETUP
-#line 78 "rapify.l"
+
 {
     RESET_VARS;
     yylval->int_value = strtol(yytext, NULL, 16);
@@ -1073,7 +1074,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 16:
 YY_RULE_SETUP
-#line 84 "rapify.l"
+
 {
     RESET_VARS;
     yylval->float_value = atof(yytext);
@@ -1082,7 +1083,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 17:
 YY_RULE_SETUP
-#line 90 "rapify.l"
+
 {
     RESET_VARS;
     yylval->string_value = std::string(yytext);
@@ -1092,7 +1093,7 @@ YY_RULE_SETUP
 case 18:
 /* rule 18 can match eol */
 YY_RULE_SETUP
-#line 96 "rapify.l"
+
 {
     RESET_VARS;
     yylval->string_value = unescape_string({yytext, static_cast<size_t>(yyleng)});
@@ -1102,7 +1103,7 @@ YY_RULE_SETUP
 case 19:
 /* rule 19 can match eol */
 YY_RULE_SETUP
-#line 102 "rapify.l"
+
 {
     RESET_VARS;
     yylval->string_value = unescape_string({yytext, static_cast<size_t>(yyleng)});
@@ -1112,16 +1113,16 @@ YY_RULE_SETUP
 case 20:
 /* rule 20 can match eol */
 YY_RULE_SETUP
-#line 108 "rapify.l"
+
 {
     if (!staticData.allow_val)
         REJECT;
 
     auto trimmedString = trim({yytext, static_cast<size_t>(yyleng)});
 
-    char *endptr;
-    strtof(trimmedString.c_str(), &endptr);
-    if (*endptr == 0)
+    float val;
+    auto res = std::from_chars(trimmedString.data(), trimmedString.data() + trimmedString.size(), val);
+    if (res.ec != std::errc::invalid_argument) //Not a number
         REJECT;
 
     if (lineref.empty) 
@@ -1138,16 +1139,16 @@ YY_RULE_SETUP
 case 21:
 /* rule 21 can match eol */
 YY_RULE_SETUP
-#line 130 "rapify.l"
+
 {
     if (!staticData.allow_arr)
         REJECT;
 
-    auto trimmedString = trim({yytext, static_cast<size_t>(yyleng)});
+    auto trimmedString = trim({ yytext, static_cast<size_t>(yyleng) });
 
-    char *endptr;
-    strtof(trimmedString.c_str(), &endptr);
-    if (*endptr == 0)
+    float val;
+    auto res = std::from_chars(trimmedString.data(), trimmedString.data() + trimmedString.size(), val);
+    if (res.ec != std::errc::invalid_argument) //Not a number
         REJECT;
 
     if (lineref.empty) 
@@ -1163,7 +1164,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 22:
 YY_RULE_SETUP
-#line 152 "rapify.l"
+
 {
     if (staticData.allow_arr || staticData.allow_val)
         REJECT;
@@ -1178,15 +1179,15 @@ YY_RULE_SETUP
 	YY_BREAK
 case 23:
 YY_RULE_SETUP
-#line 164 "rapify.l"
+
 {}
 	YY_BREAK
 case 24:
 YY_RULE_SETUP
-#line 166 "rapify.l"
+
 ECHO;
 	YY_BREAK
-#line 1189 "lex.yy.cpp"
+
 			case YY_STATE_EOF(INITIAL):
 				yyterminate();
 
@@ -2351,6 +2352,6 @@ void yyfree (void * ptr , yyscan_t yyscanner)
 
 #define YYTABLES_NAME "yytables"
 
-#line 166 "rapify.l"
+
 
 

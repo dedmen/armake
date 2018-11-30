@@ -161,7 +161,7 @@ void trim_leading(char *string, size_t buffsize);
 
 void trim(char *string, size_t buffsize);
 
-std::string trim(std::string_view string);
+std::string_view trim(std::string_view string);
 void trimRef(std::string &string);
 
 void replace_string(char *string, size_t buffsize, char *search, char *replace, int max, bool macro);

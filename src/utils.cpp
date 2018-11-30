@@ -237,7 +237,7 @@ void trim(char *string, size_t buffsize) {
 }
 
 
-std::string trim(std::string_view string) {
+std::string_view trim(std::string_view string) {
     /*
      * Trims tabs and spaces on either side of the string.
      */
@@ -245,7 +245,7 @@ std::string trim(std::string_view string) {
 
     auto begin = string.find_first_not_of("\t ");
     auto end = string.find_last_not_of("\t ");
-    return std::string(string.substr(begin, end - begin + 1));
+    return string.substr(begin, end - begin + 1);
 }
 
 void trimRef(std::string& string) {
@@ -351,6 +351,7 @@ std::string escape_string(std::string_view input) {
     char tmp_array[3];
 
     std::string tmp;
+    tmp.resize(input.size());
     tmp_array[2] = 0;
 
     for (const char* ptr = input.data(); *ptr != 0; ptr++) {
@@ -380,6 +381,8 @@ std::string unescape_string(std::string_view buffer) {
     tmp_array[1] = 0;
 
     std::string tmp;
+    tmp.reserve(buffer.size());
+
     const char quote = buffer[0];
     //#TODO get rid of the copy here. Also use std::copy_if maybe?
     std::string forIterate = std::string(buffer.substr(1, buffer.length() - 2 )); //Cut off end and start
