@@ -335,6 +335,7 @@ public:
 
     std::map<std::string_view, std::shared_ptr<ConfigClass>> getSubclasses() const;
     std::optional<std::reference_wrapper<ConfigClassEntry>> getEntry(ConfigPath path) const;
+    bool hasEntry(ConfigPath path) const;
     //can return nullptr if not found
     std::shared_ptr<ConfigClass> getClass(ConfigPath path) const;
     std::optional<int32_t> getInt(ConfigPath path) const;

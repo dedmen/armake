@@ -43,6 +43,17 @@
 #include <array>
 //#include "rapify.tab.h"
 
+
+template <typename Type>//Same as in p3d.cpp
+class StreamFixup {
+    std::streamoff offset;
+    Type value;
+public:
+    StreamFixup(std::ostream& str) : offset(str.tellp()) { str.write(&value, sizeof(Type)); }
+    void setValue(const Type& val) { value = val; }
+    void write(std::ostream& str) { str.seekp(offset); str.write(&value, sizeof(Type)); }
+};
+
 class Logger;
 __itt_domain* configDomain = __itt_domain_create("armake.config");
 
@@ -208,6 +219,12 @@ std::optional<std::reference_wrapper<ConfigClassEntry>> ConfigClass::getEntry(Co
     if (found->second->isEntry()) return {}; //The value we found is not a class, we cannot descent into it
 
     return found->second->getAsClass()->getEntry(std::initializer_list<std::string_view>(path.begin() + 1, path.end()));
+}
+
+bool ConfigClass::hasEntry(ConfigPath path) const {
+    auto entry = getEntry(path);
+    if (!entry) return false;
+    return true;
 }
 
 std::shared_ptr<ConfigClass> ConfigClass::getClass(ConfigPath path) const {
@@ -582,7 +599,7 @@ void Rapifier::derapify_class(std::istream &source, ConfigClass &curClass, int l
 
 
             std::getline(source, subclass->name, '\0');
-
+            //#TODO instead of seeking back and forth, just remember all values here. And when through `num_entries` seek through once through all classes that were found, and seek back once
             uint32_t fp_class;
             source.read(reinterpret_cast<char*>(&fp_class), sizeof(uint32_t));
             fp_tmp = source.tellg();
@@ -736,6 +753,7 @@ void Rapifier::rapify_class(const ConfigClass &cfg, std::ostream &f_target) {
 
     auto& entries = cfg.getEntriesNoParent();
     const uint32_t num_entries = entries.size();
+    std::map<std::shared_ptr<ConfigClass>, StreamFixup<uint32_t>> classFixups;
 
     write_compressed_int(num_entries, f_target);
     for (auto& def : entries) {
@@ -750,6 +768,7 @@ void Rapifier::rapify_class(const ConfigClass &cfg, std::ostream &f_target) {
                 f_target.put(0);
                 f_target.write(c->getName().data(),
                     c->getName().length() + 1);
+                //classFixups.emplace(c, f_target);
                 c->setOffsetLocation(f_target.tellp());
                 f_target.write("\0\0\0\0", 4);
             }
@@ -757,20 +776,29 @@ void Rapifier::rapify_class(const ConfigClass &cfg, std::ostream &f_target) {
     }
     //#TODO mikero writes a filesize marker here. 4 bytes
     //Arma won't read cuz num_entries
-
+    //#TODO first write out all classes and set position into a StreamFixup(p3d.cpp)
+    //Then iterate through all fixups and write them out. That way we go through this area of the file twice, sequentially. Instead of jumping back and forth for every class
     for (auto& def : entries) {
         if (!def.isClass()) continue;
         auto& c = def.getAsClass();
         if (c->isDefinition() || c->isDelete())  continue;
-        
+
+        //classFixups[c].setValue(f_target.tellp());
+
         fp_temp = f_target.tellp();
         f_target.seekp(c->getOffsetLocation());
-        
+
         f_target.write(reinterpret_cast<char*>(&fp_temp), sizeof(uint32_t));
         f_target.seekp(0, std::ostream::end);
 
+
         rapify_class(*c, f_target);
     }
+
+    //for (auto& [key, val] : classFixups)
+    //    val.write(f_target);
+
+
 }
 
 bool Rapifier::isRapified(std::istream& input) {
