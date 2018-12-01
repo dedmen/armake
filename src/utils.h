@@ -55,6 +55,41 @@ struct point {
     float y;
     float z;
     uint32_t point_flags;
+
+    /*
+    //#TODO point flags
+    
+    // special flags
+    POINT_ONLAND    0x1
+    POINT_UNDERLAND 0x2
+    POINT_ABOVELAND 0x4
+    POINT_KEEPLAND  0x8
+    POINT_LAND_MASK 0xf
+
+    POINT_DECAL      0x100
+    POINT_VDECAL     0x200
+    POINT_DECAL_MASK 0x300
+
+    POINT_NOLIGHT    0x10 // active colors
+    POINT_AMBIENT    0x20
+    POINT_FULLLIGHT  0x40
+    POINT_HALFLIGHT  0x80
+    POINT_LIGHT_MASK 0xf0
+
+    POINT_NOFOG     0x1000 // active colors
+    POINT_SKYFOG    0x2000
+    POINT_FOG_MASK  0x3000
+
+    POINT_USER_MASK  0xff0000
+    POINT_USER_STEP  0x010000
+
+    POINT_SPECIAL_MASK   0xf000000
+    POINT_SPECIAL_HIDDEN 0x1000000
+
+
+     */
+
+
     vector3 getPosition() const {
         return { x,y,z };
     }
@@ -184,3 +219,4 @@ inline bool iequals(std::string_view a, std::string_view b) {
         return tolower(a) == tolower(b);
     });
 }
+

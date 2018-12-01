@@ -45,6 +45,19 @@
 #include <fstream>
 #include <unordered_set>
 
+
+template <typename Type>
+class StreamFixup {
+    std::streamoff offset;
+    Type value;
+public:
+    StreamFixup(std::ostream& str) : offset(str.tellp()) { str.write(&value, sizeof(Type)); }
+    void setValue(const Type& val) { value = val; }
+    void write(std::ostream& str) { str.seekp(offset); str.write(&value, sizeof(Type)); }
+};
+
+
+
 __itt_domain* p3dDomain = __itt_domain_create("armake.p3d");
 __itt_string_handle* handle_mlod2odol = __itt_string_handle_create("mlod2odol");
 __itt_string_handle* handle_bs1 = __itt_string_handle_create("bs1");
@@ -83,9 +96,6 @@ float mlod_lod::getBoundingSphere(const vector3& center) {
 }
 
 bool mlod_lod::read(std::istream& source) {
-    char buffer[512]; //texture_name needs 512
-    uint32_t tagg_len;
-
 
     source.seekg(8, std::istream::cur); //#TODO what is it skipping here?
     source.read(reinterpret_cast<char*>(&num_points), 4);
@@ -93,8 +103,11 @@ bool mlod_lod::read(std::istream& source) {
     source.read(reinterpret_cast<char*>(&num_faces), 4);
     source.seekg(4, std::istream::cur);
 
-    bool empty = num_points == 0;
+    //Only 32767 allowed
+    //^ That was 16 bit. It's 32bit now. We cannot read more than 32bit anyway as the numPoints/Faces number is only 32bit
 
+    bool empty = num_points == 0;
+#pragma region Basic Geometry
     if (empty) {
         num_points = 1;
         points.resize(1);
@@ -104,26 +117,109 @@ bool mlod_lod::read(std::istream& source) {
         points[0].point_flags = 0;
     } else {
         points.resize(num_points);
-        for (int j = 0; j < num_points; j++)
+        for (int j = 0; j < num_points; j++) {
             source.read(reinterpret_cast<char*>(&points[j]), sizeof(struct point));
+            //report invalid point flags? not really needed.
+
+            //If any flags are set, set hints and use them for `clip` array
+            //There is also "hidden" array for POINT_SPECIAL_HIDDEN
+
+
+
+        }
+            
     }
 
     facenormals.resize(num_facenormals);
-    for (int j = 0; j < num_facenormals; j++)
-        source.read(reinterpret_cast<char*>(&facenormals[j]), sizeof(vector3));
+    //#TODO read all in one go
+    for (int j = 0; j < num_facenormals; j++) {
+        source.read(reinterpret_cast<char*>(&facenormals[j]), sizeof(vector3)); //#TODO if Geometry lod and NoNormals (geoOnly parameter), set them all to 0
+    }
+
 
     faces.resize(num_faces);
     for (int j = 0; j < num_faces; j++) {
+        //4b face type
+        //4x pseudovertex
         source.read(reinterpret_cast<char*>(&faces[j]), 72);
-
+        //#TODO seperate face properties array
+        //texture, material, special
         size_t fp_tmp = source.tellg();
         std::getline(source, faces[j].texture_name, '\0');
 
         std::getline(source, faces[j].material_name, '\0');
+        //#TODO tolower texture and material
+        //#TODO check for valid flags
+        faces[j].section_names = ""; //#TODO section_names shouldn't be here
 
-        faces[j].section_names = "";
+
+
+        //check and fix UV
+        //shape.cpp 1075
+        //Set UV coords to 0 if Geo lod with nouv
+
+
+
+
     }
 
+    //2nd pass over faces, find min and maxUV
+
+    //3rd pass over faces
+    //collect unique texture paths
+    //collect all faces in a poly and fill vertexToPoint and pointToVertex tables
+    //the poly object is done in odol, see Odol's "AddPoint"
+    //Error if max vertex that are not duplicate (see odol Addpoint) is bigger than 32767 too many verticies
+    //Poly object seems to be just the face with n points?
+
+
+
+
+#pragma endregion Basic Geometry
+
+
+    //Unroll multipass materials? Don't think we need that
+
+    // make sure all points are represented with vertices?
+
+
+    //set special flags
+    //RecalculateNormals
+
+
+
+
+
+    min_pos = empty_vector;
+    max_pos = empty_vector;
+
+    for (int i = 0; i < num_points; i++) {
+        if (i == 0 || points[i].x < min_pos.x)
+            min_pos.x = points[i].x;
+        if (i == 0 || points[i].y < min_pos.y)
+            min_pos.y = points[i].y;
+        if (i == 0 || points[i].z < min_pos.z)
+            min_pos.z = points[i].z;
+        if (i == 0 || points[i].x > max_pos.x)
+            max_pos.x = points[i].x;
+        if (i == 0 || points[i].y > max_pos.y)
+            max_pos.y = points[i].y;
+        if (i == 0 || points[i].z > max_pos.z)
+            max_pos.z = points[i].z;
+    }
+
+    autocenter_pos = (min_pos + max_pos) * 0.5f;
+
+    boundingSphere = getBoundingSphere(autocenter_pos);
+
+
+
+    //Calculate MinMax, boundingCenter and bRadius
+    //Is currently in convert to odol
+
+
+    char buffer[5];
+    uint32_t tagg_len;
     source.read(buffer, 4);
     if (strncmp(buffer, "TAGG", 4) != 0)
         return false;
@@ -131,16 +227,58 @@ bool mlod_lod::read(std::istream& source) {
     num_sharp_edges = 0;
     properties.clear();
 
-    while (true) {
-        source.seekg(1, std::istream::cur);
+    while (true) { //read tags
+        source.seekg(1, std::istream::cur); //#TODO startTag flag, signed char. special handling for <0 and 1
         std::string entry;
 
 
         std::getline(source, entry, '\0');
+        //#TODO max length 1024. check for that
         source.read(reinterpret_cast<char*>(&tagg_len), 4);
         size_t fp_tmp = static_cast<size_t>(source.tellg()) + tagg_len;
 
-        if (entry[0] != '#') {
+        if (entry.front() == '#') {
+
+            if (entry == "#Mass#") {
+                if (empty) {
+                    mass.resize(1);
+                    mass[0] = 0.0f; //#TODO get rid of this Shouldn't be hard to detect empty mass array
+                } else {
+                    //#TODO check that tagSize matches?
+                    mass.resize(num_points);
+                    source.read(reinterpret_cast<char*>(mass.data()), sizeof(float) * num_points);
+                }
+            }
+            //#Animation
+            //#TODO ^
+            
+
+            //#UVSet
+            //32 bit stageID. If >1 then unsupported
+            //if == 1
+            //else skip
+
+
+            if (entry == "#SharpEdges#") {
+                num_sharp_edges = tagg_len / (2 * sizeof(uint32_t));
+                sharp_edges.resize(num_sharp_edges * 2);//one edge is 2 points
+                //#TODO make it a vec of a pair of uints. 2 points for an edge
+                source.read(reinterpret_cast<char*>(sharp_edges.data()), tagg_len);
+            }
+
+            if (entry == "#Property#") {
+                char buffer[64];
+                source.read(buffer, 64);
+                std::string name = buffer;
+                source.read(buffer, 64);
+                std::string value = buffer;
+                properties.emplace_back(property{ std::move(name), std::move(value) });
+            }
+            source.seekg(fp_tmp);
+
+            if (entry == "#EndOfFile#") //Might want to  source.seekg(fp_tmp); before break. Check if fp_temp == tellg and debugbreak if not
+                break;
+        } else {
             mlod_selection newSelection;
 
             newSelection.name = entry;
@@ -158,40 +296,15 @@ bool mlod_lod::read(std::istream& source) {
             source.read(reinterpret_cast<char*>(newSelection.faces.data()), num_faces);
 
             selections.emplace_back(std::move(newSelection));
+            //Might want to  source.seekg(fp_tmp); before break. Check if fp_temp == tellg and debugbreak if not
         }
-
-        if (entry == "#Mass#") {
-            if (empty) {
-                mass.resize(1);
-                mass[0] = 0.0f;
-            }
-            else {
-                mass.resize(num_points);
-                source.read(reinterpret_cast<char*>(mass.data()), sizeof(float) * num_points);
-            }
-        }
-
-        if (entry == "#SharpEdges#") {
-            num_sharp_edges = tagg_len / (2 * sizeof(uint32_t));
-            sharp_edges.resize(num_sharp_edges * 2);//one edge is 2 points
-            //#TODO make it a vec of a pair of uints. 2 points for an edge
-            source.read(reinterpret_cast<char*>(sharp_edges.data()), tagg_len);
-        }
-
-        if (entry == "#Property#") {
-            char buffer[64];
-            source.read(buffer, 64);
-            std::string name = buffer;
-            source.read(buffer, 64);
-            std::string value = buffer;
-            properties.emplace_back(property{ std::move(name), std::move(value) });
-        }
-
-        source.seekg(fp_tmp);
-
-        if (entry == "#EndOfFile#")
-            break;
     }
+    //if have phases (animation tag)
+    //check for keyframe property. Needs to exist otherwise warning
+
+    //Sort verticies if not geometryOnly
+
+
     num_selections = selections.size();
 
     source.read(reinterpret_cast<char*>(&resolution), 4);
@@ -203,13 +316,13 @@ void odol_section::writeTo(std::ostream& output) {
     WRITE_CASTED(face_index_end, sizeof(uint32_t));
     WRITE_CASTED(min_bone_index, sizeof(uint32_t));
     WRITE_CASTED(bones_count, sizeof(uint32_t));
-    WRITE_CASTED(mat_dummy, sizeof(uint32_t));
+    WRITE_CASTED(mat_dummy, sizeof(uint32_t)); //always 0
     WRITE_CASTED(common_texture_index, sizeof(uint16_t));
     WRITE_CASTED(common_face_flags, sizeof(uint32_t));
     WRITE_CASTED(material_index, sizeof(int32_t));
     if (material_index == -1)
-        output.put(0);
-    WRITE_CASTED(num_stages, sizeof(uint32_t));
+        output.put(0); //#TODO surface material?
+    WRITE_CASTED(num_stages, sizeof(uint32_t)); //#TODO has to be 2!!! Else assert trip
     if (num_stages > 2)
         __debugbreak(); //This doesn't work. I can't print this
     output.write(reinterpret_cast<char*>(area_over_tex), sizeof(float) * num_stages);
@@ -559,7 +672,6 @@ void P3DFile::convert_lod(mlod_lod &mlod_lod, odol_lod &odol_lod) {
     unsigned long face;
     unsigned long face_start;
     unsigned long face_end;
-    size_t size;
     char *ptr;
     std::vector<std::string> textures;
     vector3 normal;
@@ -583,34 +695,22 @@ void P3DFile::convert_lod(mlod_lod &mlod_lod, odol_lod &odol_lod) {
     odol_lod.clip_flags[0] = 0;
     odol_lod.clip_flags[1] = 0;
 
-    odol_lod.min_pos = empty_vector;
-    odol_lod.max_pos = empty_vector;
 
-    for (i = 0; i < mlod_lod.num_points; i++) {
-        if (i == 0 || mlod_lod.points[i].x < odol_lod.min_pos.x)
-            odol_lod.min_pos.x = mlod_lod.points[i].x;
-        if (i == 0 || mlod_lod.points[i].y < odol_lod.min_pos.y)
-            odol_lod.min_pos.y = mlod_lod.points[i].y;
-        if (i == 0 || mlod_lod.points[i].z < odol_lod.min_pos.z)
-            odol_lod.min_pos.z = mlod_lod.points[i].z;
-        if (i == 0 || mlod_lod.points[i].x > odol_lod.max_pos.x)
-            odol_lod.max_pos.x = mlod_lod.points[i].x;
-        if (i == 0 || mlod_lod.points[i].y > odol_lod.max_pos.y)
-            odol_lod.max_pos.y = mlod_lod.points[i].y;
-        if (i == 0 || mlod_lod.points[i].z > odol_lod.max_pos.z)
-            odol_lod.max_pos.z = mlod_lod.points[i].z;
-    }
 
-    odol_lod.autocenter_pos = (odol_lod.min_pos + odol_lod.max_pos) * 0.5f;
+    odol_lod.min_pos = mlod_lod.min_pos;
+    odol_lod.max_pos = mlod_lod.max_pos;
+    odol_lod.autocenter_pos = mlod_lod.autocenter_pos;
+    odol_lod.sphere = mlod_lod.boundingSphere;
 
-    odol_lod.sphere = mlod_lod.getBoundingSphere(odol_lod.autocenter_pos);
+
+
 
     // Textures & Materials
     odol_lod.num_textures = 0;
     odol_lod.num_materials = 0;
     odol_lod.materials.clear();
 
-    size = 0;
+    size_t size = 0;
     for (i = 0; i < mlod_lod.num_faces; i++) {
         for (j = 0; j < odol_lod.num_textures; j++) {
             if (mlod_lod.faces[i].texture_name == textures[j])
@@ -1056,45 +1156,64 @@ void P3DFile::convert_lod(mlod_lod &mlod_lod, odol_lod &odol_lod) {
 void model_info::writeTo(std::ostream& output) {
     auto num_lods = lod_resolutions.size();
 
-    output.write(reinterpret_cast<char*>(lod_resolutions.data()), sizeof(float) * num_lods);
-    WRITE_CASTED(index, sizeof(uint32_t));
+    output.write(reinterpret_cast<char*>(lod_resolutions.data()), sizeof(float) * num_lods); //#TODO lod resolutions doesn't belong in here. Belongs to parent
+    WRITE_CASTED(index, sizeof(uint32_t)); //#TODO these are spcial flags
     WRITE_CASTED(bounding_sphere, sizeof(float));
     WRITE_CASTED(geo_lod_sphere, sizeof(float));
-    output.write(reinterpret_cast<char*>(point_flags), sizeof(uint32_t) * 3);
+
+    //#TODO
+    output.write(reinterpret_cast<char*>(point_flags), sizeof(uint32_t) * 3); //_remarks, _andHints, _orHints 
+
     WRITE_CASTED(aiming_center, sizeof(vector3));
     WRITE_CASTED(map_icon_color, sizeof(uint32_t));
     WRITE_CASTED(map_selected_color, sizeof(uint32_t));
     WRITE_CASTED(view_density, sizeof(float));
     WRITE_CASTED(bbox_min, sizeof(vector3));
     WRITE_CASTED(bbox_max, sizeof(vector3));
-    WRITE_CASTED(lod_density_coef, sizeof(float));
+
+
+    WRITE_CASTED(lod_density_coef, sizeof(float));//some new-ish p3d version? dunno which
     WRITE_CASTED(draw_importance, sizeof(float));
+
+
     WRITE_CASTED(bbox_visual_min, sizeof(vector3));
     WRITE_CASTED(bbox_visual_max, sizeof(vector3));
+
     WRITE_CASTED(bounding_center, sizeof(vector3));
     WRITE_CASTED(geometry_center, sizeof(vector3));
+
     WRITE_CASTED(centre_of_mass, sizeof(vector3));
     WRITE_CASTED(inv_inertia, sizeof(matrix));
     WRITE_CASTED(autocenter, sizeof(bool));
     WRITE_CASTED(lock_autocenter, sizeof(bool));
     WRITE_CASTED(can_occlude, sizeof(bool));
     WRITE_CASTED(can_be_occluded, sizeof(bool));
+
 #if P3DVERSION > 71
     WRITE_CASTED(ai_cover,            sizeof(bool));  // v73
 #endif
-    WRITE_CASTED(skeleton->ht_min, sizeof(float));
-    WRITE_CASTED(skeleton->ht_max, sizeof(float));
-    WRITE_CASTED(skeleton->af_max, sizeof(float));
-    WRITE_CASTED(skeleton->mf_max, sizeof(float));
-    WRITE_CASTED(skeleton->mf_act, sizeof(float));
-    WRITE_CASTED(skeleton->t_body, sizeof(float));
-    WRITE_CASTED(force_not_alpha, sizeof(bool));
-    WRITE_CASTED(sb_source, sizeof(int32_t));
-    WRITE_CASTED(prefer_shadow_volume, sizeof(bool));
+
+    WRITE_CASTED(skeleton->ht_min, sizeof(float));//>=v42
+    WRITE_CASTED(skeleton->ht_max, sizeof(float));//>=v42
+    WRITE_CASTED(skeleton->af_max, sizeof(float));//>=v42
+    WRITE_CASTED(skeleton->mf_max, sizeof(float));//>=v42
+    WRITE_CASTED(skeleton->mf_act, sizeof(float));//>=v43
+    WRITE_CASTED(skeleton->t_body, sizeof(float));//>=v43
+    WRITE_CASTED(force_not_alpha, sizeof(bool));//>=V33
+    WRITE_CASTED(sb_source, sizeof(int32_t));//>=v37
+    WRITE_CASTED(prefer_shadow_volume, sizeof(bool));//>=v37
     WRITE_CASTED(shadow_offset, sizeof(float));
-    WRITE_CASTED(animated, sizeof(bool));
+
+    WRITE_CASTED(animated, sizeof(bool)); //AnimationTyoe == Software
+
+
     skeleton->writeTo(output);
+    //#TODO check that animationType is hardware, if you print a skeleton
+
+
     WRITE_CASTED(map_type, sizeof(char));
+
+    //#TODO mass array
     WRITE_CASTED(n_floats, sizeof(uint32_t)); //_massArray size
     //! array of mass assigned to all points of geometry level
     //! this is used to calculate angular inertia tensor (_invInertia)
@@ -1105,18 +1224,31 @@ void model_info::writeTo(std::ostream& output) {
     WRITE_CASTED(mass_reciprocal, sizeof(float));
     WRITE_CASTED(armor, sizeof(float));
     WRITE_CASTED(inv_armor, sizeof(float));
+
     WRITE_CASTED(special_lod_indices, sizeof(struct lod_indices));
+
+
     WRITE_CASTED(min_shadow, sizeof(uint32_t));
     WRITE_CASTED(can_blend, sizeof(bool));
-    WRITE_CASTED(class_type, sizeof(char));
-    WRITE_CASTED(destruct_type, sizeof(char));
-    WRITE_CASTED(property_frequent, sizeof(bool));
+
+    WRITE_CASTED(class_type, sizeof(char)); //#TODO propertyClass string
+    WRITE_CASTED(destruct_type, sizeof(char)); //#TODO propertyDamage string
+    WRITE_CASTED(property_frequent, sizeof(bool)); //#TODO is this properly read from odol?
+
     WRITE_CASTED(always_0, sizeof(uint32_t)); //@todo Array of unused Selection Names
 
 #if P3DVERSION > 71
     // v73 adds another 4 bytes here
     output.write("\0\0\0\0", 4); // v73 data
 #endif
+
+
+
+    //#TODO ScanPreferredShadowLODs
+
+    //#TODO _preferredShadowVolumeLod
+    //#TODO _preferredShadowBufferLod
+    //#TODO _preferredShadowBufferLodVis
 
     //first lodNumber*ShadowVolume then  lodNumber*ShadowBuffer then  lodNumber*ShadowBufferLodVis
     //for each it's a 32bit int. -1 signifies unknown
@@ -1251,6 +1383,9 @@ void P3DFile::write_animations(std::ostream& output) {
         }
     }
 
+
+    //Bone mapping info below here
+
     // Write bone2anim and anim2bone lookup tables
     WRITE_CASTED(num_lods, sizeof(uint32_t));
 
@@ -1320,7 +1455,6 @@ void P3DFile::get_mass_data() {
     float mass;
     vector3 sum;
     vector3 pos;
-    matrix inertia;
     matrix r_tilda;
     struct mlod_lod *mass_lod;
 
@@ -1352,13 +1486,13 @@ void P3DFile::get_mass_data() {
     mass = 0;
     for (i = 0; i < mass_lod->num_points; i++) {
         pos = mass_lod->points[i].getPosition();
-        mass += mass_lod->mass[i];
+        mass += mass_lod->mass[i];//#TODO is this mass array?
         sum += pos * mass_lod->mass[i];
     }
-
+    
     model_info.centre_of_mass = (mass > 0) ? sum * (1 / mass) : empty_vector;
 
-    inertia = empty_matrix;
+    matrix inertia = empty_matrix;
     for (i = 0; i < mass_lod->num_points; i++) {
         pos = mass_lod->points[i].getPosition();
         r_tilda = vector_tilda(pos - model_info.centre_of_mass);
@@ -1546,12 +1680,41 @@ int P3DFile::read_lods(std::istream &source, uint32_t num_lods) {
 
     for (uint32_t i = 0; i < num_lods; i++) {
         source.read(buffer, 4);
-        if (strncmp(buffer, "P3DM", 4) != 0)
+        if (strncmp(buffer, "P3DM", 4) != 0) //#TODO move into load load
             return 0;
 
         mlod_lod newLod;
 
         if (!newLod.read(source)) return 0;
+
+        //If lod is shadow volume, copy it into an array with shadow volume lods
+        //Also keep an array of sahdow volume resolitoons "shapeSVResol"
+
+        //AddShape? Yeah. The ScanShapes thing inside there.
+
+        //Customize Shape (shape.cpp 8468)
+            //detect empty lods if non-first and res>900.f
+            //Delete back faces?
+            //Build sections based on model.cfg
+            //scan for proxies
+            //If shadow volume do extra stuff shape.cpp L7928
+            // If shadow buffer, set everything (apart of base texture if not opaque) to predefined values
+            //Create subskeleton
+            //rescan sections
+            //update material if shadowVOlume
+            //GenerateSTArray?
+            //Warning: %s:%s: 2nd UV set needed, but not defined
+            // Clear the point and vertex conversion arrays
+            // scan selections for proxy objects
+            //optimize if no selections?
+            //if (geometryOnly&GONoUV)
+
+        //Tree crown needed
+        //int ShapePropertiesNeeded(const TexMaterial *mat) ? set _shapePropertiesNeeded based on surface material
+
+        //Blending required
+
+
 
         mlod_lods.emplace_back(std::move(newLod));
     }
@@ -1680,6 +1843,38 @@ int P3DFile::readMLOD(std::filesystem::path sourceFile) {
     // Write model info
     build_model_info();
     auto success = model_info.skeleton->read(sourceFile, logger);
+
+
+
+    //#TODO setup buyonancy if canFloat.
+    //bool canFloat = true;
+    //if (_nGraphical <= 0
+    //    || !GeometryLevel()
+    //    || _propertyClass == RSB(building)
+    //    || _propertyClass == RSB(bushhard)
+    //    || _propertyClass == RSB(bushsoft)
+    //    || _propertyClass == RSB(church)
+    //    || _propertyClass == RSB(forest)
+    //    || _propertyClass == RSB(house)
+    //    || _propertyClass == RSB(man)
+    //    || _propertyClass == RSB(road)
+    //    || _propertyClass == RSB(streetlamp)
+    //    || _propertyClass == RSB(treehard)
+    //    || _propertyClass == RSB(treesoft)
+    //    || _propertyClass == RSB(clutter)
+    //    || _propertyClass == RSB(none)
+    //    || _autoCenter == false //proxies
+    //    )
+    //{
+    //    canFloat = false;
+    //}
+
+
+
+
+
+
+
     if (success > 0) {
         logger.error(sourceFile.string(), 0, "Failed to read model config.\n");
         return success;
@@ -1707,6 +1902,7 @@ int P3DFile::writeODOL(std::filesystem::path targetFile) {
     output.write(reinterpret_cast<char*>(&version), sizeof(uint32_t));
     output.write("\0\0\0\0", sizeof(uint32_t)); // AppID
     output.write("\0", 1); // muzzleFlash string
+    //#TODO ^ we could pre-calculate that?
 
     output.write(reinterpret_cast<char*>(&num_lods), 4);
 
@@ -1720,19 +1916,24 @@ int P3DFile::writeODOL(std::filesystem::path targetFile) {
         output.put(1); //bool hasAnims
         write_animations(output);
     } else {
-        output.put(0);
+        output.put(0); //bool hasAnims
     }
 
     // Write place holder LOD addresses
     size_t fp_lods_starts = output.tellp();
 
+
+    std::vector<StreamFixup<uint32_t>> startOffsets;
+    std::vector<StreamFixup<uint32_t>> endOffsets;
+
+
     //lod start addresses
     for (uint32_t i = 0; i < num_lods; i++)
-        output.write("\0\0\0\0", 4);
+        startOffsets.emplace_back(output);
     //lod end addresses
     size_t fp_lods_ends = output.tellp();
     for (uint32_t i = 0; i < num_lods; i++)
-        output.write("\0\0\0\0", 4);
+        endOffsets.emplace_back(output);
 
     //^ that there is structured like the following
     //lod start
@@ -1744,17 +1945,30 @@ int P3DFile::writeODOL(std::filesystem::path targetFile) {
     //lod end
 
 
+
+    //#TODO set properly LODShape::IsPermanent ||
+    // i == _nGraphical - 1 && (_nGraphical > 1 || _lods[i]->NFaces() < 100)
+
     // Write LOD face defaults (or rather, don't)
     for (uint32_t i = 0; i < num_lods; i++)
         output.put(1); //bool array, telling engine if it should load the LOD right away, or rather stream it in later
 
+    //#TODO iterate once for non-permantent to save
+    //32bit number of faces
+    //32bit color
+    //32bit special
+    //32bit or hints
+    //char subskeletonSize>0
+    //32bit number of verticies
+    //float total area of faces
+
+
     // Write LODs
     for (uint32_t i = 0; i < num_lods; i++) {
+
+
         // Write start address
-        auto fp_temp = output.tellp();
-        output.seekp(fp_lods_starts + i * 4);
-        output.write(reinterpret_cast<char*>(&fp_temp), 4);
-        output.seekp(0, std::ofstream::end);
+        startOffsets[i].setValue(output.tellp());
 
         // Convert to ODOL
         odol_lod odol_lod{};
@@ -1764,11 +1978,53 @@ int P3DFile::writeODOL(std::filesystem::path targetFile) {
         odol_lod.writeTo(output);
 
         // Write end address
-        fp_temp = output.tellp();
-        output.seekp(fp_lods_ends + i * 4);
-        output.write(reinterpret_cast<char*>(&fp_temp), 4);
-        output.seekp(0, std::ofstream::end);
+        endOffsets[i].setValue(output.tellp());
     }
+
+    for (auto& it : startOffsets)
+        it.write(output);
+    for (auto& it : endOffsets)
+        it.write(output);
+
+    output.seekp(0, std::ostream::end);
+
+
+    //#TODO write buoyancy
+    //32bit isused
+    //00 none.
+    //1 iteration
+    //2 segmentation
+
+    //1 //if _geometrySimple=>0
+    //float fullVolume
+    //float basicLeakiness
+    //float resistanceCoef
+    //float linDampCoefX
+    //float linDampCoefY
+    //float angDampCoef
+    //Vec3 shapeMin
+    //Vec3 shapeMax
+
+    //2
+    //32bit arraySizex
+    //32bit arraySizey
+    //32bit arraySizez
+    //float stepX
+    //float stepY
+    //float stepZ
+    //float fullSphereRadius
+    //32bit minSpheres
+    //32bit maxSpheres
+
+    //size = arraySizeX*Y*Z
+
+    //for each element 0 to size
+    //Vec3 mCoord
+    //float sphereRadius
+    //float typicalSurface
+
+    //Serialize 1 here
+
 
     // Write PhysX (@todo)
 
