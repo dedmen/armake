@@ -84,6 +84,16 @@ public:
     constexpr T distance_2d(const vector3_base& v) const noexcept { vector3_base dist = (*this - v); dist = dist * dist; return std::sqrt(dist.x + dist.y); }
     constexpr T distance_2d_squared(const vector3_base& v) const noexcept { vector3_base dist = (*this - v); dist = dist * dist; return (dist.x + dist.y); }
     constexpr vector3_base cross(const vector3_base& v) const noexcept { return vector3(y * v.z - z * v.y, z * v.x - x * v.z, x * v.y - y * v.x); }
+
+
+
+    constexpr float tripleProd(const vector3_base& a, const vector3_base& b) const noexcept {
+        return 
+        x * (a.y*b.z - a.z*b.y) +
+        y *(-a.x*b.z + a.z*b.x) +
+        z * (a.x*b.y - a.y*b.x);
+    }
+
     constexpr vector3_base normalize() const noexcept { return (*this / std::abs(magnitude())); }
     constexpr bool zero_distance() const noexcept { return ((x == 0.0f && y == 0.0f && z == 0.0f) ? true : false); }
 

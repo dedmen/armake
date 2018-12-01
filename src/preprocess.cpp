@@ -190,7 +190,7 @@ bool Preprocessor::constants_parse(ConstantMapType &constants, std::string_view 
                     length = len;
                 }
                 c.occurrences.emplace_back(i, length);
-
+                //#TODO ignore ANYTHING inside double quoted string. Don't count occurences inside there
                 c.num_occurences++;
             }
 
