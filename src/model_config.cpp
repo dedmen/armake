@@ -215,7 +215,7 @@ void skeleton_::writeTo(std::ostream& output) {
             output.write(bones[i].name.c_str(), bones[i].name.length() + 1);
             output.write(bones[i].parent.c_str(), bones[i].parent.length() + 1);
         }
-        output.put(0);
+        output.put(0); // pivotsNameObsolete ?
     }
 }
 
@@ -273,12 +273,13 @@ int skeleton_::read(std::filesystem::path source, Logger& logger) {
         logger.warning(std::string_view(path), 0u, LoggerMessageType::model_without_prefix, "Model has a model config entry but doesn't seem to have a prefix (missing _).\n");
 
     // Read name
-    auto skeletonName = cfg->getString({ "CfgModels", model_name , "skeletonName" });
+    auto skeletonName = modelConfig->getString({ "skeletonName" });
     if (!skeletonName) {
-        logger.error("Failed to read skeleton name.\n");
-        return 1;//#TODO fix this error code. That's not the correct one
-    }
-    name = std::move(*skeletonName);
+        //Not really an error. If there is no skeleton, then it just doesn't have one
+        //logger.error("Failed to read skeleton name.\n");
+        //return 1;//#TODO fix this error code. That's not the correct one
+    } else
+        name = std::move(*skeletonName);
 
     // Read bones
     if (!name.empty()) {
@@ -336,7 +337,7 @@ int skeleton_::read(std::filesystem::path source, Logger& logger) {
     }
 
     // Read sections
-    auto sectionsInherit = cfg->getString({ "CfgModels", model_name, "sectionsInherit" });
+    auto sectionsInherit = modelConfig->getString({ "sectionsInherit" });
     if (!sectionsInherit) {
         logger.error("Failed to read sections.\n");
         return success;
@@ -353,7 +354,7 @@ int skeleton_::read(std::filesystem::path source, Logger& logger) {
                 sections.emplace_back(it);
     }
 
-    auto sectionsRd = cfg->getArrayOfStrings({ "CfgModels", model_name, "sections" });
+    auto sectionsRd = modelConfig->getArrayOfStrings({ "sections" });
     if (!sectionsRd) {
         logger.error("Failed to read sections.\n");
         return success;
@@ -367,7 +368,7 @@ int skeleton_::read(std::filesystem::path source, Logger& logger) {
 
     // Read animations
     num_animations = 0;
-    auto animations = cfg->getClass({ "CfgModels", model_name, "Animations" });
+    auto animations = modelConfig->getClass({ "Animations" });
     if (animations) {
         //#TODO inheritance?
         success = read_animations(*animations, this, logger);
@@ -385,12 +386,12 @@ int skeleton_::read(std::filesystem::path source, Logger& logger) {
     //default values are 0
 
     // Read thermal stuff
-    ht_min = *cfg->getFloat({ "CfgModels",model_name, "htMin" }); //#TODO error checking. Should use exceptions
-    ht_max = *cfg->getFloat({ "CfgModels",model_name, "htMax" }); //#TODO error checking. Should use exceptions
-    af_max = *cfg->getFloat({ "CfgModels",model_name, "afMax" }); //#TODO error checking. Should use exceptions
-    mf_max = *cfg->getFloat({ "CfgModels",model_name, "mfMax" }); //#TODO error checking. Should use exceptions
-    mf_act = *cfg->getFloat({ "CfgModels",model_name, "mfAct" }); //#TODO error checking. Should use exceptions
-    t_body = *cfg->getFloat({ "CfgModels",model_name, "tBody" }); //#TODO error checking. Should use exceptions
+    if (modelConfig->hasEntry({ "htMin" })) ht_min = *modelConfig->getFloat({ "htMin" });
+    if (modelConfig->hasEntry({ "htMax" })) ht_max = *modelConfig->getFloat({ "htMax" });
+    if (modelConfig->hasEntry({ "afMax" })) af_max = *modelConfig->getFloat({ "afMax" });
+    if (modelConfig->hasEntry({ "mfMax" })) mf_max = *modelConfig->getFloat({ "mfMax" });
+    if (modelConfig->hasEntry({ "mfAct" })) mf_act = *modelConfig->getFloat({ "mfAct" });
+    if (modelConfig->hasEntry({ "tBody" })) t_body = *modelConfig->getFloat({ "tBody" });
 
     return 0;
 

@@ -88,7 +88,7 @@ struct skeleton_ { //using std::vector and std::string reduced the size of this 
 
 
 
-    std::string name;
+    std::string name; //skeleton name
     uint32_t num_bones;
     std::vector<struct bone> bones;
     uint32_t num_sections;
