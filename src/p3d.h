@@ -352,6 +352,9 @@ struct model_info {
 
 int mlod2odol(const char *source, const char *target, Logger& logger);
 
+class Buoyant;
+
+
 class MultiLODShape {
 public:
 
@@ -360,7 +363,7 @@ public:
     uint32_t num_lods;
     std::vector<mlod_lod> mlod_lods;
     struct model_info model_info;
-
+    std::unique_ptr<Buoyant> buoy;
 };
 
 class Buoyant {
@@ -376,9 +379,11 @@ public:
     vector3 bbMin; //boundingbox
     vector3 bbMax;
     void init(MultiLODShape* shape) {
-        
-    }
 
+    }
+    virtual void writeTo(std::ostream& out) const {
+        out.write(reinterpret_cast<const char*>(&volume), sizeof(volume));
+    };
 
 };
 
@@ -387,7 +392,7 @@ class BuoyantIteration : public Buoyant {
 public:
 
     void stuff(float& vol, float& surf, vector3& dmom, vector3 a, vector3 b, vector3 c) {
-        float x = a.tripleProd(b,c) / 6.0f;
+        float x = a.tripleProd(b, c) / 6.0f;
         vol += x;
         surf += vector3(b - a).cross(c - a).magnitude();
 
@@ -398,7 +403,7 @@ public:
     void init(MultiLODShape* shape) {
 
 
-        
+
 
         //Get GeometrySimple
         //if not get GeometryPhys
@@ -423,11 +428,18 @@ struct BuoyantPoint { //#TODO rename
     vector3 coord;
     float sphereRadius;
     float typicalSurface;
+
+    void writeTo(std::ostream& out) const {
+        out.write(reinterpret_cast<const char*>(&coord), sizeof(coord));
+        out.write(reinterpret_cast<const char*>(&sphereRadius), sizeof(sphereRadius));
+        out.write(reinterpret_cast<const char*>(&typicalSurface), sizeof(typicalSurface));
+    }
+
 };
 
 class BuoyantSphere : public Buoyant {
 public:
-    std::vector<BuoyantPoint> _aBuoyancy;
+    std::vector<BuoyantPoint> _aBuoyancy; //#TODO rename var
     int _arraySizeX;
     int _arraySizeY;
     int _arraySizeZ;
@@ -445,22 +457,22 @@ public:
     {
         vector3 mMin = geometry.min_pos; //#TODO minmax bounding box
         vector3 mMax = geometry.max_pos;
-        
+
         float xSize = (mMax.x - mMin.x);
         float ySize = (mMax.y - mMin.y); //#TODO use vector substract and structured binding
         float zSize = (mMax.z - mMin.z);
         float maxSize = std::max(std::max(xSize, ySize), zSize);
         if (maxSize <= 0) {
-                //#TODO warning
-                //bounding box in geo level has 0 size. buoyoncany won't work, missing property class or autocenter=0?
+            //#TODO warning
+            //bounding box in geo level has 0 size. buoyoncany won't work, missing property class or autocenter=0?
             return;
         }
         float invStep = (float)_maxSpheres / maxSize;
-        
+
         int xSegments = std::max(xSize*invStep, (float)_minSpheres);
         int ySegments = std::max(ySize*invStep, (float)_minSpheres);
         int zSegments = std::max(zSize*invStep, (float)_minSpheres);
-        
+
         _stepX = xSize / xSegments;
         _stepY = ySize / ySegments;
         _stepZ = zSize / zSegments;
@@ -491,7 +503,7 @@ public:
                 float mCoordY = y * _stepY + mMin.y + _stepY * 0.5;
                 for (int x = 0; x < _arraySizeX; x++) {
                     float mCoordX = x * _stepX + mMin.x + _stepX * 0.5;
-        
+
                     BuoyantPoint &buoyantPoint = _aBuoyancy[x + y * _arraySizeX + z * _arraySizeX*_arraySizeY];
                     buoyantPoint.sphereRadius = _fullSphereRadius; // default value
                     buoyantPoint.coord = vector3(mCoordX, mCoordY, mCoordZ);
@@ -580,10 +592,10 @@ public:
         float stepRayY = _stepY / (float)10;
         float stepRayZ = _stepZ / (float)10;
 
-        for (int y = 0; y < _arraySizeY*10; y++) {
+        for (int y = 0; y < _arraySizeY * 10; y++) {
             float mCoordY = y * stepRayY + mMin.y + stepRayY * 0.5;	// ray Y coord
 
-            for (int z = 0; z < _arraySizeZ*10; z++)  {
+            for (int z = 0; z < _arraySizeZ * 10; z++) {
                 float mCoordZ = z * stepRayZ + mMin.z + stepRayZ * 0.5; // ray Z coord
 
                 vector3 rayX(0, mCoordY, mCoordZ);
@@ -605,8 +617,8 @@ public:
                 }
 
                 if (!isInside) {
-                    for (int x = 0; x < _arraySizeX*10; x++) {
-                        rays[x + y * _arraySizeX*10 + z * _arraySizeX*10 * _arraySizeY*10] = false;
+                    for (int x = 0; x < _arraySizeX * 10; x++) {
+                        rays[x + y * _arraySizeX * 10 + z * _arraySizeX * 10 * _arraySizeY * 10] = false;
                     }
                 }
             }
@@ -689,11 +701,11 @@ public:
 
     void fillInsideArea(std::vector<bool>& rays) {
         //#TODO multithreading
-        for (int x = 0; x < _arraySizeX*10; x++) {
-            for (int y = 0; y < _arraySizeY*10; y++) {
-                for (int z = 0; z < _arraySizeZ*10; z++) {
+        for (int x = 0; x < _arraySizeX * 10; x++) {
+            for (int y = 0; y < _arraySizeY * 10; y++) {
+                for (int z = 0; z < _arraySizeZ * 10; z++) {
                     // do not check for points inside geometry
-                    if (rays[x + y * _arraySizeX*10 + z * _arraySizeX*10 * _arraySizeY*10]) continue;
+                    if (rays[x + y * _arraySizeX * 10 + z * _arraySizeX * 10 * _arraySizeY * 10]) continue;
 
                     bool findFilled;
 
@@ -702,7 +714,7 @@ public:
                         //check x- (check if there is some filled point on x- from our position)
                         findFilled = false;
                         for (int chX = x; chX >= 0; chX--) {
-                            if (rays[chX + y * _arraySizeX*10 + z * _arraySizeX*10 * _arraySizeY*10]) {
+                            if (rays[chX + y * _arraySizeX * 10 + z * _arraySizeX * 10 * _arraySizeY * 10]) {
                                 findFilled = true;
                                 break;
                             }
@@ -710,8 +722,8 @@ public:
                         if (!findFilled) continue;
 
                         findFilled = false;
-                        for (int chX = x; chX < _arraySizeX*10; chX++) {
-                            if (rays[chX + y * _arraySizeX*10 + z * _arraySizeX*10 * _arraySizeY*10]) {
+                        for (int chX = x; chX < _arraySizeX * 10; chX++) {
+                            if (rays[chX + y * _arraySizeX * 10 + z * _arraySizeX * 10 * _arraySizeY * 10]) {
                                 findFilled = true;
                                 break;
                             }
@@ -723,7 +735,7 @@ public:
                     {
                         findFilled = false;
                         for (int chY = y; chY >= 0; chY--) {
-                            if (rays[x + chY * _arraySizeX*10 + z * _arraySizeX*10 * _arraySizeY*10]) {
+                            if (rays[x + chY * _arraySizeX * 10 + z * _arraySizeX * 10 * _arraySizeY * 10]) {
                                 findFilled = true;
                                 break;
                             }
@@ -735,7 +747,7 @@ public:
                     {
                         findFilled = false;
                         for (int chZ = z; chZ >= 0; chZ--) {
-                            if (rays[x + y * _arraySizeX*10 + chZ * _arraySizeX*10 * _arraySizeY*10])
+                            if (rays[x + y * _arraySizeX * 10 + chZ * _arraySizeX * 10 * _arraySizeY * 10])
                             {
                                 findFilled = true;
                                 break;
@@ -744,17 +756,17 @@ public:
                         if (!findFilled) continue;
 
                         findFilled = false;
-                        for (int chZ = z; chZ < _arraySizeZ*10; chZ++) {
-                            if (rays[x + y * _arraySizeX*10 + chZ * _arraySizeX*10 * _arraySizeY*10]) {
+                        for (int chZ = z; chZ < _arraySizeZ * 10; chZ++) {
+                            if (rays[x + y * _arraySizeX * 10 + chZ * _arraySizeX * 10 * _arraySizeY * 10]) {
                                 findFilled = true;
                                 break;
                             }
                         }
-                        if (!findFilled) continue; 
+                        if (!findFilled) continue;
                     }
 
                     //if all checks returns true, then this point is inside
-                    rays[x + y * _arraySizeX*10 + z * _arraySizeX*10 * _arraySizeY*10] = 2;//true; //DBG
+                    rays[x + y * _arraySizeX * 10 + z * _arraySizeX * 10 * _arraySizeY * 10] = 2;//true; //DBG
                 }
             }
         }
@@ -763,16 +775,16 @@ public:
     void countCoefs(std::vector<bool>& &aBuoyancyRays) {
         volume = 0;
 
-        float invMaxInsidePoints = 1.0f / (float)(10*10*10);
-        float pointSurface = (_stepX*_stepY + _stepX * _stepZ + _stepY * _stepZ) / (10*10*3.0f);
+        float invMaxInsidePoints = 1.0f / (float)(10 * 10 * 10);
+        float pointSurface = (_stepX*_stepY + _stepX * _stepZ + _stepY * _stepZ) / (10 * 10 * 3.0f);
         // go through the whole rays array and check each sub element
         for (int z = 0; z < _arraySizeZ; z++) {
-            int zMin = z * 10 * _arraySizeX*10 * _arraySizeY*10;
-            int zStep = _arraySizeX * 10 * _arraySizeY*10;
+            int zMin = z * 10 * _arraySizeX * 10 * _arraySizeY * 10;
+            int zStep = _arraySizeX * 10 * _arraySizeY * 10;
             int zMax = zMin + zStep * 10;
 
             for (int y = 0; y < _arraySizeY; y++) {
-                int yMin = y * 10 * _arraySizeX*10;
+                int yMin = y * 10 * _arraySizeX * 10;
                 int yStep = _arraySizeX * 10;
                 int yMax = yMin + yStep * 10;
 
@@ -829,7 +841,23 @@ public:
 
 
 
+    void writeTo(std::ostream& out) const override {
+        
+        out.write(reinterpret_cast<const char*>(&_arraySizeX), sizeof(_arraySizeX));
+        out.write(reinterpret_cast<const char*>(&_arraySizeY), sizeof(_arraySizeY));
+        out.write(reinterpret_cast<const char*>(&_arraySizeZ), sizeof(_arraySizeZ));
+        out.write(reinterpret_cast<const char*>(&_stepX), sizeof(_stepX));
+        out.write(reinterpret_cast<const char*>(&_stepY), sizeof(_stepY));
+        out.write(reinterpret_cast<const char*>(&_stepZ), sizeof(_stepZ));
+        out.write(reinterpret_cast<const char*>(&_fullSphereRadius), sizeof(_fullSphereRadius));
+        out.write(reinterpret_cast<const char*>(&_minSpheres), sizeof(_minSpheres));
+        out.write(reinterpret_cast<const char*>(&_maxSpheres), sizeof(_maxSpheres));
 
+        for (auto& it : _aBuoyancy)
+            it.writeTo(out);
+
+        Buoyant::writeTo(out);
+    };
 
 
 
@@ -868,7 +896,7 @@ public:
         _maxSpheres = std::max(std::min(_maxSpheres, 8), 1);
 
         if (_minSpheres > 0 && _maxSpheres >= _minSpheres) {
-            
+
             initBuoyancy(*ld, shape);
 
             std::vector<bool> rays;

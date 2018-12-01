@@ -1844,32 +1844,66 @@ int P3DFile::readMLOD(std::filesystem::path sourceFile) {
     build_model_info();
     auto success = model_info.skeleton->read(sourceFile, logger);
 
+    std::string propertyClass;
+    if (model_info.special_lod_indices.geometry) { //#TODO if no geom, use lod0
+        auto& props = mlod_lods[model_info.special_lod_indices.geometry].properties;
+        
+        auto classProp = std::find_if(props.begin(), props.end(), [](const property& prop) {
+            return prop.name == "class";
+        });
+        if (classProp != props.end())
+            propertyClass = classProp->value;
+    }
+    bool autoCenter;
+    if (model_info.special_lod_indices.geometry) { //#TODO if no geom, use lod0
+        auto& props = mlod_lods[model_info.special_lod_indices.geometry].properties;
+
+        auto classProp = std::find_if(props.begin(), props.end(), [](const property& prop) {
+            return prop.name == "autocenter";
+        });
+        if (classProp != props.end())
+            autoCenter = stoi(classProp->value);
+    }
+
+
+    //#TODO also get property damage and propertyFrequent. We'll need them when writing ODOL
+
 
 
     //#TODO setup buyonancy if canFloat.
-    //bool canFloat = true;
-    //if (_nGraphical <= 0
-    //    || !GeometryLevel()
-    //    || _propertyClass == RSB(building)
-    //    || _propertyClass == RSB(bushhard)
-    //    || _propertyClass == RSB(bushsoft)
-    //    || _propertyClass == RSB(church)
-    //    || _propertyClass == RSB(forest)
-    //    || _propertyClass == RSB(house)
-    //    || _propertyClass == RSB(man)
-    //    || _propertyClass == RSB(road)
-    //    || _propertyClass == RSB(streetlamp)
-    //    || _propertyClass == RSB(treehard)
-    //    || _propertyClass == RSB(treesoft)
-    //    || _propertyClass == RSB(clutter)
-    //    || _propertyClass == RSB(none)
-    //    || _autoCenter == false //proxies
-    //    )
-    //{
-    //    canFloat = false;
-    //}
-
-
+    bool canFloat = true;
+    if (//_nGraphical <= 0
+        //||
+        ! model_info.special_lod_indices.geometry
+        || propertyClass == "building"
+        || propertyClass == "bushhard"
+        || propertyClass == "bushsoft"
+        || propertyClass == "church"
+        || propertyClass == "forest"
+        || propertyClass == "house"
+        || propertyClass == "man"
+        || propertyClass == "road"
+        || propertyClass == "streetlamp"
+        || propertyClass == "treehard"
+        || propertyClass == "treesoft"
+        || propertyClass == "clutter"
+        || propertyClass == "none"
+        || autoCenter == false //proxies
+        ) {
+        canFloat = false;
+    }
+    if (canFloat) {
+        if (model_info.special_lod_indices.geometry_simple) {
+            auto nBue = std::make_unique<BuoyantIteration>();
+            nBue->init(this);
+            buoy = std::move(nBue);
+        } else {
+            auto nBue = std::make_unique<BuoyantSphere>();
+            nBue->init(*this);
+            buoy = std::move(nBue);
+        }
+    }
+    
 
 
 
@@ -2027,6 +2061,9 @@ int P3DFile::writeODOL(std::filesystem::path targetFile) {
 
 
     // Write PhysX (@todo)
+
+
+
 
     output.write("\x00\x03\x03\x03\x00\x00\x00\x00", 8);
     output.write("\x00\x03\x03\x03\x00\x00\x00\x00", 8);
