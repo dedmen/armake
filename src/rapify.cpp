@@ -49,9 +49,9 @@ class StreamFixup {
     std::streamoff offset;
     Type value;
 public:
-    StreamFixup(std::ostream& str) : offset(str.tellp()) { str.write(&value, sizeof(Type)); }
+    StreamFixup(std::ostream& str) : offset(str.tellp()) { str.write(reinterpret_cast<const char*>(&value), sizeof(Type)); }
     void setValue(const Type& val) { value = val; }
-    void write(std::ostream& str) { str.seekp(offset); str.write(&value, sizeof(Type)); }
+    void write(std::ostream& str) { str.seekp(offset); str.write(reinterpret_cast<const char*>(&value), sizeof(Type)); }
 };
 
 class Logger;
