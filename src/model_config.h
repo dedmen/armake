@@ -89,17 +89,17 @@ struct skeleton_ { //using std::vector and std::string reduced the size of this 
 
 
     std::string name; //skeleton name
-    uint32_t num_bones;
+    uint32_t num_bones{ 0 };
     std::vector<struct bone> bones;
-    uint32_t num_sections;
+    uint32_t num_sections{ 0 };
     std::vector<std::string> sections;
-    uint32_t num_animations;
+    uint32_t num_animations{ 0 };
     std::vector<animation> animations;
-    bool is_discrete;
-    float ht_min;
-    float ht_max;
-    float af_max;
-    float mf_max;
-    float mf_act;
-    float t_body;
+    bool is_discrete { false };
+    float ht_min { 0 };
+    float ht_max { 0 };
+    float af_max { 0 };
+    float mf_max { 0 };
+    float mf_act { 0 };
+    float t_body { 0 };
 };

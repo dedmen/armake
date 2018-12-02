@@ -36,29 +36,31 @@
 #define LOD_SHADOW_VOLUME_END                        11999.0f
 #define LOD_EDIT_START                               20000.0f
 #define LOD_EDIT_END                                 20999.0f
-#define LOD_GEOMETRY                        10000000000000.0f
-#define LOD_PHYSX                           40000000000000.0f
-#define LOD_MEMORY                        1000000000000000.0f
-#define LOD_LAND_CONTACT                  2000000000000000.0f
-#define LOD_ROADWAY                       3000000000000000.0f
-#define LOD_PATHS                         4000000000000000.0f
-#define LOD_HITPOINTS                     5000000000000000.0f
-#define LOD_VIEW_GEOMETRY                 6000000000000000.0f
-#define LOD_FIRE_GEOMETRY                 7000000000000000.0f
-#define LOD_VIEW_CARGO_GEOMETRY           8000000000000000.0f
+#define LOD_GEOMETRY                        1e13f
+#define LOD_GEOMETRY_SIMPLE                 LOD_GEOMETRY*2
+#define LOD_PHYSX_OLD                       LOD_GEOMETRY*3
+#define LOD_PHYSX                           LOD_GEOMETRY*4
+#define LOD_MEMORY                        1e15f
+#define LOD_LAND_CONTACT                  LOD_MEMORY*2
+#define LOD_ROADWAY                       LOD_MEMORY*3
+#define LOD_PATHS                         LOD_MEMORY*4
+#define LOD_HITPOINTS                     LOD_MEMORY*5
+#define LOD_VIEW_GEOMETRY                 LOD_MEMORY*6
+#define LOD_FIRE_GEOMETRY                 LOD_MEMORY*7
+#define LOD_VIEW_CARGO_GEOMETRY           LOD_MEMORY*8
 #define LOD_VIEW_CARGO_FIRE_GEOMETRY      9000000000000000.0f
 #define LOD_VIEW_COMMANDER               10000000000000000.0f
 #define LOD_VIEW_COMMANDER_GEOMETRY      11000000000000000.0f
 #define LOD_VIEW_COMMANDER_FIRE_GEOMETRY 12000000000000000.0f
-#define LOD_VIEW_PILOT_GEOMETRY          13000000000000000.0f
+#define LOD_VIEW_PILOT_GEOMETRY          LOD_MEMORY*13
 #define LOD_VIEW_PILOT_FIRE_GEOMETRY     14000000000000000.0f
-#define LOD_VIEW_GUNNER_GEOMETRY         15000000000000000.0f
-#define LOD_VIEW_GUNNER_FIRE_GEOMETRY    16000000000000000.0f
-#define LOD_SUB_PARTS                    17000000000000000.0f
-#define LOD_SHADOW_VOLUME_VIEW_CARGO     18000000000000000.0f
-#define LOD_SHADOW_VOLUME_VIEW_PILOT     19000000000000000.0f
-#define LOD_SHADOW_VOLUME_VIEW_GUNNER    20000000000000000.0f
-#define LOD_WRECK                        21000000000000000.0f
+#define LOD_VIEW_GUNNER_GEOMETRY         LOD_MEMORY*15
+#define LOD_VIEW_GUNNER_FIRE_GEOMETRY    LOD_MEMORY*16
+#define LOD_SUB_PARTS                    LOD_MEMORY*17
+#define LOD_SHADOW_VOLUME_VIEW_CARGO     LOD_MEMORY*18
+#define LOD_SHADOW_VOLUME_VIEW_PILOT     LOD_MEMORY*19
+#define LOD_SHADOW_VOLUME_VIEW_GUNNER    LOD_MEMORY*20
+#define LOD_WRECK                        LOD_MEMORY*21
 
 #define FLAG_NOZWRITE            0x10
 #define FLAG_NOSHADOW            0x20
@@ -146,6 +148,9 @@ public:
 
     float getBoundingSphere(const vector3& center);
     bool read(std::istream& source);
+    uint32_t getAndHints();
+    uint32_t getOrHints();
+    uint32_t getSpecialFlags();
 
     uint32_t num_points;
     uint32_t num_facenormals;
@@ -157,13 +162,19 @@ public:
     std::vector<float> mass;
     std::vector<uint32_t> sharp_edges;
     std::vector<property> properties;
-    ComparableFloat<std::centi> resolution;
+    ComparableFloat<std::milli> resolution; //Yet milli is correct. That's what Arma uses
+
     uint32_t num_selections;
     std::vector<mlod_selection> selections;
     vector3 min_pos;
     vector3 max_pos;
     vector3 autocenter_pos;
     float boundingSphere;
+
+
+    std::optional<std::string> getProperty(std::string_view propName) const;
+
+
 };
 
 struct odol_face {
@@ -301,15 +312,213 @@ struct lod_indices {
     int8_t hitpoints;
 };
 
+
+enum class MapType : uint32_t {
+    Tree,
+    SmallTree,
+    Bush,
+    Building,
+    House,
+    ForestBorder,
+    ForestTriangle,
+    ForestSquare,
+    Church,
+    Chapel,
+    Cross,
+    Rock,
+    Bunker,
+    Fortress,
+    Fountain,
+    ViewTower,
+    Lighthouse,
+    Quay,
+    Fuelstation,
+    Hospital,
+    Fence,
+    Wall,
+    Hide, //default value
+    BusStop,
+    Road,
+    Forest,
+    Transmitter,
+    Stack,
+    Ruin,
+    Tourism,
+    Watertower,
+    Track,
+    MainRoad,
+    Rocks,
+    PowerLines,
+    RailWay,
+    PowerSolar,
+    PowerWave,
+    PowerWind,
+    Shipwreck,
+    NMapType
+};
+
+constexpr std::array<std::pair<MapType, std::string_view>, static_cast<size_t>(MapType::NMapType)> MapTypeToString {
+    std::pair<MapType, std::string_view>
+  { MapType::Tree, "TREE" },
+  { MapType::SmallTree, "SMALL TREE" },
+  { MapType::Bush, "BUSH" },
+  { MapType::Building, "BUILDING" },
+  { MapType::House, "HOUSE" },
+  { MapType::ForestBorder, "FOREST BORDER" },
+  { MapType::ForestTriangle, "FOREST TRIANGLE" },
+  { MapType::ForestSquare, "FOREST SQUARE" },
+  { MapType::Church, "CHURCH" },
+  { MapType::Chapel, "CHAPEL" },
+  { MapType::Cross, "CROSS" },
+  { MapType::Rock, "ROCK" },
+  { MapType::Bunker, "BUNKER" },
+  { MapType::Fortress, "FORTRESS" },
+  { MapType::Fountain, "FOUNTAIN" },
+  { MapType::ViewTower, "VIEW-TOWER" },
+  { MapType::Lighthouse, "LIGHTHOUSE" },
+  { MapType::Quay, "QUAY" },
+  { MapType::Fuelstation, "FUELSTATION" },
+  { MapType::Hospital, "HOSPITAL" },
+  { MapType::Fence, "FENCE" },
+  { MapType::Wall, "WALL" },
+  { MapType::Hide, "HIDE" },
+  { MapType::BusStop, "BUSSTOP" },
+  { MapType::Road, "ROAD" },
+  { MapType::Forest, "FOREST" },
+  { MapType::Transmitter, "TRANSMITTER" },
+  { MapType::Stack, "STACK" },
+  { MapType::Ruin, "RUIN" },
+  { MapType::Tourism, "TOURISM" },
+  { MapType::Watertower, "WATERTOWER" },
+  { MapType::Track, "TRACK" },
+  { MapType::MainRoad, "MAIN ROAD" },
+  { MapType::Rocks, "ROCKS" },
+  { MapType::PowerLines, "POWER LINES" },
+  { MapType::RailWay, "RAILWAY" },
+  { MapType::PowerSolar, "POWERSOLAR" },
+  { MapType::PowerWave, "POWERWAVE" },
+  { MapType::PowerWind, "POWERWIND" },
+  { MapType::Shipwreck, "SHIPWRECK" }
+};
+
+
+
+enum ClipFlags : uint32_t {
+    
+    ClipNone = 0,
+    ClipFront = 1,
+    ClipBack = 2,
+    ClipLeft = 4,
+    ClipRight = 8,
+    ClipBottom = 16,
+    ClipTop = 32,
+    ClipUser0 = 0x40,
+
+    ClipAll = ClipFront | ClipBack | ClipLeft | ClipRight | ClipBottom | ClipTop,
+
+    //#TODO remove unused ones
+
+    ClipLandMask = 0xf00,
+    ClipLandStep = 0x100,
+    ClipLandNone = ClipLandStep * 0,
+    ClipLandOn = ClipLandStep * 1,
+    ClipLandUnder = ClipLandStep * 2,
+    ClipLandAbove = ClipLandStep * 4,
+    ClipLandKeep = ClipLandStep * 8,
+
+    ClipDecalMask = 0x3000,
+    ClipDecalStep = 0x1000,
+    ClipDecalNone = ClipDecalStep * 0,
+    ClipDecalNormal = ClipDecalStep * 1,
+    ClipDecalVertical = ClipDecalStep * 2,
+
+    ClipFogMask = 0xc000, 
+    ClipFogStep = 0x4000,
+    ClipFogNormal = ClipFogStep * 0,
+    ClipFogDisable = ClipFogStep * 1,
+    ClipFogSky = ClipFogStep * 2,
+
+    ClipLightMask = 0xf0000, 
+    ClipLightStep = 0x10000,
+    ClipLightNormal = ClipLightStep * 0,
+    ClipLightLine = ClipLightStep * 8,
+
+    ClipUserMask = 0xff00000, 
+    ClipUserStep = 0x100000,
+    MaxUserValue = 0xff,
+
+    // all hints mask
+    ClipHints = ClipLandMask | ClipDecalMask | ClipFogMask | ClipLightMask | ClipUserMask
+};
+
+
+enum SpecialFlags {
+    SunPrecalculated = 1,
+    OnSurface = 2,
+    IsOnSurface = 4,
+    NoZBuf = 8,  //#TODO remove unused ones
+    NoZWrite = 0x10,
+
+    NoShadow = 0x20,
+    IsShadow = 0x40,
+    NoAlphaWrite = 0x80,
+
+    IsAlpha = 0x100,
+    IsTransparent = 0x200,
+    IsShadowVolume = 0x400,
+    IsLight = 0x800,
+    DstBlendOne = IsLight,
+    ShadowVolumeFrontFaces = 0x1000,
+    NoBackfaceCull = ShadowVolumeFrontFaces,
+    ClampLog = 14,
+    ClampMask = 3,
+    NoClamp = 0x2000,
+    ClampU = 0x4000,
+    ClampV = 0x8000,
+
+    IsAnimated = 0x10000,
+    IsAlphaOrdered = 0x20000,
+    NoColorWrite = 0x40000,
+    IsAlphaFog = 0x80000,
+    DstBlendZero = 0x100000,
+    IsColored = 0x200000,
+    IsHidden = 0x400000,
+    BestMipmap = 0x800000,
+    FilterMask = 0x3000000,
+    FilterTrilinear = 0x0000000,
+    FilterLinear = 0x1000000,
+    FilterAnizotrop = 0x2000000,
+    FilterPoint = 0x3000000,
+    ZBiasMask = 0xc000000, ZBiasStep = 0x4000000,
+    IsHiddenProxy = 0x10000000,
+    NoStencilWrite = 0x20000000,
+    TracerLighting = 0x40000000,
+    DisableSun = 0x80000000,
+};
+
+
+enum class SBSource : uint32_t {
+    Visual,
+    ShadowVolume,
+    Explicit,
+    None
+};
+
+
 struct model_info {
 
     void writeTo(std::ostream& output);
 
     std::vector<float> lod_resolutions;
-    uint32_t index;
+    uint32_t index; //#TODO rename special flags
     float bounding_sphere;
     float geo_lod_sphere;
-    uint32_t point_flags[3];
+
+    uint32_t remarks { 0 };
+    uint32_t andHints { 0 };
+    uint32_t orHints { 0 };
+
+
     vector3 aiming_center;
     uint32_t map_icon_color;
     uint32_t map_selected_color;
@@ -328,14 +537,15 @@ struct model_info {
     bool lock_autocenter;
     bool can_occlude;
     bool can_be_occluded;
-    bool ai_cover;
+    bool ai_cover { false };
     bool force_not_alpha;
-    int32_t sb_source;
+    SBSource sb_source;
     bool prefer_shadow_volume;
     float shadow_offset;
-    bool animated;
+    bool animated { false };
     std::unique_ptr<struct skeleton_> skeleton;
-    char map_type;
+    MapType map_type { MapType::Hide };
+
     uint32_t n_floats;
     float mass;
     float mass_reciprocal; //#TODO rename invMass
@@ -344,10 +554,23 @@ struct model_info {
     struct lod_indices special_lod_indices;
     uint32_t min_shadow;
     bool can_blend;
-    char class_type;
-    char destruct_type;
-    bool property_frequent;
+    std::string class_type;
+    std::string destruct_type;
+    bool property_frequent { false };
     uint32_t always_0;
+    uint32_t numberGraphicalLods;
+    uint32_t shadowVolumeCount { 0 };
+    uint32_t shadowBufferCount { 0 };
+
+
+
+    std::vector<uint32_t> preferredShadowVolumeLod;
+    std::vector<uint32_t> preferredShadowBufferLod;
+    std::vector<uint32_t> preferredShadowBufferVisibleLod;
+
+
+
+
 };
 
 int mlod2odol(const char *source, const char *target, Logger& logger);
@@ -364,6 +587,20 @@ public:
     std::vector<mlod_lod> mlod_lods;
     struct model_info model_info;
     std::unique_ptr<Buoyant> buoy;
+
+    //Get's property from GEO or LOD0
+    std::optional<std::string> getPropertyGeo(std::string_view propName);
+
+
+
+    bool projectedShadow;
+
+    void scanProjectedShadow();
+    void BuildSpecialLodList(); //#TODO rename
+    void shapeListUpdated();
+
+
+
 };
 
 class Buoyant {
@@ -371,56 +608,86 @@ public:
     float volume; //cubic meters
     float basicLeakiness;
 
-    float resistanceCoef;
-    float linearDampeningCoefX;
-    float linearDampeningCoefY;
-    float angularDampeningCoef;
+    //float resistanceCoef;
+    //float linearDampeningCoefX;
+    //float linearDampeningCoefY;
+    //float angularDampeningCoef;
 
     vector3 bbMin; //boundingbox
     vector3 bbMax;
-    void init(MultiLODShape* shape) {
+
+    virtual void init(const MultiLODShape& shape) {
+        const mlod_lod* ld = nullptr;
+        if (shape.model_info.special_lod_indices.geometry_simple)
+            ld = &shape.mlod_lods[shape.model_info.special_lod_indices.geometry_simple];
+        if (!ld && shape.model_info.special_lod_indices.geometry)
+            ld = &shape.mlod_lods[shape.model_info.special_lod_indices.geometry];
+        if (!ld) return;
+
+        bbMin = ld->min_pos;
+        bbMax = ld->max_pos;
+
+        bbMin.y = bbMax.y = shape.model_info.centre_of_mass.y; //Dunno why?
+
 
     }
     virtual void writeTo(std::ostream& out) const {
         out.write(reinterpret_cast<const char*>(&volume), sizeof(volume));
-    };
-
+    }
 };
 
 
 class BuoyantIteration : public Buoyant {
 public:
 
-    void stuff(float& vol, float& surf, vector3& dmom, vector3 a, vector3 b, vector3 c) {
-        float x = a.tripleProd(b, c) / 6.0f;
-        vol += x;
-        surf += vector3(b - a).cross(c - a).magnitude();
-
-        vector3 y = ((a + b + c) / 4);
-        dmom += (y * x);
+    float stuff(vector3 a, vector3 b, vector3 c) {
+        return a.tripleProd(b, c) / 6.0f;
     }
 
-    void init(MultiLODShape* shape) {
+    virtual void writeTo(std::ostream& out) const {
+        Buoyant::writeTo(out);
+    };
 
-
-
+    void init(const MultiLODShape& shape) override {
+        Buoyant::init(shape);
 
         //Get GeometrySimple
         //if not get GeometryPhys
         //if not get Geometry
-        mlod_lod ld;
+        const mlod_lod* ld = nullptr;
+        if (shape.model_info.special_lod_indices.geometry_simple)
+            ld = &shape.mlod_lods[shape.model_info.special_lod_indices.geometry_simple];
+        if (!ld && shape.model_info.special_lod_indices.geometry_physx)
+            ld = &shape.mlod_lods[shape.model_info.special_lod_indices.geometry_physx];
+        if (!ld && shape.model_info.special_lod_indices.geometry)
+            ld = &shape.mlod_lods[shape.model_info.special_lod_indices.geometry];
+        if (!ld) return;
 
         float vol = 0;
-        float surface = 0;
-        vector3 x;
 
-        //foreach face
-        //Get 3 verticies. If 4 vertex face then first do 0,1,2 and then again do 0,2,3
 
-        for (auto& it : ld.faces) {
-            //it.table.
-            //stuff(vol, surface, x, a, b, c),
+        for (auto& mface : ld->faces) {
+            //Get 3 verticies. If 4 vertex face then first do 0,1,2 and then again do 0,2,3
+
+            if (mface.face_type >= 3) {
+                vol += stuff(
+                    ld->points[mface.table[0].points_index].getPosition(),
+                    ld->points[mface.table[1].points_index].getPosition(),
+                    ld->points[mface.table[2].points_index].getPosition()
+                    );
+            }
+            if (mface.face_type == 4) {
+                vol += stuff(
+                    ld->points[mface.table[0].points_index].getPosition(),
+                    ld->points[mface.table[2].points_index].getPosition(),
+                    ld->points[mface.table[3].points_index].getPosition()
+                    );
+            }
+
+            
         }
+        volume = vol;
+
     }
 };
 
@@ -453,22 +720,20 @@ public:
     int _maxSpheres;
 
 
-    void initBuoyancy(const mlod_lod &geometry, const MultiLODShape &lodShape)
-    {
+    void initBuoyancy(const mlod_lod &geometry, const MultiLODShape &lodShape) {
         vector3 mMin = geometry.min_pos; //#TODO minmax bounding box
         vector3 mMax = geometry.max_pos;
+        auto [xSize, ySize, zSize] = (mMax - mMin);
 
-        float xSize = (mMax.x - mMin.x);
-        float ySize = (mMax.y - mMin.y); //#TODO use vector substract and structured binding
-        float zSize = (mMax.z - mMin.z);
-        float maxSize = std::max(std::max(xSize, ySize), zSize);
+#undef max
+        float maxSize = std::max({ xSize, ySize, zSize });
         if (maxSize <= 0) {
             //#TODO warning
             //bounding box in geo level has 0 size. buoyoncany won't work, missing property class or autocenter=0?
             return;
         }
         float invStep = (float)_maxSpheres / maxSize;
-
+#undef max
         int xSegments = std::max(xSize*invStep, (float)_minSpheres);
         int ySegments = std::max(ySize*invStep, (float)_minSpheres);
         int zSegments = std::max(zSize*invStep, (float)_minSpheres);
@@ -477,14 +742,11 @@ public:
         _stepY = ySize / ySegments;
         _stepZ = zSize / zSegments;
 
-        if (_stepX > 0 && _stepY > 0 && _stepZ > 0)
-        {
+        if (_stepX > 0 && _stepY > 0 && _stepZ > 0) {
             _arraySizeX = xSegments;
             _arraySizeY = ySegments;
             _arraySizeZ = zSegments;
-        }
-        else
-        {
+        } else {
             _arraySizeX = _arraySizeY = _arraySizeZ = 0;
         }
 
@@ -513,7 +775,7 @@ public:
         }
     }
 
-    bool insideX(odol_face& f, mlod_lod&v, vector3 pos) {
+    bool insideX(odol_face& f, const mlod_lod& v, vector3 pos) const {
         if (f.face_type < 3) return false;
 
         vector3 pPos(0, pos.y, pos.z);
@@ -537,7 +799,7 @@ public:
         return andIn == orIn;
     }
 
-    bool insideY(odol_face& f, mlod_lod&v, vector3 pos) {
+    bool insideY(odol_face& f, const mlod_lod& v, vector3 pos) const {
         if (f.face_type < 3) return false;
 
         vector3 pPos(pos.x, 0, pos.z);
@@ -561,7 +823,7 @@ public:
         return andIn == orIn;
     }
 
-    bool insideZ(odol_face& f, mlod_lod&v, vector3 pos) {
+    bool insideZ(odol_face& f, const mlod_lod& v, vector3 pos) const {
         if (f.face_type < 3) return false;
 
         vector3 pPos(pos.x, pos.y, 0);
@@ -587,7 +849,7 @@ public:
 
 
 
-    void cutX(std::vector<bool>& rays, const mlod_lod& shape) {
+    void cutX(std::vector<bool>& rays, const mlod_lod& shape) const {
         vector3 mMin = shape.min_pos;
         float stepRayY = _stepY / (float)10;
         float stepRayZ = _stepZ / (float)10;
@@ -625,7 +887,7 @@ public:
         }
     }
 
-    void cutY(std::vector<bool>& rays, const mlod_lod& shape) {
+    void cutY(std::vector<bool>& rays, const mlod_lod& shape) const {
         vector3 mMin = shape.min_pos;
         float stepRayX = _stepX / (float)10;
         float stepRayZ = _stepZ / (float)10;
@@ -662,7 +924,7 @@ public:
         }
     }
 
-    void cutZ(std::vector<bool>& rays, const mlod_lod& shape) {
+    void cutZ(std::vector<bool>& rays, const mlod_lod& shape) const {
         vector3 mMin = shape.min_pos;
         float stepRayX = _stepX / (float)10;
         float stepRayY = _stepY / (float)10;
@@ -699,7 +961,7 @@ public:
         }
     }
 
-    void fillInsideArea(std::vector<bool>& rays) {
+    void fillInsideArea(std::vector<bool>& rays) const {
         //#TODO multithreading
         for (int x = 0; x < _arraySizeX * 10; x++) {
             for (int y = 0; y < _arraySizeY * 10; y++) {
@@ -772,7 +1034,7 @@ public:
         }
     }
 
-    void countCoefs(std::vector<bool>& &aBuoyancyRays) {
+    void countCoefs(std::vector<bool>& aBuoyancyRays) {
         volume = 0;
 
         float invMaxInsidePoints = 1.0f / (float)(10 * 10 * 10);
@@ -826,23 +1088,20 @@ public:
                         fillCoef = (float)insidePoints*(float)invMaxInsidePoints;
                     }
 
-                    // set diameter of buoyant point element
-                    buoyantPoint.sphereRadius = _fullSphereRadius * pow(fillCoef, 1.0f / 3.0f); // r2 = r1 * sqrt3(c)
+                    buoyantPoint.sphereRadius = _fullSphereRadius * pow(fillCoef, 1.0f / 3.0f);
                     buoyantPoint.typicalSurface = pointSurface * borderPoints;
-                    //buoyantPoint._capacity = (4.0*H_PI*pow(buoyantPoint._sphereRadius,3.0f))/3.0; // V = 4/3 * pi * r^3 //not used now
 
-                    volume += fillCoef;	//(fill1+fill2+...+filln) // may obsolete in future
+                    volume += fillCoef;
                 }
             }
         }
 
-        volume *= _stepX * _stepY*_stepZ; // maxCapacity = V*(fill1+fill2+...+filln) // may obsolete in future
+        volume *= _stepX * _stepY*_stepZ;
     }
 
 
 
     void writeTo(std::ostream& out) const override {
-        
         out.write(reinterpret_cast<const char*>(&_arraySizeX), sizeof(_arraySizeX));
         out.write(reinterpret_cast<const char*>(&_arraySizeY), sizeof(_arraySizeY));
         out.write(reinterpret_cast<const char*>(&_arraySizeZ), sizeof(_arraySizeZ));
@@ -873,6 +1132,8 @@ public:
             ld = &shape.mlod_lods[shape.model_info.special_lod_indices.geometry_physx];
         if (!ld && shape.model_info.special_lod_indices.geometry)
             ld = &shape.mlod_lods[shape.model_info.special_lod_indices.geometry];
+        if (!ld) return;
+
 
         auto minSegs = std::find_if(ld->properties.begin(), ld->properties.end(), [](const property& prop) {
             return prop.name == "minsegments";
@@ -880,7 +1141,6 @@ public:
         auto maxSegs = std::find_if(ld->properties.begin(), ld->properties.end(), [](const property& prop) {
             return prop.name == "maxsegments";
         });
-        ld.properties;
 
 
         if (minSegs != ld->properties.end() && stoi(minSegs->value) >= 1)
@@ -892,8 +1152,8 @@ public:
         else
             _maxSpheres = 4;
 
-        _minSpheres = std::max(std::min(_minSpheres, 8), 1);
-        _maxSpheres = std::max(std::min(_maxSpheres, 8), 1);
+        _minSpheres = std::clamp(_minSpheres, 1, 8);
+        _maxSpheres = std::clamp(_maxSpheres, 1, 8);
 
         if (_minSpheres > 0 && _maxSpheres >= _minSpheres) {
 
@@ -935,6 +1195,7 @@ class P3DFile : public MultiLODShape { //#TODO move that inherit out of here
     void getBoundingBox(vector3 &bbox_min, vector3 &bbox_max, bool visual_only, bool geometry_only);
 
     void get_mass_data();
+    void optimizeLODS();
     void build_model_info();
 
     void write_animations(std::ostream& output);

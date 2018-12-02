@@ -124,10 +124,7 @@ bool mlod_lod::read(std::istream& source) {
             //If any flags are set, set hints and use them for `clip` array
             //There is also "hidden" array for POINT_SPECIAL_HIDDEN
 
-
-
         }
-            
     }
 
     facenormals.resize(num_facenormals);
@@ -193,6 +190,7 @@ bool mlod_lod::read(std::istream& source) {
     min_pos = empty_vector;
     max_pos = empty_vector;
 
+    //#TODO use bounding box calc func
     for (int i = 0; i < num_points; i++) {
         if (i == 0 || points[i].x < min_pos.x)
             min_pos.x = points[i].x;
@@ -211,6 +209,7 @@ bool mlod_lod::read(std::istream& source) {
     autocenter_pos = (min_pos + max_pos) * 0.5f;
 
     boundingSphere = getBoundingSphere(autocenter_pos);
+
 
 
 
@@ -309,6 +308,29 @@ bool mlod_lod::read(std::istream& source) {
 
     source.read(reinterpret_cast<char*>(&resolution), 4);
     return true;
+}
+
+uint32_t mlod_lod::getAndHints() {
+    //#TODO implement
+    return 0;
+}
+uint32_t mlod_lod::getOrHints() {
+    //#TODO implement
+    return 0;
+}
+
+uint32_t mlod_lod::getSpecialFlags() {
+    //#TODO implement
+    return 0;
+}
+
+std::optional<std::string> mlod_lod::getProperty(std::string_view propName) const {
+    auto foundProp = std::find_if(properties.begin(), properties.end(), [propName](const property& prop) {
+        return prop.name == propName;
+    });
+    if (foundProp != properties.end() && !foundProp->value.empty())
+        return foundProp->value;
+    return {};
 }
 
 void odol_section::writeTo(std::ostream& output) {
@@ -1162,7 +1184,10 @@ void model_info::writeTo(std::ostream& output) {
     WRITE_CASTED(geo_lod_sphere, sizeof(float));
 
     //#TODO
-    output.write(reinterpret_cast<char*>(point_flags), sizeof(uint32_t) * 3); //_remarks, _andHints, _orHints 
+    WRITE_CASTED(remarks, sizeof(uint32_t));
+    WRITE_CASTED(andHints, sizeof(uint32_t));
+    WRITE_CASTED(orHints, sizeof(uint32_t));
+ 
 
     WRITE_CASTED(aiming_center, sizeof(vector3));
     WRITE_CASTED(map_icon_color, sizeof(uint32_t));
@@ -1242,6 +1267,11 @@ void model_info::writeTo(std::ostream& output) {
     output.write("\0\0\0\0", 4); // v73 data
 #endif
 
+
+    //#TODO
+    preferredShadowVolumeLod;
+    preferredShadowBufferLod;
+    preferredShadowBufferVisibleLod;
 
 
     //#TODO ScanPreferredShadowLODs
@@ -1327,6 +1357,155 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_
     } else {
         anim->axis_pos = empty_vector;
     }
+}
+
+
+
+
+std::optional<std::string> MultiLODShape::getPropertyGeo(std::string_view propName) {
+    mlod_lod* ld;
+    if (model_info.special_lod_indices.geometry)
+        
+    if (model_info.special_lod_indices.geometry) {
+        auto& geomLod = mlod_lods[model_info.special_lod_indices.geometry];
+        auto foundProp = geomLod.getProperty(propName); //#TODO properties MUST be lowercase. Else assert
+        //#TODO also warn when reading properties from MLOD if they are non lowercase
+
+        if (foundProp)
+            return foundProp;
+    }
+
+    if (!model_info.special_lod_indices.geometry && mlod_lods.empty()) {
+        //#TODO throw exception "No geometry and no shape"
+        return {};
+    }
+
+
+    auto& lod0 = mlod_lods.front();
+    auto foundProp = lod0.getProperty(propName);
+
+    if (foundProp && model_info.special_lod_indices.geometry) {
+        //#TODO warning Property %s not in geometry lod
+    }
+
+    return foundProp;
+}
+
+void MultiLODShape::scanProjectedShadow() {
+    
+    projectedShadow = false;
+    if (!(model_info.index & OnSurface)) { //On surface can't use projected shadows
+        if (model_info.min_shadow < model_info.numberGraphicalLods) {
+            if (false
+               // model_info.special_lod_indices.shadow_volume < 0//#TODO
+                ) {
+                projectedShadow = true;
+            } else if (model_info.special_lod_indices.geometry >= 0) { //#TODO properly handle unset being -1 !!!!
+                // we need to check property
+                auto shadowProp = getPropertyGeo("shadow");
+                if (shadowProp && *shadowProp == "hybrid")
+                    projectedShadow = true;
+            }
+        }
+    }
+
+
+}
+
+void MultiLODShape::BuildSpecialLodList() {
+    memset(&model_info.special_lod_indices, 255, sizeof(struct lod_indices));
+    model_info.numberGraphicalLods = num_lods;
+    model_info.shadowVolumeCount = 0;
+    model_info.shadowBufferCount = 0;
+
+    for (uint32_t i = 0; i < num_lods; i++) {
+        auto& resolution = mlod_lods[i].resolution;
+        auto& indicies = model_info.special_lod_indices;
+
+        if (resolution <= 900.f) continue;
+
+        if (model_info.numberGraphicalLods > i) model_info.numberGraphicalLods = i;
+
+
+
+        if (resolution == LOD_MEMORY) indicies.memory = i;
+        if (resolution == LOD_GEOMETRY) indicies.geometry = i;
+        if (resolution == LOD_GEOMETRY_SIMPLE) indicies.geometry_simple = i;
+        if (resolution == LOD_PHYSX || resolution == LOD_PHYSX_OLD) indicies.geometry_physx = i;
+        if (resolution == LOD_FIRE_GEOMETRY) indicies.geometry_fire = i;
+        if (resolution == LOD_VIEW_GEOMETRY) indicies.geometry_view = i;
+        if (resolution == LOD_VIEW_PILOT_GEOMETRY) indicies.geometry_view_pilot = i;
+        if (resolution == LOD_VIEW_GUNNER_GEOMETRY) indicies.geometry_view_gunner = i;
+        if (resolution == LOD_VIEW_CARGO_GEOMETRY) indicies.geometry_view_cargo = i;
+        //#TODO print warning if geometryViewCommander exists
+        //"%s: Geometry view commander lod found - obsolete"
+        if (resolution == LOD_LAND_CONTACT) indicies.land_contact = i;
+        if (resolution == LOD_ROADWAY) indicies.roadway = i;
+        if (resolution == LOD_PATHS) indicies.paths = i;
+        if (resolution == LOD_HITPOINTS) indicies.hitpoints = i;
+
+        if (resolution > LOD_SHADOW_STENCIL_START && resolution < LOD_SHADOW_STENCIL_END) { //#TODO this is shadowvolume
+            //#TODO set _shadowVolume but only once! init to -1 and only set if it's currently -1
+            model_info.shadowVolumeCount++;
+        }
+        if (resolution > LOD_SHADOW_VOLUME_START && resolution < LOD_SHADOW_VOLUME_END) {//#TODO this is shadowBuffer
+            //#TODO set _shadowBuffer but only once! init to -1 and only set if it's currently -1
+            model_info.shadowBufferCount++;
+        }
+
+
+
+
+    }
+
+    //#TODO set flags
+
+    if (model_info.special_lod_indices.geometry != -1) {//#TODO use -1 for these. Make a wrapper class with functions for isDefined and such
+        //get lod
+        //set or special isAlpha,isAlphaFog,IsColored
+    }
+    if (model_info.special_lod_indices.geometry_simple != 0xFFFFFFFF) {
+        //get lod
+        //set or special isAlpha,isAlphaFog,IsColored
+    }
+    if (model_info.special_lod_indices.geometry_physx != 0xFFFFFFFF) {
+        //get lod
+        //set or special isAlpha,isAlphaFog,IsColored
+    }
+    if (model_info.special_lod_indices.geometry_view != 0xFFFFFFFF) {
+        //get lod
+        //set or special isAlpha,isAlphaFog,IsColored
+    }
+    if (model_info.special_lod_indices.geometry_fire != 0xFFFFFFFF) {
+        //get lod
+        //set or special isAlpha,isAlphaFog,IsColored
+    }
+
+    if (model_info.special_lod_indices.geometry_view == -1)
+        model_info.special_lod_indices.geometry_view = model_info.special_lod_indices.geometry;
+
+    if (model_info.special_lod_indices.geometry_fire == -1)
+        model_info.special_lod_indices.geometry_fire = model_info.special_lod_indices.geometry;
+
+    if (model_info.special_lod_indices.geometry != 0xFFFFFFFF) {
+        //get lod
+        //get property "firegeometry" if set then set geometryFire to this
+        //get property "viewgeometry" if set then set geometryView to this
+    }
+
+
+
+
+
+}
+
+void MultiLODShape::shapeListUpdated() {
+    BuildSpecialLodList();
+    scanProjectedShadow();
+
+
+
+
 }
 
 
@@ -1515,74 +1694,235 @@ void P3DFile::get_mass_data() {
     }
 }
 
+void P3DFile::optimizeLODS() {
+    
+    for (int i = 0; i < num_lods; i++) {
+        
+        auto noTLProp = mlod_lods[i].getProperty("notl");
+
+        //Here we want to erase lods. Remove from mlod_lods, model_info lod resolutions and decrement num_lods
+        if (i != 0 && (mlod_lods[i].getAndHints()&ClipDecalMask)!=ClipDecalNone
+            && mlod_lods[i].num_points > 0) {
+            //VDecal
+        } else if (noTLProp && stoi(*noTLProp) >0) {
+            //TL dropped
+        } else if (model_info.lod_resolutions[i] >= 20000 && model_info.lod_resolutions[i] <= 20999) {
+            //Edit lods
+        } else {
+            //Keep lod and move up in lods array and lod_resolutions array
+        }
+
+    }
+
+
+    int i = 0;
+    for (i = 0; i < num_lods; i++) {
+        if (model_info.lod_resolutions[i] >= 900) break;
+        if (mlod_lods[i].num_faces < 1024) break;
+    }
+
+    if (i > 0 && model_info.lod_resolutions[i] >= 900) --i;
+
+    model_info.min_shadow = i;
+
+    for (int i = model_info.min_shadow; i < num_lods; i++)
+    {
+        if (model_info.lod_resolutions[i] > 900) break; // only normal LODs can be used for shadowing
+        // disable shadows of too complex LODs
+        auto LNSProp = mlod_lods[i].getProperty("lodnoshadow");
+        if (LNSProp && stoi(*LNSProp) > 0) {
+            model_info.min_shadow = i + 1;
+            if (model_info.min_shadow >= num_lods || model_info.lod_resolutions[model_info.min_shadow] > 900) {
+                model_info.min_shadow = num_lods;
+            }
+        }
+    }
+    if (model_info.min_shadow < num_lods) {
+        int nFaces = mlod_lods[model_info.min_shadow].num_faces;
+        if (nFaces >= 2000)
+        {
+            //error
+            //("Too detailed shadow lod in %s (%d:%f : %d) - shadows disabled",
+            //    modelname,
+            //    model_info.min_shadow, model_info.lod_resolutions[model_info.min_shadow], nFaces
+            //);
+            model_info.min_shadow = num_lods;
+        }
+    }
+
+    shapeListUpdated();
+
+
+
+#pragma region Scan Shadow lods
+
+
+
+
+    //#TODO scan shadow lods. shape.cpp 11641
+
+
+#pragma endregion Scan Shadow lods
+
+
+
+}
+
 
 void P3DFile::build_model_info() {
-    int i;
-    int j;
-    float sphere;
-    vector3 bbox_total_min;
-    vector3 bbox_total_max;
+
 
     model_info.lod_resolutions.resize(num_lods);
 
-    for (i = 0; i < num_lods; i++)
+    for (int i = 0; i < num_lods; i++)
         model_info.lod_resolutions[i] = mlod_lods[i].resolution;
 
-    model_info.index = 0;
+    model_info.index = 0; //#TODO special flags. Is this init correct?
 
-    model_info.autocenter = false;
-    model_info.lock_autocenter = false; // @todo
-    model_info.can_occlude = false; // @todo
-    model_info.can_be_occluded = true; // @todo
-    model_info.ai_cover = false; // @todo
-    model_info.animated = false; // @todo
+    //#TODO make these default values and get rid of this
+    model_info.lock_autocenter = false; //#TODO this is always false!
 
-    for (i = 0; i < num_lods; i++) {
-        auto& properties = mlod_lods[i].properties;
-        auto found = std::find_if(properties.begin(), properties.end(), [](const auto& prop) {
-            return prop.name == "autocenter" && prop.value == "1";
+    //#TODO treeCrownNeeded
+    //#TODO canBlend
+    model_info.can_blend = false; // @todo
+
+
+
+
+#pragma region MapType
+    auto mapType = getPropertyGeo("map");
+    if (!mapType)
+        model_info.map_type = MapType::Hide; //#TODO do we even need to set this? It's already default Initialized
+    else {
+        
+        //try lookup map
+        auto found = std::find_if(MapTypeToString.begin(), MapTypeToString.end(), [&searchName = *mapType](const auto& it) {
+            return iequals(it.second, searchName);
         });
-
-        if (found != properties.end())
-            model_info.autocenter = true;
+        if (found == MapTypeToString.end()) {
+            //#TODO need path
+            logger.warning(""sv, -1, "Unknown map type: \"%s\". Falling back to \"Hide\".\n", mapType->c_str());
+        } else
+            model_info.map_type = found->first;
     }
+#pragma endregion MapType
 
-    // Bounding box & center
-    getBoundingBox(bbox_total_min, bbox_total_max, false, false);
 
-    model_info.bounding_center = (bbox_total_min + bbox_total_max) * 0.5f;
+    
+#pragma region ViewDensityCoef
+    float viewDensityCoef = 1.f;
+    auto viewDensCoef = getPropertyGeo("viewdensitycoef");
+    if (viewDensCoef)
+        viewDensityCoef = stof(*viewDensCoef);
+#pragma endregion ViewDensityCoef
 
-    if (!model_info.autocenter)
-        model_info.bounding_center = empty_vector;
+#pragma region LODDensityCoef
+    auto LODDensCoef = getPropertyGeo("viewdensitycoef");
+    if (LODDensCoef)
+        model_info.lod_density_coef = stof(*LODDensCoef);
+#pragma endregion LODDensityCoef
 
-    model_info.bbox_min = bbox_total_min - model_info.bounding_center;
-    model_info.bbox_max = bbox_total_max - model_info.bounding_center;
 
-    model_info.lod_density_coef = 1.0f; // @todo
-    model_info.draw_importance = 1.0f; // @todo
+#pragma region DrawImportance
+    auto DrawImp = getPropertyGeo("drawimportance");
+    if (DrawImp)
+        model_info.draw_importance = stof(*DrawImp);
+#pragma endregion DrawImportance
+
+#pragma region Autocenter
+    model_info.autocenter = true;
+    auto autoCenterProp = getPropertyGeo("autocenter");
+    if (autoCenterProp && stoi(*autoCenterProp) == 0) model_info.autocenter = false;
+#pragma endregion Autocenter
+
+
+#pragma region AICover
+    auto aiCoverProp = getPropertyGeo("aicovers");
+    if (aiCoverProp && stoi(*aiCoverProp) == 0) model_info.ai_cover = true;
+#pragma endregion AICover
+
+
+  
+        //#TODO store bounding box of each lod level, and then just grab it here? Seems wasteful though
+        //Actually, no it doesn't seem wasteful. getBoundingBox iterates all levels anyway
+
+
+#pragma region BoundingBoxTotal
+    getBoundingBox(model_info.bbox_min, model_info.bbox_max, false, false);
+#pragma endregion BoundingBoxTotal
+
+
+#pragma region BoundingBoxVisual
+    //#TODO if all lods are graphical, that means total == Visual and we can skip calc
+
+
+    //Iterate through all numberGraphicalLods and find the max
 
     // Visual bounding box
     getBoundingBox(model_info.bbox_visual_min, model_info.bbox_visual_max, true, false);
+#pragma endregion BoundingBoxVisual
 
-    model_info.bbox_visual_min = model_info.bbox_visual_min - model_info.bounding_center;
-    model_info.bbox_visual_max = model_info.bbox_visual_max - model_info.bounding_center;
 
-    // Geometry center
-    getBoundingBox(bbox_total_min, bbox_total_max, false, true);
+#pragma region BoundingSphere
+    //if (!model_info.lock_autocenter) .... useless as this is always false
 
-    model_info.geometry_center = (bbox_total_min + bbox_total_max) * 0.5f - model_info.bounding_center;
+    model_info.bounding_center = empty_vector;
 
-    // Centre of mass, inverse inertia, mass and inverse mass
-    get_mass_data();
 
-    // Aiming Center
-    // @todo: i think this uses the fire geo lod if available
-    model_info.aiming_center = model_info.geometry_center;
+    vector3 boundingCenterChange;
+    if (model_info.autocenter && num_lods > 0) {
+        boundingCenterChange = (model_info.bbox_min + model_info.bbox_max) * 0.5f;
 
+
+        //#TODO check clip and onsurface flags of lod0
+
+
+    } else {
+        //boundingCenterChange = -model_info.bounding_center; useless. It's already 0
+    }
+    if (boundingCenterChange.magnitude_squared() < 1e-10 && model_info.bounding_sphere>0) {
+        model_info.bounding_sphere += boundingCenterChange.magnitude();
+    }
+
+
+    //Adjust existing positions for changed center
+
+    model_info.bounding_center += boundingCenterChange;
+
+
+    model_info.bbox_min -= boundingCenterChange;
+    model_info.bbox_max -= boundingCenterChange;
+
+
+    model_info.bbox_visual_min -= boundingCenterChange;
+    model_info.bbox_visual_max -= boundingCenterChange;
+
+    model_info.aiming_center -= boundingCenterChange;
+
+
+
+    //#TODO apply bounding center change to all lods
+
+
+    model_info.bounding_sphere += boundingCenterChange.magnitude(); //#TODO Arma does this again, but we already did that above? is this correct?
+
+
+    //#TODO apply bounding center change to tree crown
+
+    //#TODO if change is big enough, recalculate normals
+
+
+
+#pragma endregion BoundingSphere
+
+
+    float sphere;
+
+    //#TODO fix this up. Seems like boundingSphere should == boundingCenterChange.magnitude?
     // Spheres
     model_info.bounding_sphere = 0.0f;
     model_info.geo_lod_sphere = 0.0f;
-    for (i = 0; i < num_lods; i++) {
+    for (uint32_t i = 0; i < num_lods; i++) {
         if (model_info.autocenter)
             sphere = mlod_lods[i].getBoundingSphere(model_info.centre_of_mass);
         else
@@ -1594,68 +1934,468 @@ void P3DFile::build_model_info() {
             model_info.geo_lod_sphere = sphere;
     }
 
-    memset(model_info.point_flags, 0, sizeof(model_info.point_flags));
 
+
+
+
+
+
+    //#TODO CalculateHints See map_icon_color below
+
+
+    //This is calculate hints. Should move into func
+#pragma region Calc Hints
+    model_info.andHints = 0b11111111'11111111'11111111'11111111;
+    model_info.orHints = 0;
+
+    for (auto& it : mlod_lods) {
+        model_info.andHints &= it.getAndHints();
+        model_info.orHints |= it.getOrHints();
+    }
+#pragma endregion Calc Hints
+
+
+#pragma region Color
+    //calculate color
+
+    //mlod_lods[0].color; //#TODO
+    //mlod_lods[0].colorTop; //#TODO
+    //shape.cpp 6490
+
+    //Inside calculate hints
+    //#TODO packed color type
     model_info.map_icon_color = 0xff9d8254;
     model_info.map_selected_color = 0xff9d8254;
+#pragma endregion Color
 
-    model_info.view_density = -100.0f; // @todo
+    //In CalculateViewDensity using the coef
+#pragma region ViewDensity
+    int colorAlpha = (model_info.map_icon_color >> 24) & 0xff;
+    float alpha = colorAlpha * (1.0 / 255); //#TODO color getAsFloat func to packed color type
 
-    model_info.force_not_alpha = false; //@todo
-    model_info.sb_source = 0; //@todo
-    model_info.prefer_shadow_volume = false; //@todo
-    model_info.shadow_offset = 1.0f; //@todo
-    model_info.skeleton = std::make_unique<skeleton_>();
-    memset(model_info.skeleton.get(), 0, sizeof(struct skeleton_));
+    float transp = 1 - alpha * 1.5;
+    if (transp >= 0.99)
+        model_info.view_density = 0;
+    else if (transp > 0.01)
+        model_info.view_density = log(transp) * 4 * viewDensityCoef;
+    else
+        model_info.view_density = -100.0f;
+#pragma endregion ViewDensity
 
-    model_info.map_type = 22; //@todo
-    model_info.n_floats = 0;
 
-    model_info.armor = 200.0f; // @todo
-    model_info.inv_armor = 0.005f; // @todo
+    // Centre of mass, inverse inertia, mass and inverse mass
+    //#TODO only if massArray is there. Also have to build mass array
+    get_mass_data();
 
-    // the real indices to the lods are calculated by the engine when the model is loaded
-    memset(&model_info.special_lod_indices, 255, sizeof(struct lod_indices));
-    for (i = 0; i < num_lods; i++) {
-        if (mlod_lods[i].resolution == LOD_MEMORY)
-            model_info.special_lod_indices.memory = i;
-        if (mlod_lods[i].resolution == LOD_GEOMETRY)
-            model_info.special_lod_indices.geometry = i;
-        if (mlod_lods[i].resolution == LOD_PHYSX)
-            model_info.special_lod_indices.geometry_physx = i;
-        if (mlod_lods[i].resolution == LOD_FIRE_GEOMETRY)
-            model_info.special_lod_indices.geometry_fire = i;
-        if (mlod_lods[i].resolution == LOD_VIEW_GEOMETRY)
-            model_info.special_lod_indices.geometry_view = i;
-        if (mlod_lods[i].resolution == LOD_VIEW_PILOT_GEOMETRY)
-            model_info.special_lod_indices.geometry_view_pilot = i;
-        if (mlod_lods[i].resolution == LOD_VIEW_GUNNER_GEOMETRY)
-            model_info.special_lod_indices.geometry_view_gunner = i;
-        if (mlod_lods[i].resolution == LOD_VIEW_CARGO_GEOMETRY)
-            model_info.special_lod_indices.geometry_view_cargo = i;
-        if (mlod_lods[i].resolution == LOD_LAND_CONTACT)
-            model_info.special_lod_indices.land_contact = i;
-        if (mlod_lods[i].resolution == LOD_ROADWAY)
-            model_info.special_lod_indices.roadway = i;
-        if (mlod_lods[i].resolution == LOD_PATHS)
-            model_info.special_lod_indices.paths = i;
-        if (mlod_lods[i].resolution == LOD_HITPOINTS)
-            model_info.special_lod_indices.hitpoints = i;
+#pragma region AnimatedFlag
+    if (model_info.orHints&(ClipLandMask | ClipDecalMask))
+    {
+        if (!(model_info.orHints&ClipLandMask)) {
+            model_info.animated = true;
+        }
+            if (
+                (model_info.orHints&ClipLandMask) == ClipLandKeep &&
+                (model_info.andHints&ClipLandMask) == ClipLandKeep
+                ) {
+                //#TODO better structure this
+            } else if ((model_info.orHints&ClipLandMask) == ClipLandOn) {
+                if ((model_info.andHints&ClipLandMask) != ClipLandOn) {
+                    //#TODO warn
+                    //"Not all levels have On Surface set"
+                }
+                model_info.animated = true;
+            } else if ((model_info.andHints&ClipLandMask) != ClipLandOn) {
+                model_info.animated = true;
+                //#TODO warn "SW animation used for %s - Not all levels have Keep Height set"
+            }
+    }
+    if ((model_info.orHints&ClipLightMask) == (model_info.andHints&ClipLightMask)) {
+        if ((model_info.andHints & ClipLightMask)&ClipLightLine) {
+            model_info.animated = true;
+        }
     }
 
-    if (model_info.special_lod_indices.geometry_view == -1)
-        model_info.special_lod_indices.geometry_view = model_info.special_lod_indices.geometry;
+    if (!model_info.animated) {
+        auto animProp = getPropertyGeo("animated");
+        model_info.animated = (animProp && stoi(*animProp));
+    }
 
-    if (model_info.special_lod_indices.geometry_fire == -1)
-        model_info.special_lod_indices.geometry_fire = model_info.special_lod_indices.geometry;
+#pragma endregion AnimatedFlag
+
+#pragma region ForceNotAlpha
+    auto forceNAProp = getPropertyGeo("forcenotalpha");
+    if (forceNAProp)
+        model_info.force_not_alpha = stoi(*forceNAProp) != 0;
+#pragma endregion ForceNotAlpha
+
+
+#pragma region SBSource
+    //Sb source shape.cpp 8660
+    model_info.sb_source = SBSource::Visual; //@todo
+
+
+    //Store if we have a shadowvolume in a var "shapeSV"
+    //get projShadow flag
+
+
+    auto sbSourceProp = getPropertyGeo("sbsource");
+
+
+    if (!sbSourceProp) {
+       //autodetect
+
+        auto shadowProp = getPropertyGeo("shadow");
+
+        if (shadowProp && *shadowProp == "hybrid") {
+            //model_info.sb_source = _projShadow ? SBSource::Visual : SBSource::None;
+            model_info.prefer_shadow_volume = false;
+        } else if (false) {
+            //#TODO see *sbSourceProp == "shadowvolume" lower down thing that needs shapeSV. This seems to be same
+        } else {
+            //model_info.sb_source = _projShadow ? SBSource::Visual : SBSource::None;
+        }
+       
+
+
+
+
+    } else if (*sbSourceProp == "visual") {
+        model_info.sb_source = SBSource::Visual;
+        //#TODO
+        //if (_shadowBufferCount > 0) {
+        //    //warning
+        //    //("Warning: %s: Shadow buffer levels are present, but visual LODs for SB rendering are required (in sbsource property)", modelname);
+        //}
+        //if (!_projShadow) {
+        //    //error
+        //    //("Error: %s: Shadows cannot be drawn for this model, but 'visual' source is specified (in sbsource property)", modelname);
+        //    model_info.sb_source = SBSource::None;
+        //}
+
+    } else if (*sbSourceProp == "explicit") {
+        //if (_shadowBufferCount <= 0) {
+        //    //error
+        //    //("Error: %s: Explicit shadow buffer levels are required (in sbsource property), but no one is present - forcing 'none'", modelname);
+        //    model_info.sb_source = SBSource::None;
+        //} else {
+        //    model_info.sb_source = SBSource::Explicit;
+        //}
+    } else if (*sbSourceProp == "shadowvolume") {//#TODO should this be lowercase?
+        //if (shapeSV.Size() == 0 || shapeSV.Size() != shapeSVResol.Size()) {
+            //error
+            //("Error: %s: Shadow volume lod is required for shadow buffer (in sbsource property), but no shadow volume lod is present", modelname);
+            model_info.sb_source = SBSource::None;
+        //} else {
+            
+            //#TODO shape.cpp 8697 needs shapeSV
+
+
+
+
+
+
+
+        //}
+
+
+
+    } else if (*sbSourceProp == "none") {
+        model_info.sb_source = SBSource::None;
+    } else {
+        //#TODO throw error
+    }
+
+#pragma endregion SBSource
+
+
+
+#pragma region PreferShadowVolume
+    auto preferShadPRop = getPropertyGeo("prefershadowvolume");
+    if (preferShadPRop)
+        model_info.prefer_shadow_volume = stoi(*preferShadPRop) != 0;
+#pragma endregion PreferShadowVolume
+
+
+#pragma region ShadowOffset
+    model_info.shadow_offset = std::numeric_limits<float>::max(); //@todo
+
+    if (model_info.special_lod_indices.geometry_simple) {
+        auto shadOffsProp = getPropertyGeo("shadowoffset");
+        if (shadOffsProp) {
+            model_info.shadow_offset = stof(*shadOffsProp);
+        }
+    }
+
+    if (model_info.shadow_offset >= std::numeric_limits<float>::max()) {
+        float size = model_info.bbox_min.distance(model_info.bbox_max);
+
+
+        if (size < 2.5f)
+            model_info.shadow_offset = 0.02f;
+        else if (size > 10.0f)
+            model_info.shadow_offset = 0.10f;
+        else
+            model_info.shadow_offset = (size - 2.5f)*(1.0f / 7.5f)*0.08f + 0.02f;
+    }
+#pragma endregion ShadowOffset
+
+#pragma region PreferredShadowLODs
+    {
+        auto& preferredShadowVolumeLod = model_info.preferredShadowVolumeLod;
+        auto& preferredShadowBufferLod = model_info.preferredShadowBufferLod;
+        auto& preferredShadowBufferVisibleLod = model_info.preferredShadowBufferVisibleLod;
+
+        for (auto& it : mlod_lods) {
+            auto SLprop = it.getProperty("shadowlod");
+            uint32_t SL = SLprop ? stoi(*SLprop) : 0xFFFFFFFF;
+            auto SVLprop = it.getProperty("shadowvolumelod");
+            uint32_t SVL = SVLprop ? stoi(*SVLprop) : 0xFFFFFFFF;
+            auto SBLprop = it.getProperty("shadowbufferlod");
+            uint32_t  SBL = SBLprop ? stoi(*SBLprop) : 0xFFFFFFFF;
+            auto SBLVprop = it.getProperty("shadowbufferlodvis"); //#TODO rename preferredShadowBufferVisibleLod swap vis and lod
+            uint32_t SBLV = SBLVprop ? stoi(*SBLVprop) : 0xFFFFFFFF;
+
+            if (SBL == 0xFFFFFFFF) {
+                SBL = SL;
+                if (SBL == 0xFFFFFFFF)
+                    SBL = SVL;
+            }
+            if (SVL == 0xFFFFFFFF) {
+                SVL = SL;
+                if (SVL == 0xFFFFFFFF)
+                    SVL = SBL;
+            }
+
+            preferredShadowVolumeLod.emplace_back(SVL);
+            preferredShadowBufferLod.emplace_back(SBL);
+            preferredShadowBufferVisibleLod.emplace_back(SBLV);
+        }
+    }
+#pragma endregion PreferredShadowLODs
+
+
+    optimizeLODS();
+    //#TODO OptimizeShapes
+
+    //set special flags thing
+
+#pragma region Special Flags
+    for (auto& it : mlod_lods) {
+        model_info.index |= it.getSpecialFlags();
+    }
+#pragma endregion Special Flags
+
+    //CalculateMinMax again
+    //CalculateMass again
+
+    //Read modelconfig and grab properties
+    //checkForcedProperties
+
+
+#pragma region CanOcclude
+    {
+        int complexity = mlod_lods[0].num_faces;
+        float size = model_info.bounding_sphere;
+        uint32_t viewComplexity = 0;
+
+        if (model_info.special_lod_indices.geometry_view)
+            viewComplexity = mlod_lods[model_info.special_lod_indices.geometry_view].num_faces;
+
+        model_info.can_occlude = false;
+        // _viewDensity was calculated few lines above - CalculateHints
+        if (viewComplexity > 0 && model_info.view_density <= -9) {
+            if (size > 5)  model_info.can_occlude = true;
+            if (size > 2 && viewComplexity <= 6)  model_info.can_occlude = true;
+        }
+        // large or complex objects may be occluded
+        if (complexity >= 6 || size > 5) model_info.can_be_occluded = true;
+        // allow override with property
+
+        auto canOccludeProp = getPropertyGeo("canocclude");
+        if (canOccludeProp)  model_info.can_occlude = stoi(*canOccludeProp) != 0;
+        auto canBeOccludeProp = getPropertyGeo("canbeoccluded");
+        if (canBeOccludeProp) model_info.can_be_occluded = stoi(*canBeOccludeProp) != 0;
+    }
+#pragma endregion CanOcclude
+
+
+
+#pragma region initConvexComp
+
+
+
+
+    auto geoLodID = model_info.special_lod_indices.geometry;
+
+
+    if (geoLodID != -1) {
+        auto& geoLod = mlod_lods[geoLodID];
+        model_info.geometry_center = (geoLod.max_pos + geoLod.min_pos)*0.5;
+        model_info.geo_lod_sphere = geoLod.max_pos.distance(geoLod.min_pos)*0.5;
+        model_info.aiming_center = model_info.geometry_center;
+    }
+
+    auto memLodID = model_info.special_lod_indices.memory;
+
+    if (memLodID != -1) {
+        auto& memLod = mlod_lods[memLodID];
+
+
+        //#TODO make getMemoryPoint function
+        auto found = std::find_if(memLod.selections.begin(), memLod.selections.end(), [](const mlod_selection& it) {
+            return it.name == "zamerny";
+        });
+        vector3 aimMemPoint;
+        bool memPointExists = false;
+        if (found != memLod.selections.end()) {
+            if (found->points.empty()) {
+                //#TODO warning "No point in selection %s"
+            } else {
+                memPointExists = found->points[0] >= 0;
+
+                aimMemPoint = memLod.points[found->points[0]].getPosition();
+                model_info.aiming_center = aimMemPoint;
+            }
+        }
+
+
+
+    }
+    //#TODO calculateNormals stuff
+
+
+#pragma endregion initConvexComp
+
+
+    //InitConvexComponents
+
+
+#pragma region Armor
+    auto armorProp = getPropertyGeo("armor");
+    if (armorProp) model_info.armor = stof(*armorProp);
+    else
+        model_info.armor = 200.0f;
+
+    if (model_info.armor > 1e-10) {
+        model_info.inv_armor = 1 / model_info.armor;
+    } else {
+        model_info.inv_armor = 1e10;
+    }
+#pragma endregion Armor
+
+    //CalculateHints again!!
+
+
+#pragma region ClassDamageFreqProps
+
+    auto classProp = getPropertyGeo("class");
+    if (classProp) {
+        std::transform(classProp->begin(), classProp->end(), classProp->begin(), ::tolower);
+        model_info.class_type = std::move(*classProp);
+    }
+
+
+    auto damageProp = getPropertyGeo("damage");
+
+    if (damageProp) {
+        model_info.destruct_type = std::move(*damageProp);
+    } else {
+        auto dammageProp = getPropertyGeo("dammage"); //DUH
+        model_info.destruct_type = std::move(*dammageProp);
+        //#TODO print warning about wrong name
+
+    }
+
+    auto frequentProp = getPropertyGeo("frequent");
+    if (frequentProp) model_info.property_frequent = stoi(*frequentProp) != 0;
+
+#pragma endregion ClassDamageFreqProps
+
+
+    //#TODO load skeleton
+    //#TODO load animations
+
+    model_info.skeleton = std::make_unique<skeleton_>();
+
+
+    //This seems to be old thingy? new uses buoyancy property below
+    //bool canFloat = true;
+    //if (model_info.numberGraphicalLods <= 0 ||
+    //    !model_info.special_lod_indices.geometry
+    //    || model_info.class_type == "building"
+    //    || model_info.class_type == "bushhard"
+    //    || model_info.class_type == "bushsoft"
+    //    || model_info.class_type == "church"
+    //    || model_info.class_type == "forest"
+    //    || model_info.class_type == "house"
+    //    || model_info.class_type == "man"
+    //    || model_info.class_type == "road"
+    //    || model_info.class_type == "streetlamp"
+    //    || model_info.class_type == "treehard"
+    //    || model_info.class_type == "treesoft"
+    //    || model_info.class_type == "clutter"
+    //    || model_info.class_type == "none"
+    //    || !model_info.autocenter
+    //    ) {
+    //    canFloat = false;
+    //}
+    //if (canFloat) {
+    //    if (model_info.special_lod_indices.geometry_simple) {
+    //        auto nBue = std::make_unique<BuoyantIteration>();
+    //        nBue->init(*this);
+    //        buoy = std::move(nBue);
+    //    } else {
+    //        auto nBue = std::make_unique<BuoyantSphere>();
+    //        nBue->init(*this);
+    //        buoy = std::move(nBue);
+    //    }
+    //}
+
+
+
+    if (model_info.numberGraphicalLods > 0 && model_info.autocenter) {
+        auto buoyProp = getPropertyGeo("buoyancy");
+        if (stoi(*buoyProp) != 0) {
+
+            //set up buoyancy
+            if (model_info.special_lod_indices.geometry_simple) {
+                auto nBue = std::make_unique<BuoyantIteration>();
+                nBue->init(*this);
+                buoy = std::move(nBue);
+            } else {
+                auto nBue = std::make_unique<BuoyantSphere>();
+                nBue->init(*this);
+                buoy = std::move(nBue);
+            }
+        }
+    }
+
+
+
+
+
+
+
+    //THE END!
+
+    model_info.n_floats = 0;
+
+
+    // the real indices to the lods are calculated by the engine when the model is loaded
+
+
+
+
+    BuildSpecialLodList();
+
+
 
     // according to BIS: first LOD that can be used for shadowing
     model_info.min_shadow = num_lods; // @todo
-    model_info.can_blend = false; // @todo
-    model_info.class_type = 0; // @todo
-    model_info.destruct_type = 0; // @todo
-    model_info.property_frequent = false; //@todo
     model_info.always_0 = 0;
+
+
+
 }
 
 int P3DFile::read_lods(std::istream &source, uint32_t num_lods) {
@@ -1691,6 +2431,11 @@ int P3DFile::read_lods(std::istream &source, uint32_t num_lods) {
         //Also keep an array of sahdow volume resolitoons "shapeSVResol"
 
         //AddShape? Yeah. The ScanShapes thing inside there.
+        mlod_lods.emplace_back(std::move(newLod));
+
+        BuildSpecialLodList();
+        scanProjectedShadow();
+
 
         //Customize Shape (shape.cpp 8468)
             //detect empty lods if non-first and res>900.f
@@ -1716,7 +2461,7 @@ int P3DFile::read_lods(std::istream &source, uint32_t num_lods) {
 
 
 
-        mlod_lods.emplace_back(std::move(newLod));
+        
     }
 
     return mlod_lods.size();
@@ -1843,69 +2588,6 @@ int P3DFile::readMLOD(std::filesystem::path sourceFile) {
     // Write model info
     build_model_info();
     auto success = model_info.skeleton->read(sourceFile, logger);
-
-    std::string propertyClass;
-    if (model_info.special_lod_indices.geometry) { //#TODO if no geom, use lod0
-        auto& props = mlod_lods[model_info.special_lod_indices.geometry].properties;
-        
-        auto classProp = std::find_if(props.begin(), props.end(), [](const property& prop) {
-            return prop.name == "class";
-        });
-        if (classProp != props.end())
-            propertyClass = classProp->value;
-    }
-    bool autoCenter;
-    if (model_info.special_lod_indices.geometry) { //#TODO if no geom, use lod0
-        auto& props = mlod_lods[model_info.special_lod_indices.geometry].properties;
-
-        auto classProp = std::find_if(props.begin(), props.end(), [](const property& prop) {
-            return prop.name == "autocenter";
-        });
-        if (classProp != props.end())
-            autoCenter = stoi(classProp->value);
-    }
-
-
-    //#TODO also get property damage and propertyFrequent. We'll need them when writing ODOL
-
-
-
-    //#TODO setup buyonancy if canFloat.
-    bool canFloat = true;
-    if (//_nGraphical <= 0
-        //||
-        ! model_info.special_lod_indices.geometry
-        || propertyClass == "building"
-        || propertyClass == "bushhard"
-        || propertyClass == "bushsoft"
-        || propertyClass == "church"
-        || propertyClass == "forest"
-        || propertyClass == "house"
-        || propertyClass == "man"
-        || propertyClass == "road"
-        || propertyClass == "streetlamp"
-        || propertyClass == "treehard"
-        || propertyClass == "treesoft"
-        || propertyClass == "clutter"
-        || propertyClass == "none"
-        || autoCenter == false //proxies
-        ) {
-        canFloat = false;
-    }
-    if (canFloat) {
-        if (model_info.special_lod_indices.geometry_simple) {
-            auto nBue = std::make_unique<BuoyantIteration>();
-            nBue->init(this);
-            buoy = std::move(nBue);
-        } else {
-            auto nBue = std::make_unique<BuoyantSphere>();
-            nBue->init(*this);
-            buoy = std::move(nBue);
-        }
-    }
-    
-
-
 
 
 
@@ -2097,3 +2779,4 @@ int mlod2odol(const char *source, const char *target, Logger& logger) {
     __itt_task_end(p3dDomain);
     return 0;
 }
+
