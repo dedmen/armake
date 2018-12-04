@@ -51,7 +51,7 @@
 
 
 struct point {
-    float x;
+    float x;//#TODO make this vector3
     float y;
     float z;
     uint32_t point_flags;

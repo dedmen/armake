@@ -107,6 +107,10 @@ bool mlod_lod::read(std::istream& source, Logger& logger) {
     source.seekg(4, std::istream::cur);
 
 
+    std::vector<bool> hiddenPoints;
+    hiddenPoints.resize(num_points);
+
+
     bool empty = num_points == 0;
 #pragma region Basic Geometry
     if (empty) {
@@ -125,6 +129,11 @@ bool mlod_lod::read(std::istream& source, Logger& logger) {
             //#TODO hidden points support
             //If any flags are set, set hints and use them for `clip` array
             //There is also "hidden" array for POINT_SPECIAL_HIDDEN
+
+
+            if (points[j].point_flags & 0x1000000) { //#TODO enum or #define or smth
+                hiddenPoints[j] = true;
+            }
 
         }
     }
@@ -208,7 +217,11 @@ bool mlod_lod::read(std::istream& source, Logger& logger) {
 
 
     //2nd pass over faces, find min and maxUV
+    //^ don't need that
 
+
+
+    //#TODO turn faces into poly's here (odol_face) and only store them
     //3rd pass over faces
     //collect unique texture paths
     //collect all faces in a poly and fill vertexToPoint and pointToVertex tables
@@ -216,7 +229,55 @@ bool mlod_lod::read(std::istream& source, Logger& logger) {
     //Error if max vertex that are not duplicate (see odol Addpoint) is bigger than 32767 too many verticies
     //Poly object seems to be just the face with n points?
 
+    for (auto& face : faces) {
+        class Polygon {
+        public:
+            uint8_t face_type;
+            std::array<uint32_t, 4> points;
+        };
+        class PolygonInfo { //Special data about a polygon
+        public:
+            int textureIndex;
+            int materialIndex;
+            int specialFlags;
+            float areaOverTex[2];
+            int order; //#TODO?
+        };
+        Polygon newPoly;
+        newPoly.face_type = face.face_type;
+        bool polyIsHidden = false;
+        for (int i = 0; i < 4; ++i) {
+            newPoly.points[i] = face.table[i].points_index;
+            //#TODO polyIsHidden
+        }
+        PolygonInfo newPolyInfo;
+        newPolyInfo.textureIndex = face.texture_index;
+        newPolyInfo.materialIndex = face.material_index;
 
+        int specialFlags = 0;
+
+
+        if (face.face_flags & 123123123) {//#TODO fix shape.cpp L1174
+
+            if (face.face_flags & 0x8) specialFlags |= 64; //Is shadow
+            if (face.face_flags & 0x10) specialFlags |= 32; //no shadow
+
+            //#TODO zbias 
+
+        }
+
+        //#TODO apply material flags Line 1345
+        //#TODO apply texture flags //line 1352
+
+        if (polyIsHidden) {
+            specialFlags |= 0x400000;
+        }
+         //#TODO if not loading UV (geometry lod) set no clamp flags L1390
+        newPolyInfo.specialFlags = specialFlags;
+
+        //#TODO add poly to faces list
+        //#TODO faceToOriginalFace
+    }
 
 
 #pragma endregion Basic Geometry
@@ -361,6 +422,7 @@ uint32_t mlod_lod::getAndHints() {
     //#TODO implement
     return 0;
 }
+
 uint32_t mlod_lod::getOrHints() {
     //#TODO implement
     return 0;
@@ -849,6 +911,10 @@ void P3DFile::convert_lod(mlod_lod &mlod_lod, odol_lod &odol_lod) {
         if (is_alpha(&mlod_lod.faces[i]))
             mlod_lod.faces[i].face_flags |= FLAG_ISALPHA;
     }
+
+
+    //#TODO move ^ that to mlod read faces and textures and materials
+
 
     for (i = 0; i < mlod_lod.num_selections; i++) {
         for (j = 0; j < model_info.skeleton->num_sections; j++) {
