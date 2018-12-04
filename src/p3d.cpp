@@ -95,16 +95,17 @@ float mlod_lod::getBoundingSphere(const vector3& center) {
     return sqrt(sphere);
 }
 
-bool mlod_lod::read(std::istream& source) {
+bool mlod_lod::read(std::istream& source, Logger& logger) {
 
-    source.seekg(8, std::istream::cur); //#TODO what is it skipping here?
+    //4 byte int header size
+    //4 byte int version
+    source.seekg(8, std::istream::cur);
     source.read(reinterpret_cast<char*>(&num_points), 4);
     source.read(reinterpret_cast<char*>(&num_facenormals), 4);
     source.read(reinterpret_cast<char*>(&num_faces), 4);
+    //4 byte int flags
     source.seekg(4, std::istream::cur);
 
-    //Only 32767 allowed
-    //^ That was 16 bit. It's 32bit now. We cannot read more than 32bit anyway as the numPoints/Faces number is only 32bit
 
     bool empty = num_points == 0;
 #pragma region Basic Geometry
@@ -121,6 +122,7 @@ bool mlod_lod::read(std::istream& source) {
             source.read(reinterpret_cast<char*>(&points[j]), sizeof(struct point));
             //report invalid point flags? not really needed.
 
+            //#TODO hidden points support
             //If any flags are set, set hints and use them for `clip` array
             //There is also "hidden" array for POINT_SPECIAL_HIDDEN
 
@@ -133,6 +135,9 @@ bool mlod_lod::read(std::istream& source) {
         source.read(reinterpret_cast<char*>(&facenormals[j]), sizeof(vector3)); //#TODO if Geometry lod and NoNormals (geoOnly parameter), set them all to 0
     }
 
+#pragma region FacesAndTexturesAndMaterials
+
+    std::vector<mlod_face> loadingFaces;
 
     faces.resize(num_faces);
     for (int j = 0; j < num_faces; j++) {
@@ -142,23 +147,65 @@ bool mlod_lod::read(std::istream& source) {
         //#TODO seperate face properties array
         //texture, material, special
         size_t fp_tmp = source.tellg();
-        std::getline(source, faces[j].texture_name, '\0');
+        std::string textureName;
+        std::string materialName;
 
-        std::getline(source, faces[j].material_name, '\0');
+
+        std::getline(source, textureName, '\0');
+
+        std::getline(source, materialName, '\0');
         //#TODO tolower texture and material
         //#TODO check for valid flags
         faces[j].section_names = ""; //#TODO section_names shouldn't be here
 
+        //#TODO make seperate array with faceproperties (material,texture index and flags
 
+
+        //#REFACTOR make a custom array type for this. Give it a "AddUniqueElement" function that get's the string.
+        //It will return index if it has one, or create one and then return index of new one
+        if (!textureName.empty()) {
+            auto foundTex = std::find_if(textures.begin(), textures.end(), textureName);
+
+            __debugbreak(); //Check if this stuff is correct.
+            if (foundTex == textures.end()) {
+                faces[j].texture_index = faces.size();
+                textures.emplace_back(textureName);
+            }
+            else {
+                faces[j].texture_index = foundTex - textures.begin();
+            }
+        }
+        
+        if (!materialName.empty()) {
+            auto foundMat = std::find_if(materials.begin(), materials.end(), [&searchName = materialName](const Material& mat) {
+                return searchName == mat.path;
+            });
+
+            __debugbreak(); //Check if this stuff is correct.
+            if (foundMat == materials.end()) {
+                faces[j].material_index = materials.size();
+
+
+
+                Material mat(logger, materialName);
+
+                //#TODO take current_target as parameter from p3d
+                mat.read();//#TODO exceptions Though we don't seem to check for errors there? Maybe we should?
+                //YES! We should! mat.read will fail if material file isn't found.
+                materials.emplace_back(std::move(mat)); //#CHECK new element should be at index j now.
+
+            } else {
+                faces[j].material_index = foundMat - materials.begin();
+            }
+        }
 
         //check and fix UV
         //shape.cpp 1075
         //Set UV coords to 0 if Geo lod with nouv
-
-
-
-
     }
+
+#pragma endregion FacesAndTexturesAndMaterials
+
 
     //2nd pass over faces, find min and maxUV
 
@@ -418,7 +465,7 @@ uint32_t odol_lod::add_point(const mlod_lod &mlod_lod, const model_info &model_i
         memset(&vertexboneref[num_points], 0, sizeof(struct odol_vertexboneref));
 
         for (i = model_info.skeleton->num_bones - 1; (int32_t)i >= 0; i--) {
-            for (j = 0; j < mlod_lod.num_selections; j++) {
+            for (j = 0; j < mlod_lod.num_selections; j++) {//#TODO find_if
                 if (stricmp(model_info.skeleton->bones[i].name.c_str(),
                         mlod_lod.selections[j].name.c_str()) == 0)
                     break;
@@ -506,10 +553,7 @@ void odol_lod::writeTo(std::ostream& output) {
     WRITE_CASTED(sphere, sizeof(float));
 
     WRITE_CASTED(num_textures, sizeof(uint32_t));
-    ptr = textures;
-    for (i = 0; i < num_textures; i++)
-        ptr += strlen(ptr) + 1;
-    output.write(textures, ptr - textures);
+    output.write(textures.c_str(), textures.length()+1);
 
     WRITE_CASTED(num_materials, sizeof(uint32_t));
     for (uint32_t i = 0; i < num_materials; i++) //#TODO ranged for
@@ -669,7 +713,7 @@ int compare_face_lookup(std::vector<mlod_face> &faces, uint32_t a, uint32_t b) {
         return compare;
 
     compare = faces[a_index].texture_index - faces[b_index].texture_index;
-    if (compare != 0)
+    if (compare != 0) //#TODO this is stupid, just compare them
         return compare;
 
     return faces[a_index].section_names.compare(faces[b_index].section_names);
@@ -677,12 +721,13 @@ int compare_face_lookup(std::vector<mlod_face> &faces, uint32_t a, uint32_t b) {
 
 
 bool is_alpha(struct mlod_face *face) {
+    return false; //#TODO fix this is_alpha function move to mlod_lod
     // @todo check actual texture maybe?
-    if (strstr(face->texture_name.c_str(), "_ca.paa") != NULL)
-        return true;
-    if (strstr(face->texture_name.c_str(), "ca)") != NULL)
-        return true;
-    return false;
+    //if (strstr(face->texture_name.c_str(), "_ca.paa") != NULL)
+    //    return true;
+    //if (strstr(face->texture_name.c_str(), "ca)") != NULL)
+    //    return true;
+    //return false;
 }
 
 
@@ -695,7 +740,6 @@ void P3DFile::convert_lod(mlod_lod &mlod_lod, odol_lod &odol_lod) {
     unsigned long face_start;
     unsigned long face_end;
     char *ptr;
-    std::vector<std::string> textures;
     vector3 normal;
     struct uv_pair uv_coords;
 
@@ -725,71 +769,25 @@ void P3DFile::convert_lod(mlod_lod &mlod_lod, odol_lod &odol_lod) {
     odol_lod.sphere = mlod_lod.boundingSphere;
 
 
-
+#pragma region TexturesAndMaterials 
+    //#TODO merge this into one single LOD class.
 
     // Textures & Materials
-    odol_lod.num_textures = 0;
-    odol_lod.num_materials = 0;
-    odol_lod.materials.clear();
+    odol_lod.num_textures = mlod_lod.textures.size();
+    odol_lod.num_materials = mlod_lod.materials.size();
 
-    size_t size = 0;
-    for (i = 0; i < mlod_lod.num_faces; i++) {
-        for (j = 0; j < odol_lod.num_textures; j++) {
-            if (mlod_lod.faces[i].texture_name == textures[j])
-                break;
-        }
-
-        mlod_lod.faces[i].texture_index = j;
-
-        if (j >= MAXTEXTURES) {
-            logger.warning(current_target, -1, "Maximum amount of textures per LOD (%i) exceeded.", MAXTEXTURES);
-            break;
-        }
-
-        if (j >= odol_lod.num_textures) {
-            textures.emplace_back(mlod_lod.faces[i].texture_name);
-            size += mlod_lod.faces[i].texture_name.length() + 1;
-            odol_lod.num_textures++;
-        }
-
-        bool matExists = false;
-        for (j = 0; j < MAXMATERIALS && j < odol_lod.materials.size() && !odol_lod.materials[j].path.empty(); j++) {
-            if (mlod_lod.faces[i].material_name == odol_lod.materials[j].path) {
-                matExists = true;
-                break;
-            }
-        }
-        //#TODO use findIf here
-        //#CHECK if material doesn't exist yet. j should be materials size+1
-        //#TODO use materials.count() to get the index of the to be inserted element
-        mlod_lod.faces[i].material_index = (mlod_lod.faces[i].material_name.length() > 0) ? j : -1;
-
-        if (j >= MAXMATERIALS) {
-            logger.warning(current_target, -1, "Maximum amount of materials per LOD (%i) exceeded.", MAXMATERIALS);
-            break;
-        }
-
-        if (mlod_lod.faces[i].material_name.empty() || matExists) //Only create material if we have a material. And if it doesn't exist already
-            continue;
-
-        auto temp = current_target;
-
-        Material mat(logger, mlod_lod.faces[i].material_name);
-       
-        odol_lod.num_materials++;
-        mat.read();//#TODO exceptions Though we don't seem to check for errors there? Maybe we should?
-        //YES! We should! mat.read will fail if material file isn't found.
-        odol_lod.materials.emplace_back(std::move(mat)); //#CHECK new element should be at index j now.
-
-        current_target = temp;
+    odol_lod.materials = mlod_lod.materials; 
+    for (auto& tex : mlod_lod.textures) {
+        odol_lod.textures += tex;
+        odol_lod.textures.push_back('\0');
     }
+    __debugbreak(); //check if the textures string is correct. null char delimited array of texture paths
 
-    odol_lod.textures = (char *)safe_malloc(size);
-    ptr = odol_lod.textures;
-    for (i = 0; i < odol_lod.num_textures; i++) {
-        strncpy(ptr, textures[i].c_str(), textures[i].length() + 1);
-        ptr += textures[i].length() + 1;
-    }
+#pragma endregion TexturesAndMaterials
+
+
+
+
 
     odol_lod.num_faces = mlod_lod.num_faces;
 
@@ -821,7 +819,7 @@ void P3DFile::convert_lod(mlod_lod &mlod_lod, odol_lod &odol_lod) {
     tileU.resize(odol_lod.num_textures); tileV.resize(odol_lod.num_textures);
 
     for (i = 0; i < mlod_lod.num_faces; i++) {
-        if (mlod_lod.faces[i].texture_name.empty())
+        if (mlod_lod.faces[i].texture_index == -1)
             continue;
         if (tileU[mlod_lod.faces[i].texture_index] && tileV[mlod_lod.faces[i].texture_index])
             continue;
@@ -832,10 +830,11 @@ void P3DFile::convert_lod(mlod_lod &mlod_lod, odol_lod &odol_lod) {
                 tileV[mlod_lod.faces[i].texture_index] = true;
         }
     }
+
     for (i = 0; i < mlod_lod.num_faces; i++) {
         if (mlod_lod.faces[i].face_flags & (FLAG_NOCLAMP | FLAG_CLAMPU | FLAG_CLAMPV))
             continue;
-        if (mlod_lod.faces[i].texture_name.empty()) {
+        if (mlod_lod.faces[i].texture_index == -1) {
             mlod_lod.faces[i].face_flags |= FLAG_NOCLAMP;
             continue;
         }
@@ -1197,8 +1196,8 @@ void model_info::writeTo(std::ostream& output) {
     WRITE_CASTED(bbox_max, sizeof(vector3));
 
 
-    WRITE_CASTED(lod_density_coef, sizeof(float));//some new-ish p3d version? dunno which
-    WRITE_CASTED(draw_importance, sizeof(float));
+    WRITE_CASTED(lod_density_coef, sizeof(float));//v70
+    WRITE_CASTED(draw_importance, sizeof(float));//v71
 
 
     WRITE_CASTED(bbox_visual_min, sizeof(vector3));
@@ -1214,7 +1213,7 @@ void model_info::writeTo(std::ostream& output) {
     WRITE_CASTED(can_occlude, sizeof(bool));
     WRITE_CASTED(can_be_occluded, sizeof(bool));
 
-#if P3DVERSION > 71
+#if P3DVERSION >= 73
     WRITE_CASTED(ai_cover,            sizeof(bool));  // v73
 #endif
 
@@ -1250,6 +1249,13 @@ void model_info::writeTo(std::ostream& output) {
     WRITE_CASTED(armor, sizeof(float));
     WRITE_CASTED(inv_armor, sizeof(float));
 
+
+    //#TODO check if this is correctly placed
+#if P3DVERSION > 72
+    WRITE_CASTED(explosionShielding, sizeof(float)); //v72
+#endif
+
+
     WRITE_CASTED(special_lod_indices, sizeof(struct lod_indices));
 
 
@@ -1262,10 +1268,7 @@ void model_info::writeTo(std::ostream& output) {
 
     WRITE_CASTED(always_0, sizeof(uint32_t)); //@todo Array of unused Selection Names
 
-#if P3DVERSION > 71
-    // v73 adds another 4 bytes here
-    output.write("\0\0\0\0", 4); // v73 data
-#endif
+
 
 
     //#TODO
@@ -2420,12 +2423,20 @@ int P3DFile::read_lods(std::istream &source, uint32_t num_lods) {
 
     for (uint32_t i = 0; i < num_lods; i++) {
         source.read(buffer, 4);
-        if (strncmp(buffer, "P3DM", 4) != 0) //#TODO move into load load
+        if (strncmp(buffer, "P3DM", 4) != 0) //#TODO move into lod load
             return 0;
 
         mlod_lod newLod;
 
-        if (!newLod.read(source)) return 0;
+        if (!newLod.read(source, logger)) return 0;
+
+        //#TODO ResolGeometryOnly on resolution
+        //We might want to remove normals (set them all to 0,1,0)
+        //or UV's (set them all to 0 in the faces)
+
+
+
+
 
         //If lod is shadow volume, copy it into an array with shadow volume lods
         //Also keep an array of sahdow volume resolitoons "shapeSVResol"
@@ -2539,13 +2550,14 @@ std::vector<std::string> P3DFile::retrieveDependencies(std::filesystem::path sou
     std::unordered_set<std::string> dependencies; //we don't want duplicates, and doing it with a set is much faster
 
 
-    for (const auto& it : mlod_lods)
-        for (const mlod_face& face : it.faces) {
-            if (!face.texture_name.empty() && face.texture_name.front() != '#')
-                dependencies.insert(face.texture_name);
-            if (!face.material_name.empty() && face.material_name.front() != '#')
-                dependencies.insert(face.material_name);
-        }
+    for (const auto& it : mlod_lods) {
+        for (auto& tex : it.textures)
+            if (tex.front != '#')
+                dependencies.insert(tex);
+        for (auto& mat : it.materials)
+            if (mat.path.front() != '#')
+                dependencies.insert(mat.path);
+    }
 
     std::vector<std::string> depVec;
     depVec.resize(dependencies.size());

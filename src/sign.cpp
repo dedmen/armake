@@ -65,7 +65,7 @@ int name_hash_sort(const void *av, const void *bv) {
 
     return 0;
 }
-
+//#TODO first part of signature is the pbo checksum that the pbowriter already wrote to the end, find a way to reuse that
 int sign_pbo(char *path_pbo, char *path_privatekey, char *path_signature) {
 //    SHA1Context sha;
 //    BN_CTX *bignum_context;

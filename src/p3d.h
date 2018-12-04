@@ -113,10 +113,10 @@ struct mlod_face {
     uint32_t face_type;
     struct pseudovertextable table[4];
     uint32_t face_flags;
-    std::string texture_name;
-    int texture_index;
-    std::string material_name;
-    int material_index;
+    //std::string texture_name;
+    int texture_index { -1 }; //#TODO create "optional" unsigned int type. Where the "value not set" indicator is just all bits on 1
+    //std::string material_name;
+    int material_index { -1 };
     std::string section_names;
     bool operator<(const mlod_face& other) {
         uint32_t compare;
@@ -133,8 +133,9 @@ struct mlod_face {
             return compare < 0;
 
         return section_names.compare(other.section_names) < 0;
-
     }
+
+
 };
 
 struct mlod_selection {
@@ -147,7 +148,7 @@ class mlod_lod {
 public:
 
     float getBoundingSphere(const vector3& center);
-    bool read(std::istream& source);
+    bool read(std::istream& source, Logger& logger);
     uint32_t getAndHints();
     uint32_t getOrHints();
     uint32_t getSpecialFlags();
@@ -171,8 +172,12 @@ public:
     vector3 autocenter_pos;
     float boundingSphere;
 
-
     std::optional<std::string> getProperty(std::string_view propName) const;
+
+
+
+    std::vector<std::string> textures;
+    std::vector<Material> materials;
 
 
 };
@@ -180,6 +185,29 @@ public:
 struct odol_face {
     uint8_t face_type;
     uint32_t table[4];
+
+
+
+    float getArea(const std::vector<point>& pointPos) {
+
+        vector3& p1 = pointPos[table[0]].getPosition();
+        vector3& p2 = pointPos[table[1]].getPosition();
+        vector3& p3 = pointPos[table[2]].getPosition();
+
+
+        float area = ((p2 - p1).cross(p3 - p1)).magnitude();
+
+        if (face_type == 4) {
+            vector3& p1 = pointPos[table[0]].getPosition();
+            vector3& p2 = pointPos[table[2]].getPosition();
+            vector3& p3 = pointPos[table[3]].getPosition();
+
+
+            area += ((p2 - p1).cross(p3 - p1)).magnitude();
+        }
+        return area * 0.5f;
+    }
+
 };
 
 struct odol_proxy {
@@ -266,7 +294,7 @@ public:
     vector3 autocenter_pos;
     float sphere;
     uint32_t num_textures;
-    char *textures;
+    std::string textures;
     uint32_t num_materials;
     std::vector<Material> materials;
     std::vector<uint32_t> point_to_vertex;
@@ -551,6 +579,7 @@ struct model_info {
     float mass_reciprocal; //#TODO rename invMass
     float armor;
     float inv_armor;
+    float explosionShielding;
     struct lod_indices special_lod_indices;
     uint32_t min_shadow;
     bool can_blend;

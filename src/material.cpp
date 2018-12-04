@@ -247,7 +247,7 @@ int Material::read() {
      * Returns 0 on success and a positive integer on failure.
      */
 
-    extern std::string current_target;
+    extern std::string current_target; //#TODO take current_target as parameter from p3d
     const struct color default_color = { 0.0f, 0.0f, 0.0f, 1.0f };
 
     // Write default values
