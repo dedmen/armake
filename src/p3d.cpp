@@ -85,8 +85,7 @@ float mlod_lod::getBoundingSphere(const vector3& center) {
     __itt_task_begin(p3dDomain, __itt_null, __itt_null, handle_bs2);
 
     for (auto i = 0u; i < num_points; i++) {
-        auto& point = points[i].getPosition();
-        auto dist = (point - center).magnitude_squared();
+        auto dist = (points[i].getPosition() - center).magnitude_squared();
         if (dist > sphere)
             sphere = dist;
     }
@@ -419,18 +418,15 @@ bool mlod_lod::read(std::istream& source, Logger& logger) {
 }
 
 uint32_t mlod_lod::getAndHints() {
-    //#TODO implement
-    return 0;
+    return andHints;
 }
 
 uint32_t mlod_lod::getOrHints() {
-    //#TODO implement
-    return 0;
+    return orHints;
 }
 
 uint32_t mlod_lod::getSpecialFlags() {
-    //#TODO implement
-    return 0;
+    return special;
 }
 
 std::optional<std::string> mlod_lod::getProperty(std::string_view propName) const {
@@ -1244,7 +1240,7 @@ void model_info::writeTo(std::ostream& output) {
     auto num_lods = lod_resolutions.size();
 
     output.write(reinterpret_cast<char*>(lod_resolutions.data()), sizeof(float) * num_lods); //#TODO lod resolutions doesn't belong in here. Belongs to parent
-    WRITE_CASTED(index, sizeof(uint32_t)); //#TODO these are spcial flags
+    WRITE_CASTED(index, sizeof(uint32_t)); //#TODO these are special flags
     WRITE_CASTED(bounding_sphere, sizeof(float));
     WRITE_CASTED(geo_lod_sphere, sizeof(float));
 
@@ -1433,9 +1429,8 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_
 
 std::optional<std::string> MultiLODShape::getPropertyGeo(std::string_view propName) {
     mlod_lod* ld;
-    if (model_info.special_lod_indices.geometry)
         
-    if (model_info.special_lod_indices.geometry) {
+    if (model_info.special_lod_indices.geometry.isDefined()) {
         auto& geomLod = mlod_lods[model_info.special_lod_indices.geometry];
         auto foundProp = geomLod.getProperty(propName); //#TODO properties MUST be lowercase. Else assert
         //#TODO also warn when reading properties from MLOD if they are non lowercase
@@ -1444,7 +1439,7 @@ std::optional<std::string> MultiLODShape::getPropertyGeo(std::string_view propNa
             return foundProp;
     }
 
-    if (!model_info.special_lod_indices.geometry && mlod_lods.empty()) {
+    if (model_info.special_lod_indices.geometry.isNull() && mlod_lods.empty()) {
         //#TODO throw exception "No geometry and no shape"
         return {};
     }
@@ -1453,7 +1448,7 @@ std::optional<std::string> MultiLODShape::getPropertyGeo(std::string_view propNa
     auto& lod0 = mlod_lods.front();
     auto foundProp = lod0.getProperty(propName);
 
-    if (foundProp && model_info.special_lod_indices.geometry) {
+    if (foundProp && model_info.special_lod_indices.geometry.isDefined()) {
         //#TODO warning Property %s not in geometry lod
     }
 
@@ -1465,12 +1460,9 @@ void MultiLODShape::scanProjectedShadow() {
     projectedShadow = false;
     if (!(model_info.index & OnSurface)) { //On surface can't use projected shadows
         if (model_info.min_shadow < model_info.numberGraphicalLods) {
-            if (false
-               // model_info.special_lod_indices.shadow_volume < 0//#TODO
-                ) {
+            if (model_info.shadowVolume.isNull()) {
                 projectedShadow = true;
-            } else if (model_info.special_lod_indices.geometry >= 0) { //#TODO properly handle unset being -1 !!!!
-                // we need to check property
+            } else if (model_info.special_lod_indices.geometry.isDefined()) { //#TODO properly handle unset being -1 !!!!
                 auto shadowProp = getPropertyGeo("shadow");
                 if (shadowProp && *shadowProp == "hybrid")
                     projectedShadow = true;
@@ -1514,58 +1506,49 @@ void MultiLODShape::BuildSpecialLodList() {
         if (resolution == LOD_HITPOINTS) indicies.hitpoints = i;
 
         if (resolution > LOD_SHADOW_STENCIL_START && resolution < LOD_SHADOW_STENCIL_END) { //#TODO this is shadowvolume
-            //#TODO set _shadowVolume but only once! init to -1 and only set if it's currently -1
+            if (model_info.shadowVolume == -1) model_info.shadowVolume = i;
             model_info.shadowVolumeCount++;
         }
         if (resolution > LOD_SHADOW_VOLUME_START && resolution < LOD_SHADOW_VOLUME_END) {//#TODO this is shadowBuffer
-            //#TODO set _shadowBuffer but only once! init to -1 and only set if it's currently -1
+            if (model_info.shadowBuffer == -1) model_info.shadowVolume = i;
             model_info.shadowBufferCount++;
         }
-
-
-
-
     }
 
-    //#TODO set flags
-
-    if (model_info.special_lod_indices.geometry != -1) {//#TODO use -1 for these. Make a wrapper class with functions for isDefined and such
-        //get lod
-        //set or special isAlpha,isAlphaFog,IsColored
+    //#TODO use -1 for these. Make a wrapper class with functions for isDefined and such
+    if (model_info.special_lod_indices.geometry.isDefined()) {
+        mlod_lods[model_info.special_lod_indices.geometry].special |= IsAlpha | IsAlphaFog | IsColored;
     }
-    if (model_info.special_lod_indices.geometry_simple != 0xFFFFFFFF) {
-        //get lod
-        //set or special isAlpha,isAlphaFog,IsColored
+    if (model_info.special_lod_indices.geometry_simple.isDefined()) {
+        mlod_lods[model_info.special_lod_indices.geometry_simple].special |= IsAlpha | IsAlphaFog | IsColored;
     }
-    if (model_info.special_lod_indices.geometry_physx != 0xFFFFFFFF) {
-        //get lod
-        //set or special isAlpha,isAlphaFog,IsColored
+    if (model_info.special_lod_indices.geometry_physx.isDefined()) {
+        mlod_lods[model_info.special_lod_indices.geometry_physx].special |= IsAlpha | IsAlphaFog | IsColored;
     }
-    if (model_info.special_lod_indices.geometry_view != 0xFFFFFFFF) {
-        //get lod
-        //set or special isAlpha,isAlphaFog,IsColored
+    if (model_info.special_lod_indices.geometry_view.isDefined()) {
+        mlod_lods[model_info.special_lod_indices.geometry_view].special |= IsAlpha | IsAlphaFog | IsColored;
     }
-    if (model_info.special_lod_indices.geometry_fire != 0xFFFFFFFF) {
-        //get lod
-        //set or special isAlpha,isAlphaFog,IsColored
+    if (model_info.special_lod_indices.geometry_fire.isDefined()) {
+        mlod_lods[model_info.special_lod_indices.geometry_fire].special |= IsAlpha | IsAlphaFog | IsColored;
     }
 
-    if (model_info.special_lod_indices.geometry_view == -1)
+    if (model_info.special_lod_indices.geometry_view.isNull())
         model_info.special_lod_indices.geometry_view = model_info.special_lod_indices.geometry;
 
-    if (model_info.special_lod_indices.geometry_fire == -1)
+    if (model_info.special_lod_indices.geometry_fire.isNull())
         model_info.special_lod_indices.geometry_fire = model_info.special_lod_indices.geometry;
 
-    if (model_info.special_lod_indices.geometry != 0xFFFFFFFF) {
-        //get lod
-        //get property "firegeometry" if set then set geometryFire to this
-        //get property "viewgeometry" if set then set geometryView to this
+    if (model_info.special_lod_indices.geometry.isDefined()) {
+        auto& lod = mlod_lods[model_info.special_lod_indices.geometry];
+        auto fireGeoProp = lod.getProperty("firegeometry");
+        auto viewGeoProp = lod.getProperty("viewgeometry");
+
+        if (fireGeoProp && stoi(*fireGeoProp) > 0)
+            model_info.special_lod_indices.geometry_fire = model_info.special_lod_indices.geometry;
+
+        if (viewGeoProp && stoi(*viewGeoProp) > 0)
+            model_info.special_lod_indices.geometry_view = model_info.special_lod_indices.geometry;
     }
-
-
-
-
-
 }
 
 void MultiLODShape::shapeListUpdated() {
@@ -2188,7 +2171,7 @@ void P3DFile::build_model_info() {
 #pragma region ShadowOffset
     model_info.shadow_offset = std::numeric_limits<float>::max(); //@todo
 
-    if (model_info.special_lod_indices.geometry_simple) {
+    if (model_info.special_lod_indices.geometry_simple.isDefined()) {
         auto shadOffsProp = getPropertyGeo("shadowoffset");
         if (shadOffsProp) {
             model_info.shadow_offset = stof(*shadOffsProp);
@@ -2427,7 +2410,7 @@ void P3DFile::build_model_info() {
         if (stoi(*buoyProp) != 0) {
 
             //set up buoyancy
-            if (model_info.special_lod_indices.geometry_simple) {
+            if (model_info.special_lod_indices.geometry_simple.isDefined()) {
                 auto nBue = std::make_unique<BuoyantIteration>();
                 nBue->init(*this);
                 buoy = std::move(nBue);

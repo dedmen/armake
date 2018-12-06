@@ -153,6 +153,12 @@ public:
     uint32_t getOrHints();
     uint32_t getSpecialFlags();
 
+
+
+    uint32_t orHints;
+    uint32_t andHints;
+    uint32_t special;
+
     uint32_t num_points;
     uint32_t num_facenormals;
     uint32_t num_faces;
@@ -323,21 +329,38 @@ public:
     std::vector<struct odol_vertexboneref> vertexboneref;
 };
 
+template <typename Type, Type nullVal>
+class NullableIntegral {
+public:
+
+    NullableIntegral() noexcept : val(nullVal) {}
+    NullableIntegral(Type newVal) noexcept : val(newVal) {}
+    NullableIntegral& operator=(Type newVal) noexcept { val = newVal; return *this; }
+
+    operator Type() const noexcept { return val; }
+    operator Type&() noexcept { return val; }
+    bool isDefined() const noexcept { return val != nullVal; }
+    bool isNull() const noexcept { return val!=nullVal; }
+
+    Type val;
+};
+
+
 struct lod_indices {
-    int8_t memory;
-    int8_t geometry;
-    int8_t geometry_simple;
-    int8_t geometry_physx;
-    int8_t geometry_fire;
-    int8_t geometry_view;
-    int8_t geometry_view_pilot;
-    int8_t geometry_view_gunner;
-    int8_t geometry_view_commander; //always -1 because it is not used anymore
-    int8_t geometry_view_cargo;
-    int8_t land_contact;
-    int8_t roadway;
-    int8_t paths;
-    int8_t hitpoints;
+    NullableIntegral<int8_t,-1> memory;
+    NullableIntegral<int8_t,-1> geometry;
+    NullableIntegral<int8_t,-1> geometry_simple;
+    NullableIntegral<int8_t,-1> geometry_physx;
+    NullableIntegral<int8_t,-1> geometry_fire;
+    NullableIntegral<int8_t,-1> geometry_view;
+    NullableIntegral<int8_t,-1> geometry_view_pilot;
+    NullableIntegral<int8_t,-1> geometry_view_gunner;
+    NullableIntegral<int8_t,-1> geometry_view_commander; //always -1 because it is not used anymore
+    NullableIntegral<int8_t,-1> geometry_view_cargo;
+    NullableIntegral<int8_t,-1> land_contact;
+    NullableIntegral<int8_t,-1> roadway;
+    NullableIntegral<int8_t,-1> paths;
+    NullableIntegral<int8_t,-1> hitpoints;
 };
 
 
@@ -588,6 +611,11 @@ struct model_info {
     bool property_frequent { false };
     uint32_t always_0;
     uint32_t numberGraphicalLods;
+
+
+
+    NullableIntegral<int8_t,-1> shadowVolume; //lod index. Belongs into special_lod_indices
+    NullableIntegral<int8_t,-1> shadowBuffer; //lod index. Belongs into special_lod_indices
     uint32_t shadowVolumeCount { 0 };
     uint32_t shadowBufferCount { 0 };
 
@@ -647,9 +675,9 @@ public:
 
     virtual void init(const MultiLODShape& shape) {
         const mlod_lod* ld = nullptr;
-        if (shape.model_info.special_lod_indices.geometry_simple)
+        if (shape.model_info.special_lod_indices.geometry_simple.isDefined())
             ld = &shape.mlod_lods[shape.model_info.special_lod_indices.geometry_simple];
-        if (!ld && shape.model_info.special_lod_indices.geometry)
+        if (!ld && shape.model_info.special_lod_indices.geometry.isDefined())
             ld = &shape.mlod_lods[shape.model_info.special_lod_indices.geometry];
         if (!ld) return;
 
@@ -684,11 +712,11 @@ public:
         //if not get GeometryPhys
         //if not get Geometry
         const mlod_lod* ld = nullptr;
-        if (shape.model_info.special_lod_indices.geometry_simple)
+        if (shape.model_info.special_lod_indices.geometry_simple.isDefined())
             ld = &shape.mlod_lods[shape.model_info.special_lod_indices.geometry_simple];
-        if (!ld && shape.model_info.special_lod_indices.geometry_physx)
+        if (!ld && shape.model_info.special_lod_indices.geometry_physx.isDefined())
             ld = &shape.mlod_lods[shape.model_info.special_lod_indices.geometry_physx];
-        if (!ld && shape.model_info.special_lod_indices.geometry)
+        if (!ld && shape.model_info.special_lod_indices.geometry.isDefined())
             ld = &shape.mlod_lods[shape.model_info.special_lod_indices.geometry];
         if (!ld) return;
 
@@ -1155,11 +1183,11 @@ public:
         //if not get GeometryPhys
         //if not get Geometry
         const mlod_lod* ld = nullptr;
-        if (shape.model_info.special_lod_indices.geometry_simple)
+        if (shape.model_info.special_lod_indices.geometry_simple.isDefined())
             ld = &shape.mlod_lods[shape.model_info.special_lod_indices.geometry_simple];
-        if (!ld && shape.model_info.special_lod_indices.geometry_physx)
+        if (!ld && shape.model_info.special_lod_indices.geometry_physx.isDefined())
             ld = &shape.mlod_lods[shape.model_info.special_lod_indices.geometry_physx];
-        if (!ld && shape.model_info.special_lod_indices.geometry)
+        if (!ld && shape.model_info.special_lod_indices.geometry.isDefined())
             ld = &shape.mlod_lods[shape.model_info.special_lod_indices.geometry];
         if (!ld) return;
 
