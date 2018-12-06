@@ -51,9 +51,7 @@
 
 
 struct point {
-    float x;//#TODO make this vector3
-    float y;
-    float z;
+    vector3 pos;
     uint32_t point_flags;
 
     /*
@@ -88,11 +86,6 @@ struct point {
 
 
      */
-
-
-    vector3 getPosition() const {
-        return { x,y,z };
-    }
 };
 
 inline bool float_equal(float f1, float f2, float precision) {

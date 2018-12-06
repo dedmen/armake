@@ -219,58 +219,17 @@ void skeleton_::writeTo(std::ostream& output) {
     }
 }
 
-int skeleton_::read(std::filesystem::path source, Logger& logger) {
+int skeleton_::read(const ModelConfig& cfg, Logger& logger) {
     
-    /*
-     * Reads the model config information for the given model path. If no
-     * model config is found, -1 is returned. 0 is returned on success
-     * and a positive integer on failure.
-     */
-
-    extern std::string current_target;
-    FILE *f;
-    int i;
-    int success;
-
-    auto x = source.string();
-    const char* path = x.c_str();
-    current_target = source.string();
-    //Convert to filesystem::path
-
-
-
-    // Extract model.cfg path
-    auto model_config_path = source.parent_path() / "model.cfg";
-
-    if (!std::filesystem::exists(model_config_path))
-        return -1;
-
-    // Rapify file
-
-    Preprocessor p(logger);
-    std::stringstream buf;
-    p.preprocess(model_config_path.string(), std::ifstream(model_config_path), buf, Preprocessor::ConstantMapType());
-    buf.seekg(0);
-    auto cfg = Config::fromPreprocessedText(buf, p.getLineref(), logger);
-
-    current_target = source.string();
-
-    // Extract model name and convert to lower case
-
-    std::string model_name = source.filename().stem().string();
-    std::transform(model_name.begin(), model_name.end(), model_name.begin(), ::tolower);
-
+  
     // Check if model entry even exists
-    auto modelConfig = cfg->getClass({ "CfgModels", model_name });
+    auto modelConfig = cfg.getModelConfig();
     if (!modelConfig) {
         logger.error("Failed to find model config entry.\n");
         __debugbreak();
         return 1; //#TODO fix this error code. That's not the correct one
     }
 
-
-    if (model_name.find('_') == std::string::npos)
-        logger.warning(std::string_view(path), 0u, LoggerMessageType::model_without_prefix, "Model has a model config entry but doesn't seem to have a prefix (missing _).\n");
 
     // Read name
     auto skeletonName = modelConfig->getString({ "skeletonName" });
@@ -283,39 +242,39 @@ int skeleton_::read(std::filesystem::path source, Logger& logger) {
 
     // Read bones
     if (!name.empty()) {
-        auto skeletonInherit = cfg->getString({ "CfgSkeletons", name, "skeletonInherit" });
+        auto skeletonInherit = cfg.getConfig()->getString({ "CfgSkeletons", name, "skeletonInherit" });
         if (!skeletonInherit) {
             __debugbreak();
             logger.error("Failed to read bones.\n");
-            return success;//#TODO fix this error code. That's not the correct one
+            return -1;//#TODO fix this error code. That's not the correct one
         }
 
-        auto isDiscrete = cfg->getInt({ "CfgSkeletons", name, "isDiscrete" });
+        auto isDiscrete = cfg.getConfig()->getInt({ "CfgSkeletons", name, "isDiscrete" });
         if (isDiscrete)
             is_discrete = (*isDiscrete > 0);
         else
             is_discrete = false;
 
         if (skeletonInherit->length() > 1) { // @todo: more than 1 parent
-            auto skeletonBones = cfg->getArrayOfStrings({ "CfgSkeletons", *skeletonInherit , "skeletonBones" });
+            auto skeletonBones = cfg.getConfig()->getArrayOfStrings({ "CfgSkeletons", *skeletonInherit , "skeletonBones" });
             if (!skeletonBones) { //#TODO differentitate between empty and not found
                 __debugbreak();
                 logger.error("Failed to read bones.\n");
-                return success;//#TODO fix this error code. That's not the correct one
+                return -1;//#TODO fix this error code. That's not the correct one
             }
-            for (i = 0; i < skeletonBones->size(); i += 2) {
+            for (int i = 0; i < skeletonBones->size(); i += 2) {
                 bones.emplace_back((*skeletonBones)[i], (*skeletonBones)[i + 1]);
                 num_bones++;
             }
         }
 
-        auto skeletonBones = cfg->getArrayOfStrings({ "CfgSkeletons", name , "skeletonBones" });
+        auto skeletonBones = cfg.getConfig()->getArrayOfStrings({ "CfgSkeletons", name , "skeletonBones" });
         if (!skeletonBones) { //#TODO differentitate between empty and not found
             logger.error("Failed to read bones.\n");
-            return success;//#TODO fix this error code. That's not the correct one
+            return -1;//#TODO fix this error code. That's not the correct one
         }
 
-        for (i = 0; i < skeletonBones->size(); i += 2) {
+        for (int i = 0; i < skeletonBones->size(); i += 2) {
             bones.emplace_back((*skeletonBones)[i], (*skeletonBones)[i + 1]);
             num_bones++;
         }
@@ -336,66 +295,81 @@ int skeleton_::read(std::filesystem::path source, Logger& logger) {
         }
     }
 
-    // Read sections
-    auto sectionsInherit = modelConfig->getString({ "sectionsInherit" });
-    if (!sectionsInherit) {
-        logger.error("Failed to read sections.\n");
-        return success;
-    }
 
-    if (sectionsInherit->length() > 0) {
-        auto sectionsRd = cfg->getArrayOfStrings({ "CfgModels", *sectionsInherit, "sections" });
-        if (!sectionsRd) { //#TODO differentiate between empty and not found
-            logger.error("Failed to read sections.\n");
-            return success;
-        }
-        for (auto&& it : *sectionsRd)
-            if (!it.empty())
-                sections.emplace_back(it);
-    }
-
-    auto sectionsRd = modelConfig->getArrayOfStrings({ "sections" });
-    if (!sectionsRd) {
-        logger.error("Failed to read sections.\n");
-        return success;
-    }
-
-    for (auto&& it : *sectionsRd)
-        if (!it.empty())
-            sections.emplace_back(it);
-
-    num_sections = sections.size();
 
     // Read animations
     num_animations = 0;
     auto animations = modelConfig->getClass({ "Animations" });
     if (animations) {
         //#TODO inheritance?
-        success = read_animations(*animations, this, logger);
+        auto success = read_animations(*animations, this, logger);
         if (success > 0) {
             logger.error("Failed to read animations.\n");
             return success;
         }
     }
 
-
+    
     if (name.empty() && num_animations > 0)
-        logger.warning(std::string_view(path), 0u, LoggerMessageType::animated_without_skeleton, "Model doesn't have a skeleton but is animated.\n");
+        logger.warning(cfg.getSourcePath().string(), 0u, LoggerMessageType::animated_without_skeleton, "Model doesn't have a skeleton but is animated.\n");
 
-
-    //default values are 0
-
-    // Read thermal stuff
-    if (modelConfig->hasEntry({ "htMin" })) ht_min = *modelConfig->getFloat({ "htMin" });
-    if (modelConfig->hasEntry({ "htMax" })) ht_max = *modelConfig->getFloat({ "htMax" });
-    if (modelConfig->hasEntry({ "afMax" })) af_max = *modelConfig->getFloat({ "afMax" });
-    if (modelConfig->hasEntry({ "mfMax" })) mf_max = *modelConfig->getFloat({ "mfMax" });
-    if (modelConfig->hasEntry({ "mfAct" })) mf_act = *modelConfig->getFloat({ "mfAct" });
-    if (modelConfig->hasEntry({ "tBody" })) t_body = *modelConfig->getFloat({ "tBody" });
 
     return 0;
+}
+
+int ModelConfig::load(std::filesystem::path source, Logger& logger) {
+
+    // Extract model.cfg path
+
+    auto model_config_path = source.parent_path() / "model.cfg";
 
 
 
 
+
+    if (!std::filesystem::exists(model_config_path))
+        return -1;
+    sourcePath = model_config_path;
+
+
+    //load config
+
+    Preprocessor p(logger);
+    std::stringstream buf;
+    p.preprocess(model_config_path.string(), std::ifstream(model_config_path), buf, Preprocessor::ConstantMapType());
+    buf.seekg(0);
+    auto cfg = Config::fromPreprocessedText(buf, p.getLineref(), logger);
+
+    current_target = source.string();
+
+    // Extract model name and convert to lower case
+
+    modelName = source.filename().stem().string();
+    std::transform(modelName.begin(), modelName.end(), modelName.begin(), ::tolower);
+
+    if (modelName.find('_') == std::string::npos)
+        logger.warning(source.string(), 0u, LoggerMessageType::model_without_prefix, "Model has a model config entry but doesn't seem to have a prefix (missing _).\n");
+
+    std::replace_if(modelName.begin(), modelName.end(), [](char c) {
+        return c == '-' || c == '/' || c == '(' || c == ')';
+        }, '_');
+
+
+    // Check if model entry even exists
+    modelConfig = cfg->getClass({ "CfgModels", modelName });
+    if (!modelConfig) {
+        logger.error("Failed to find model config entry.\n");
+
+        auto defaultConfig = cfg->getClass({ "CfgModels", "default" });
+        if (defaultConfig) {
+            modelConfig = defaultConfig;
+            logger.error("Falling back to \"default\" model config\n");
+
+        } else {
+            __debugbreak();
+            return 1; //#TODO fix this error code. That's not the correct one
+        }
+    }
+
+    return 0;
 }

@@ -214,6 +214,6 @@ public:
     std::vector<stage_transform> transforms;
     struct stage_texture dummy_texture;
 
-    int read();
+    int read(); //#TODO support for async reading
     void writeTo(std::ostream& output);
 };

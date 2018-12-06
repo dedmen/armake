@@ -21,18 +21,7 @@
 #endif
 #define NOMINMAX
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <string.h>
 #include <algorithm>
-//#include <unistd.h>
-#include <math.h>
-
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
 #include "args.h"
 #include "filesystem.h"
 #include "utils.h"
@@ -44,6 +33,7 @@
 #include <numeric>
 #include <fstream>
 #include <unordered_set>
+#include "rapify.h"
 
 
 template <typename Type>
@@ -85,7 +75,7 @@ float mlod_lod::getBoundingSphere(const vector3& center) {
     __itt_task_begin(p3dDomain, __itt_null, __itt_null, handle_bs2);
 
     for (auto i = 0u; i < num_points; i++) {
-        auto dist = (points[i].getPosition() - center).magnitude_squared();
+        auto dist = (points[i].pos - center).magnitude_squared();
         if (dist > sphere)
             sphere = dist;
     }
@@ -94,7 +84,7 @@ float mlod_lod::getBoundingSphere(const vector3& center) {
     return sqrt(sphere);
 }
 
-bool mlod_lod::read(std::istream& source, Logger& logger) {
+bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &mass) {
 
     //4 byte int header size
     //4 byte int version
@@ -115,9 +105,6 @@ bool mlod_lod::read(std::istream& source, Logger& logger) {
     if (empty) {
         num_points = 1;
         points.resize(1);
-        points[0].x = 0.0f;
-        points[0].y = 0.0f;
-        points[0].z = 0.0f;
         points[0].point_flags = 0;
     } else {
         points.resize(num_points);
@@ -290,28 +277,7 @@ bool mlod_lod::read(std::istream& source, Logger& logger) {
     //set special flags
     //RecalculateNormals
 
-
-
-
-
-    min_pos = empty_vector;
-    max_pos = empty_vector;
-
-    //#TODO use bounding box calc func
-    for (int i = 0; i < num_points; i++) {
-        if (i == 0 || points[i].x < min_pos.x)
-            min_pos.x = points[i].x;
-        if (i == 0 || points[i].y < min_pos.y)
-            min_pos.y = points[i].y;
-        if (i == 0 || points[i].z < min_pos.z)
-            min_pos.z = points[i].z;
-        if (i == 0 || points[i].x > max_pos.x)
-            max_pos.x = points[i].x;
-        if (i == 0 || points[i].y > max_pos.y)
-            max_pos.y = points[i].y;
-        if (i == 0 || points[i].z > max_pos.z)
-            max_pos.z = points[i].z;
-    }
+    updateBoundingBox();
 
     autocenter_pos = (min_pos + max_pos) * 0.5f;
 
@@ -429,6 +395,39 @@ uint32_t mlod_lod::getSpecialFlags() {
     return special;
 }
 
+void mlod_lod::updateBoundingBox() {
+
+ /*
+  * Calculate the bounding box for the given LOD and store it.
+ */
+    min_pos = empty_vector;
+    max_pos = empty_vector;
+
+
+    bool first = true;
+
+    for (auto&[pos, flags] : points) {
+        auto&[x, y, z] = pos;
+        if (first || x < min_pos.x)
+            min_pos.x = x;
+        if (first || x > max_pos.x)
+            max_pos.x = x;
+
+        if (first || y < min_pos.y)
+            min_pos.y = y;
+        if (first || y > max_pos.y)
+            max_pos.y = y;
+
+        if (first || z < min_pos.z)
+            min_pos.z = z;
+        if (first || z > max_pos.z)
+            max_pos.z = z;
+
+        first = false;
+    }
+
+}
+
 std::optional<std::string> mlod_lod::getProperty(std::string_view propName) const {
     auto foundProp = std::find_if(properties.begin(), properties.end(), [propName](const property& prop) {
         return prop.name == propName;
@@ -515,7 +514,7 @@ uint32_t odol_lod::add_point(const mlod_lod &mlod_lod, const model_info &model_i
     }
 
     // Add vertex
-    points[num_points] = mlod_lod.points[point_index_mlod].getPosition();
+    points[num_points] = mlod_lod.points[point_index_mlod].pos;
     normals[num_points] = normal;
     memcpy(&uv_coords[num_points], uv_coords_input, sizeof(struct uv_pair));
 
@@ -739,20 +738,6 @@ void odol_lod::writeTo(std::ostream& output) {
     output.write("\0", 1);
 }
 
-
-int flags_to_pass(uint32_t flags) {
-    if (flags & FLAG_DSTBLENDZERO)
-        return 0;
-    if (flags & FLAG_NOALPHAWRITE)
-        return 2;
-    if (flags & FLAG_NOCOLORWRITE)
-        return 3;
-    if (flags & FLAG_NOZWRITE)
-        return 4;
-    return 1;
-}
-
-
 int compare_face_lookup(std::vector<mlod_face> &faces, uint32_t a, uint32_t b) {
 
     uint32_t a_index;
@@ -929,6 +914,7 @@ void P3DFile::convert_lod(mlod_lod &mlod_lod, odol_lod &odol_lod) {
         if (strncmp(mlod_lod.selections[i].name.c_str(), "proxy:", 6) != 0)
             continue;
 
+        //#TODO remove this, this is already in finishlod
         for (k = 0; k < mlod_lod.num_faces; k++) {
             if (mlod_lod.selections[i].faces[k] > 0) {
                 mlod_lod.faces[k].face_flags |= FLAG_ISHIDDENPROXY;
@@ -1154,7 +1140,7 @@ void P3DFile::convert_lod(mlod_lod &mlod_lod, odol_lod &odol_lod) {
             odolSection.vertex_weights[k] = mlodSection.points[odol_lod.vertex_to_point[j]];
         }
     }
-
+    //#TODO this should go into finishLOD
     // Proxies
     odol_lod.num_proxies = 0;
     for (i = 0; i < mlod_lod.num_selections; i++) {
@@ -1202,22 +1188,22 @@ void P3DFile::convert_lod(mlod_lod &mlod_lod, odol_lod &odol_lod) {
         }
 
         odol_lod.proxies[k].transform_y = (
-            mlod_lod.points[mlod_lod.faces[odol_lod.face_lookup[face]].table[1].points_index].getPosition()
+            mlod_lod.points[mlod_lod.faces[odol_lod.face_lookup[face]].table[1].points_index].pos
             -
-            mlod_lod.points[mlod_lod.faces[odol_lod.face_lookup[face]].table[0].points_index].getPosition());
+            mlod_lod.points[mlod_lod.faces[odol_lod.face_lookup[face]].table[0].points_index].pos);
         odol_lod.proxies[k].transform_y = odol_lod.proxies[k].transform_y.normalize();
 
         odol_lod.proxies[k].transform_z = (
-            mlod_lod.points[mlod_lod.faces[odol_lod.face_lookup[face]].table[2].points_index].getPosition()
+            mlod_lod.points[mlod_lod.faces[odol_lod.face_lookup[face]].table[2].points_index].pos
             -
-            mlod_lod.points[mlod_lod.faces[odol_lod.face_lookup[face]].table[0].points_index].getPosition());
+            mlod_lod.points[mlod_lod.faces[odol_lod.face_lookup[face]].table[0].points_index].pos);
         odol_lod.proxies[k].transform_z = odol_lod.proxies[k].transform_z.normalize();
 
         odol_lod.proxies[k].transform_x =
             odol_lod.proxies[k].transform_y.cross(odol_lod.proxies[k].transform_z);
 
         odol_lod.proxies[k].transform_n =
-            mlod_lod.points[mlod_lod.faces[odol_lod.face_lookup[face]].table[0].points_index].getPosition();
+            mlod_lod.points[mlod_lod.faces[odol_lod.face_lookup[face]].table[0].points_index].pos;
 
         k++;
     }
@@ -1240,7 +1226,7 @@ void model_info::writeTo(std::ostream& output) {
     auto num_lods = lod_resolutions.size();
 
     output.write(reinterpret_cast<char*>(lod_resolutions.data()), sizeof(float) * num_lods); //#TODO lod resolutions doesn't belong in here. Belongs to parent
-    WRITE_CASTED(index, sizeof(uint32_t)); //#TODO these are special flags
+    WRITE_CASTED(specialFlags, sizeof(uint32_t)); //#TODO these are special flags
     WRITE_CASTED(bounding_sphere, sizeof(float));
     WRITE_CASTED(geo_lod_sphere, sizeof(float));
 
@@ -1279,12 +1265,12 @@ void model_info::writeTo(std::ostream& output) {
     WRITE_CASTED(ai_cover,            sizeof(bool));  // v73
 #endif
 
-    WRITE_CASTED(skeleton->ht_min, sizeof(float));//>=v42
-    WRITE_CASTED(skeleton->ht_max, sizeof(float));//>=v42
-    WRITE_CASTED(skeleton->af_max, sizeof(float));//>=v42
-    WRITE_CASTED(skeleton->mf_max, sizeof(float));//>=v42
-    WRITE_CASTED(skeleton->mf_act, sizeof(float));//>=v43
-    WRITE_CASTED(skeleton->t_body, sizeof(float));//>=v43
+    WRITE_CASTED(ht_min, sizeof(float));//>=v42
+    WRITE_CASTED(ht_max, sizeof(float));//>=v42
+    WRITE_CASTED(af_max, sizeof(float));//>=v42
+    WRITE_CASTED(mf_max, sizeof(float));//>=v42
+    WRITE_CASTED(mf_act, sizeof(float));//>=v43
+    WRITE_CASTED(t_body, sizeof(float));//>=v43
     WRITE_CASTED(force_not_alpha, sizeof(bool));//>=V33
     WRITE_CASTED(sb_source, sizeof(int32_t));//>=v37
     WRITE_CASTED(prefer_shadow_volume, sizeof(bool));//>=v37
@@ -1292,8 +1278,11 @@ void model_info::writeTo(std::ostream& output) {
 
     WRITE_CASTED(animated, sizeof(bool)); //AnimationTyoe == Software
 
+    if (skeleton)
+        skeleton->writeTo(output);
+    else
+        output.put(0); //Write empty skeleton name
 
-    skeleton->writeTo(output);
     //#TODO check that animationType is hardware, if you print a skeleton
 
 
@@ -1382,7 +1371,7 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_
             if (stricmp(mlod_lods[i].selections[j].name.c_str(), anim->begin.c_str()) == 0) {
                 for (k = 0; k < mlod_lods[i].num_points; k++) {
                     if (mlod_lods[i].selections[j].points[k] > 0) {
-                        anim->axis_pos = mlod_lods[i].points[k].getPosition();
+                        anim->axis_pos = mlod_lods[i].points[k].pos;
                         break;
                     }
                 }
@@ -1390,7 +1379,7 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_
             if (stricmp(mlod_lods[i].selections[j].name.c_str(), anim->end.c_str()) == 0) {
                 for (k = 0; k < mlod_lods[i].num_points; k++) {
                     if (mlod_lods[i].selections[j].points[k] > 0) {
-                        anim->axis_dir = mlod_lods[i].points[k].getPosition();
+                        anim->axis_dir = mlod_lods[i].points[k].pos;
                         break;
                     }
                 }
@@ -1398,13 +1387,13 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_
         } else if (stricmp(mlod_lods[i].selections[j].name.c_str(), anim->axis.c_str()) == 0) {
             for (k = 0; k < mlod_lods[i].num_points; k++) {
                 if (mlod_lods[i].selections[j].points[k] > 0) {
-                    anim->axis_pos = mlod_lods[i].points[k].getPosition();
+                    anim->axis_pos = mlod_lods[i].points[k].pos;
                     break;
                 }
             }
             for (k = k + 1; k < mlod_lods[i].num_points; k++) {
                 if (mlod_lods[i].selections[j].points[k] > 0) {
-                    anim->axis_dir = mlod_lods[i].points[k].getPosition();
+                    anim->axis_dir = mlod_lods[i].points[k].pos;
                     break;
                 }
             }
@@ -1455,10 +1444,52 @@ std::optional<std::string> MultiLODShape::getPropertyGeo(std::string_view propNa
     return foundProp;
 }
 
+void MultiLODShape::updateHints(float viewDensityCoef) {
+
+    //This is calculate hints. Should move into func
+#pragma region Calc Hints
+    model_info.andHints = 0b11111111'11111111'11111111'11111111;
+    model_info.orHints = 0;
+
+    for (auto& it : mlod_lods) {
+        model_info.andHints &= it.getAndHints();
+        model_info.orHints |= it.getOrHints();
+    }
+#pragma endregion Calc Hints
+
+
+#pragma region Color
+    //calculate color
+
+    //mlod_lods[0].color; //#TODO
+    //mlod_lods[0].colorTop; //#TODO
+    //shape.cpp 6490
+
+    //Inside calculate hints
+    //#TODO packed color type
+    model_info.map_icon_color = 0xff9d8254;
+    model_info.map_selected_color = 0xff9d8254;
+#pragma endregion Color
+
+    //In CalculateViewDensity using the coef
+#pragma region ViewDensity
+    int colorAlpha = (model_info.map_icon_color >> 24) & 0xff;
+    float alpha = colorAlpha * (1.0 / 255); //#TODO color getAsFloat func to packed color type
+
+    float transp = 1 - alpha * 1.5;
+    if (transp >= 0.99)
+        model_info.view_density = 0;
+    else if (transp > 0.01)
+        model_info.view_density = log(transp) * 4 * viewDensityCoef;
+    else
+        model_info.view_density = -100.0f;
+#pragma endregion ViewDensity
+}
+
 void MultiLODShape::scanProjectedShadow() {
     
     projectedShadow = false;
-    if (!(model_info.index & OnSurface)) { //On surface can't use projected shadows
+    if (!(model_info.specialFlags & OnSurface)) { //On surface can't use projected shadows
         if (model_info.min_shadow < model_info.numberGraphicalLods) {
             if (model_info.shadowVolume.isNull()) {
                 projectedShadow = true;
@@ -1515,7 +1546,6 @@ void MultiLODShape::BuildSpecialLodList() {
         }
     }
 
-    //#TODO use -1 for these. Make a wrapper class with functions for isDefined and such
     if (model_info.special_lod_indices.geometry.isDefined()) {
         mlod_lods[model_info.special_lod_indices.geometry].special |= IsAlpha | IsAlphaFog | IsColored;
     }
@@ -1682,52 +1712,61 @@ void P3DFile::write_animations(std::ostream& output) {
 
 
 void P3DFile::get_mass_data() {
-    int i;
-    float mass;
-    vector3 sum;
-    vector3 pos;
-    matrix r_tilda;
-    struct mlod_lod *mass_lod;
-
     // mass is primarily stored in geometry
-    for (i = 0; i < num_lods; i++) {
-        if (mlod_lods[i].resolution == LOD_GEOMETRY)
-            break;
+
+
+    mlod_lod *mass_lod = nullptr;
+
+    if (model_info.special_lod_indices.geometry.isDefined()) {
+        mass_lod = &mlod_lods[model_info.special_lod_indices.geometry];
     }
 
-    // alternatively use the PhysX LOD
-    if (i >= num_lods || mlod_lods[i].num_points == 0) {
-        for (i = 0; i < num_lods; i++) {
-            if (mlod_lods[i].resolution == LOD_PHYSX)
-                break;
+    if (!mass_lod || mass_lod->num_points != massArray.size()) {
+        if (model_info.special_lod_indices.geometry_physx.isDefined()) {
+            mass_lod = &mlod_lods[model_info.special_lod_indices.geometry_physx];
+        } else if (model_info.special_lod_indices.geometry_simple.isDefined()) {
+            mass_lod = &mlod_lods[model_info.special_lod_indices.geometry_simple];
+        } else if(model_info.special_lod_indices.geometry.isDefined()) {
+            mass_lod = &mlod_lods[model_info.special_lod_indices.geometry];
         }
     }
 
-    // mass data available?
-    if (i >= num_lods || mlod_lods[i].num_points == 0) {
-        model_info.mass = 0;
-        model_info.mass_reciprocal = 1;
-        model_info.inv_inertia = identity_matrix;
-        model_info.centre_of_mass = empty_vector;
-        return;
-    }
+    if (!mass_lod) return;
 
-    mass_lod = &mlod_lods[i];
-    sum = empty_vector;
-    mass = 0;
-    for (i = 0; i < mass_lod->num_points; i++) {
-        pos = mass_lod->points[i].getPosition();
-        mass += mass_lod->mass[i];//#TODO is this mass array?
-        sum += pos * mass_lod->mass[i];
+    //// mass data available?
+    //if (i >= num_lods || mlod_lods[i].num_points == 0) {
+    //    model_info.mass = 0;
+    //    model_info.mass_reciprocal = 1;
+    //    model_info.inv_inertia = identity_matrix;
+    //    model_info.centre_of_mass = empty_vector;
+    //    return;
+    //}
+
+    if (mass_lod->num_points != massArray.size()) {//shape.cpp L6967
+        //#TODO what's here?
+    }
+        
+
+
+
+
+
+
+    vector3 centerOfMass = empty_vector;
+    float mass = 0;
+    for (int i = 0; i < mass_lod->num_points; i++) {
+        auto& pos = mass_lod->points[i].pos;
+        mass += massArray[i];
+        centerOfMass += pos * massArray[i];
     }
     
-    model_info.centre_of_mass = (mass > 0) ? sum * (1 / mass) : empty_vector;
+    model_info.centre_of_mass = (mass > 0) ? centerOfMass * (1 / mass) : empty_vector;
 
     matrix inertia = empty_matrix;
-    for (i = 0; i < mass_lod->num_points; i++) {
-        pos = mass_lod->points[i].getPosition();
-        r_tilda = vector_tilda(pos - model_info.centre_of_mass);
-        inertia = matrix_sub(inertia, matrix_mult_scalar(mass_lod->mass[i], matrix_mult(r_tilda, r_tilda)));
+    for (int i = 0; i < mass_lod->num_points; i++) {
+        auto& pos = mass_lod->points[i].pos;
+        matrix r_tilda = vector_tilda(pos - model_info.centre_of_mass);
+        inertia = matrix_sub(inertia, matrix_mult_scalar(massArray[i], matrix_mult(r_tilda, r_tilda)));
     }
 
     // apply calculations to modelinfo
@@ -1739,15 +1778,17 @@ void P3DFile::get_mass_data() {
         model_info.inv_inertia.m00 = 1.0f / inertia.m00;
         model_info.inv_inertia.m11 = 1.0f / inertia.m11;
         model_info.inv_inertia.m22 = 1.0f / inertia.m22;
-    }
-    else {
+    } else {
         model_info.mass_reciprocal = 1;
         model_info.inv_inertia = identity_matrix;
     }
+    massArray.clear();
 }
 
 void P3DFile::optimizeLODS() {
     
+
+    int offs = 0;
     for (int i = 0; i < num_lods; i++) {
         
         auto noTLProp = mlod_lods[i].getProperty("notl");
@@ -1761,13 +1802,16 @@ void P3DFile::optimizeLODS() {
         } else if (model_info.lod_resolutions[i] >= 20000 && model_info.lod_resolutions[i] <= 20999) {
             //Edit lods
         } else {
-            //Keep lod and move up in lods array and lod_resolutions array
+            mlod_lods[offs] = std::move(mlod_lods[i]);
+            //#TODO move resolution too
+            offs++;
         }
-
     }
+    __debugbreak(); //check if this is correct
+    mlod_lods.resize(offs);
+    num_lods = offs;
 
-
-    int i = 0;
+    int i = 0; //#TODO replace by find_if
     for (i = 0; i < num_lods; i++) {
         if (model_info.lod_resolutions[i] >= 900) break;
         if (mlod_lods[i].num_faces < 1024) break;
@@ -1820,6 +1864,142 @@ void P3DFile::optimizeLODS() {
 
 }
 
+void P3DFile::updateBounds() {
+
+
+    model_info.bbox_min = { 10e10,10e10,10e10 };
+    model_info.bbox_max = { -10e10,-10e10,-10e10 };
+    //global bbox
+    for (auto& lod : mlod_lods) {
+        model_info.bbox_min.x = std::min(model_info.bbox_min.x, lod.min_pos.x);
+        model_info.bbox_min.y = std::min(model_info.bbox_min.y, lod.min_pos.y);
+        model_info.bbox_min.z = std::min(model_info.bbox_min.z, lod.min_pos.z);
+        model_info.bbox_max.x = std::max(model_info.bbox_max.x, lod.max_pos.x);
+        model_info.bbox_max.y = std::max(model_info.bbox_max.y, lod.max_pos.y);
+        model_info.bbox_max.z = std::max(model_info.bbox_max.z, lod.max_pos.z);
+    }
+
+
+    if (model_info.numberGraphicalLods == num_lods) {
+        model_info.bbox_visual_min = model_info.bbox_min;
+        model_info.bbox_visual_max = model_info.bbox_max;
+    } else {
+        
+
+        model_info.bbox_visual_min = { 10e10,10e10,10e10 };
+        model_info.bbox_visual_max = { -10e10,-10e10,-10e10 };
+
+
+
+        uint8_t idx = 0;
+        //global bbox
+        for (auto& lod : mlod_lods) {
+            if (idx == model_info.numberGraphicalLods) break; //only check vis lods
+
+            model_info.bbox_visual_min.x = std::min(model_info.bbox_visual_min.x, lod.min_pos.x);
+            model_info.bbox_visual_min.y = std::min(model_info.bbox_visual_min.y, lod.min_pos.y);
+            model_info.bbox_visual_min.z = std::min(model_info.bbox_visual_min.z, lod.min_pos.z);
+            model_info.bbox_visual_max.x = std::max(model_info.bbox_visual_max.x, lod.min_pos.x);
+            model_info.bbox_visual_max.y = std::max(model_info.bbox_visual_max.y, lod.min_pos.y);
+            model_info.bbox_visual_max.z = std::max(model_info.bbox_visual_max.z, lod.min_pos.z);
+            idx++;
+        }
+        if (idx == 0) {//Wut? no graphical lods?
+            model_info.bbox_visual_min = model_info.bbox_min;
+            model_info.bbox_visual_max = model_info.bbox_max;
+        }
+
+    }
+
+#pragma region BoundingSphere
+    //if (!model_info.lock_autocenter) .... useless as this is always false
+
+    model_info.bounding_center = empty_vector;
+
+
+    vector3 boundingCenterChange;
+    if (model_info.autocenter && num_lods > 0) {
+        boundingCenterChange = (model_info.bbox_min + model_info.bbox_max) * 0.5f;
+
+
+        //#TODO check clip and onsurface flags of lod0
+
+
+    }
+    else {
+        //boundingCenterChange = -model_info.bounding_center; useless. It's already 0
+    }
+    if (boundingCenterChange.magnitude_squared() < 1e-10 && model_info.bounding_sphere > 0) {
+        model_info.bounding_sphere += boundingCenterChange.magnitude();
+    }
+
+
+    //Adjust existing positions for changed center
+
+    model_info.bounding_center += boundingCenterChange;
+
+
+    model_info.bbox_min -= boundingCenterChange;
+    model_info.bbox_max -= boundingCenterChange;
+
+
+    model_info.bbox_visual_min -= boundingCenterChange;
+    model_info.bbox_visual_max -= boundingCenterChange;
+
+    model_info.aiming_center -= boundingCenterChange;
+
+    for (auto& lod : mlod_lods) {
+
+        for (auto& it : lod.points) {
+            it.pos -= boundingCenterChange;
+        }
+        //#TODO update animation phases for lod
+
+
+    }
+
+
+
+
+
+
+    //#TODO apply bounding center change to all lods
+
+
+    model_info.bounding_sphere += boundingCenterChange.magnitude(); //#TODO Arma does this again, but we already did that above? is this correct?
+
+
+    //#TODO apply bounding center change to tree crown
+
+    //#TODO if change is big enough, recalculate normals
+
+
+
+#pragma endregion BoundingSphere
+
+
+    float sphere;
+
+    //#TODO fix this up. Seems like boundingSphere should == boundingCenterChange.magnitude?
+
+    //#TODO move geo_lod_sphere to initConvexComponents
+
+    // Spheres
+    //model_info.bounding_sphere = 0.0f;
+    //model_info.geo_lod_sphere = 0.0f;
+    //for (uint32_t i = 0; i < num_lods; i++) {
+    //    if (model_info.autocenter)
+    //        sphere = mlod_lods[i].getBoundingSphere(model_info.centre_of_mass);
+    //    else
+    //        sphere = mlod_lods[i].getBoundingSphere(empty_vector);
+    //
+    //    if (sphere > model_info.bounding_sphere)
+    //        model_info.bounding_sphere = sphere;
+    //    if (mlod_lods[i].resolution == LOD_GEOMETRY)
+    //        model_info.geo_lod_sphere = sphere;
+    //}
+}
+
 
 void P3DFile::build_model_info() {
 
@@ -1829,12 +2009,12 @@ void P3DFile::build_model_info() {
     for (int i = 0; i < num_lods; i++)
         model_info.lod_resolutions[i] = mlod_lods[i].resolution;
 
-    model_info.index = 0; //#TODO special flags. Is this init correct?
+    model_info.specialFlags = 0; //#TODO special flags. Is this init correct?
 
     //#TODO make these default values and get rid of this
     model_info.lock_autocenter = false; //#TODO this is always false!
 
-    //#TODO treeCrownNeeded
+    //#TODO treeCrownNeeded shape.cpp 8545
     //#TODO canBlend
     model_info.can_blend = false; // @todo
 
@@ -1887,157 +2067,19 @@ void P3DFile::build_model_info() {
     if (autoCenterProp && stoi(*autoCenterProp) == 0) model_info.autocenter = false;
 #pragma endregion Autocenter
 
-
 #pragma region AICover
     auto aiCoverProp = getPropertyGeo("aicovers");
     if (aiCoverProp && stoi(*aiCoverProp) == 0) model_info.ai_cover = true;
 #pragma endregion AICover
 
+    updateBounds();
 
-  
-        //#TODO store bounding box of each lod level, and then just grab it here? Seems wasteful though
-        //Actually, no it doesn't seem wasteful. getBoundingBox iterates all levels anyway
-
-
-#pragma region BoundingBoxTotal
-    getBoundingBox(model_info.bbox_min, model_info.bbox_max, false, false);
-#pragma endregion BoundingBoxTotal
-
-
-#pragma region BoundingBoxVisual
-    //#TODO if all lods are graphical, that means total == Visual and we can skip calc
-
-
-    //Iterate through all numberGraphicalLods and find the max
-
-    // Visual bounding box
-    getBoundingBox(model_info.bbox_visual_min, model_info.bbox_visual_max, true, false);
-#pragma endregion BoundingBoxVisual
-
-
-#pragma region BoundingSphere
-    //if (!model_info.lock_autocenter) .... useless as this is always false
-
-    model_info.bounding_center = empty_vector;
-
-
-    vector3 boundingCenterChange;
-    if (model_info.autocenter && num_lods > 0) {
-        boundingCenterChange = (model_info.bbox_min + model_info.bbox_max) * 0.5f;
-
-
-        //#TODO check clip and onsurface flags of lod0
-
-
-    } else {
-        //boundingCenterChange = -model_info.bounding_center; useless. It's already 0
-    }
-    if (boundingCenterChange.magnitude_squared() < 1e-10 && model_info.bounding_sphere>0) {
-        model_info.bounding_sphere += boundingCenterChange.magnitude();
-    }
-
-
-    //Adjust existing positions for changed center
-
-    model_info.bounding_center += boundingCenterChange;
-
-
-    model_info.bbox_min -= boundingCenterChange;
-    model_info.bbox_max -= boundingCenterChange;
-
-
-    model_info.bbox_visual_min -= boundingCenterChange;
-    model_info.bbox_visual_max -= boundingCenterChange;
-
-    model_info.aiming_center -= boundingCenterChange;
-
-
-
-    //#TODO apply bounding center change to all lods
-
-
-    model_info.bounding_sphere += boundingCenterChange.magnitude(); //#TODO Arma does this again, but we already did that above? is this correct?
-
-
-    //#TODO apply bounding center change to tree crown
-
-    //#TODO if change is big enough, recalculate normals
-
-
-
-#pragma endregion BoundingSphere
-
-
-    float sphere;
-
-    //#TODO fix this up. Seems like boundingSphere should == boundingCenterChange.magnitude?
-    // Spheres
-    model_info.bounding_sphere = 0.0f;
-    model_info.geo_lod_sphere = 0.0f;
-    for (uint32_t i = 0; i < num_lods; i++) {
-        if (model_info.autocenter)
-            sphere = mlod_lods[i].getBoundingSphere(model_info.centre_of_mass);
-        else
-            sphere = mlod_lods[i].getBoundingSphere(empty_vector);
-
-        if (sphere > model_info.bounding_sphere)
-            model_info.bounding_sphere = sphere;
-        if (mlod_lods[i].resolution == LOD_GEOMETRY)
-            model_info.geo_lod_sphere = sphere;
-    }
-
-
-
-
-
-
-
-    //#TODO CalculateHints See map_icon_color below
-
-
-    //This is calculate hints. Should move into func
-#pragma region Calc Hints
-    model_info.andHints = 0b11111111'11111111'11111111'11111111;
-    model_info.orHints = 0;
-
-    for (auto& it : mlod_lods) {
-        model_info.andHints &= it.getAndHints();
-        model_info.orHints |= it.getOrHints();
-    }
-#pragma endregion Calc Hints
-
-
-#pragma region Color
-    //calculate color
-
-    //mlod_lods[0].color; //#TODO
-    //mlod_lods[0].colorTop; //#TODO
-    //shape.cpp 6490
-
-    //Inside calculate hints
-    //#TODO packed color type
-    model_info.map_icon_color = 0xff9d8254;
-    model_info.map_selected_color = 0xff9d8254;
-#pragma endregion Color
-
-    //In CalculateViewDensity using the coef
-#pragma region ViewDensity
-    int colorAlpha = (model_info.map_icon_color >> 24) & 0xff;
-    float alpha = colorAlpha * (1.0 / 255); //#TODO color getAsFloat func to packed color type
-
-    float transp = 1 - alpha * 1.5;
-    if (transp >= 0.99)
-        model_info.view_density = 0;
-    else if (transp > 0.01)
-        model_info.view_density = log(transp) * 4 * viewDensityCoef;
-    else
-        model_info.view_density = -100.0f;
-#pragma endregion ViewDensity
+    updateHints(viewDensityCoef);
 
 
     // Centre of mass, inverse inertia, mass and inverse mass
     //#TODO only if massArray is there. Also have to build mass array
-    get_mass_data();
+    if (!massArray.empty()) get_mass_data();
 
 #pragma region AnimatedFlag
     if (model_info.orHints&(ClipLandMask | ClipDecalMask))
@@ -2085,10 +2127,7 @@ void P3DFile::build_model_info() {
     //Sb source shape.cpp 8660
     model_info.sb_source = SBSource::Visual; //@todo
 
-
-    //Store if we have a shadowvolume in a var "shapeSV"
-    //get projShadow flag
-
+    scanProjectedShadow(); //make sure flag is set
 
     auto sbSourceProp = getPropertyGeo("sbsource");
 
@@ -2101,53 +2140,62 @@ void P3DFile::build_model_info() {
         if (shadowProp && *shadowProp == "hybrid") {
             //model_info.sb_source = _projShadow ? SBSource::Visual : SBSource::None;
             model_info.prefer_shadow_volume = false;
-        } else if (false) {
+        } else if (!shadowVolumes.empty()) {
             //#TODO see *sbSourceProp == "shadowvolume" lower down thing that needs shapeSV. This seems to be same
         } else {
-            //model_info.sb_source = _projShadow ? SBSource::Visual : SBSource::None;
+            model_info.sb_source = projectedShadow ? SBSource::Visual : SBSource::None;
         }
        
-
-
-
-
     } else if (*sbSourceProp == "visual") {
         model_info.sb_source = SBSource::Visual;
-        //#TODO
-        //if (_shadowBufferCount > 0) {
-        //    //warning
-        //    //("Warning: %s: Shadow buffer levels are present, but visual LODs for SB rendering are required (in sbsource property)", modelname);
-        //}
-        //if (!_projShadow) {
-        //    //error
-        //    //("Error: %s: Shadows cannot be drawn for this model, but 'visual' source is specified (in sbsource property)", modelname);
-        //    model_info.sb_source = SBSource::None;
-        //}
+
+        if (model_info.shadowBufferCount > 0) {
+            //warning
+            //("Warning: %s: Shadow buffer levels are present, but visual LODs for SB rendering are required (in sbsource property)", modelname);
+        }
+        if (!projectedShadow) {
+            //error
+            //("Error: %s: Shadows cannot be drawn for this model, but 'visual' source is specified (in sbsource property)", modelname);
+            model_info.sb_source = SBSource::None;
+        }
 
     } else if (*sbSourceProp == "explicit") {
-        //if (_shadowBufferCount <= 0) {
-        //    //error
-        //    //("Error: %s: Explicit shadow buffer levels are required (in sbsource property), but no one is present - forcing 'none'", modelname);
-        //    model_info.sb_source = SBSource::None;
-        //} else {
-        //    model_info.sb_source = SBSource::Explicit;
-        //}
+        if (model_info.shadowBufferCount <= 0) {
+            //error
+            //("Error: %s: Explicit shadow buffer levels are required (in sbsource property), but no one is present - forcing 'none'", modelname);
+            model_info.sb_source = SBSource::None;
+        } else {
+            model_info.sb_source = SBSource::Explicit;
+        }
     } else if (*sbSourceProp == "shadowvolume") {//#TODO should this be lowercase?
-        //if (shapeSV.Size() == 0 || shapeSV.Size() != shapeSVResol.Size()) {
+        if (shadowVolumes.empty() || shadowVolumes.size() != shadowVolumesResolutions.size()) {
             //error
             //("Error: %s: Shadow volume lod is required for shadow buffer (in sbsource property), but no shadow volume lod is present", modelname);
             model_info.sb_source = SBSource::None;
-        //} else {
-            
-            //#TODO shape.cpp 8697 needs shapeSV
+        } else {
 
 
+            ComparableFloat<std::milli> lastResolution = LOD_SHADOW_VOLUME_START;
+            for (int i = 0; i < shadowVolumes.size(); ++i) {
+                auto res = shadowVolumesResolutions[i]; //#TODO why not just get it from the shadowVolume?
+
+                if (res > LOD_SHADOW_STENCIL_START && res < LOD_SHADOW_STENCIL_END)
+                    res = LOD_SHADOW_VOLUME_START + (res - LOD_SHADOW_STENCIL_START);
+                else
+                    res = lastResolution + 10.f;
+                lastResolution = res;
+
+                //#TODO add shape, and set resoltion member variable
+
+                //#TODO apply bounding center offset and fix minMax
+
+                //Run customizeShape
+
+                //shape.cpp 8717
 
 
-
-
-
-        //}
+            }
+        }
 
 
 
@@ -2199,22 +2247,22 @@ void P3DFile::build_model_info() {
 
         for (auto& it : mlod_lods) {
             auto SLprop = it.getProperty("shadowlod");
-            uint32_t SL = SLprop ? stoi(*SLprop) : 0xFFFFFFFF;
+            int32_t SL = SLprop ? stoi(*SLprop) : -1;
             auto SVLprop = it.getProperty("shadowvolumelod");
-            uint32_t SVL = SVLprop ? stoi(*SVLprop) : 0xFFFFFFFF;
+            int32_t SVL = SVLprop ? stoi(*SVLprop) : -1;
             auto SBLprop = it.getProperty("shadowbufferlod");
-            uint32_t  SBL = SBLprop ? stoi(*SBLprop) : 0xFFFFFFFF;
+            int32_t  SBL = SBLprop ? stoi(*SBLprop) : -1;
             auto SBLVprop = it.getProperty("shadowbufferlodvis"); //#TODO rename preferredShadowBufferVisibleLod swap vis and lod
-            uint32_t SBLV = SBLVprop ? stoi(*SBLVprop) : 0xFFFFFFFF;
+            int32_t SBLV = SBLVprop ? stoi(*SBLVprop) : -1;
 
-            if (SBL == 0xFFFFFFFF) {
+            if (SBL == -1) {
                 SBL = SL;
-                if (SBL == 0xFFFFFFFF)
+                if (SBL == -1)
                     SBL = SVL;
             }
-            if (SVL == 0xFFFFFFFF) {
+            if (SVL == -1) {
                 SVL = SL;
-                if (SVL == 0xFFFFFFFF)
+                if (SVL == -1)
                     SVL = SBL;
             }
 
@@ -2227,21 +2275,45 @@ void P3DFile::build_model_info() {
 
 
     optimizeLODS();
-    //#TODO OptimizeShapes
+    updateBounds();//If we removed lods, we need to update bounding.
+    //#TODO only update bounds if optimizeLODS actually changed anything to save a little perf
 
-    //set special flags thing
 
 #pragma region Special Flags
     for (auto& it : mlod_lods) {
-        model_info.index |= it.getSpecialFlags();
+        model_info.specialFlags |= it.getSpecialFlags();
     }
 #pragma endregion Special Flags
 
     //CalculateMinMax again
-    //CalculateMass again
+    if (!massArray.empty()) get_mass_data();
 
     //Read modelconfig and grab properties
     //checkForcedProperties
+    if (modelConfig.isLoaded() && model_info.special_lod_indices.geometry.isDefined()) {
+        //#TODO we are supposed to generate a GEOM level if it doesn't exist...
+        auto entr = modelConfig.getModelConfig()->getArrayOfStringViews({ "properties" });
+        if (entr && num_lods) {
+
+            auto& geoLod = mlod_lods[model_info.special_lod_indices.geometry];
+
+            while (entr->size() >= 2) { //#TODO use fori loop
+                std::string_view p1 = entr->front(); entr->erase(entr->begin());
+                std::string_view p2 = entr->front(); entr->erase(entr->begin());
+                property newProp;
+                newProp.name = p1;
+                newProp.value = p2;
+
+                geoLod.properties.emplace_back(newProp);
+
+            }
+        }
+    }
+    shapeListUpdated(); //properties can change things? Can they? If we really generate a geom lod then indeed they do
+
+
+
+
 
 
 #pragma region CanOcclude
@@ -2250,7 +2322,7 @@ void P3DFile::build_model_info() {
         float size = model_info.bounding_sphere;
         uint32_t viewComplexity = 0;
 
-        if (model_info.special_lod_indices.geometry_view)
+        if (model_info.special_lod_indices.geometry_view.isDefined())
             viewComplexity = mlod_lods[model_info.special_lod_indices.geometry_view].num_faces;
 
         model_info.can_occlude = false;
@@ -2280,7 +2352,7 @@ void P3DFile::build_model_info() {
     auto geoLodID = model_info.special_lod_indices.geometry;
 
 
-    if (geoLodID != -1) {
+    if (geoLodID.isDefined()) {
         auto& geoLod = mlod_lods[geoLodID];
         model_info.geometry_center = (geoLod.max_pos + geoLod.min_pos)*0.5;
         model_info.geo_lod_sphere = geoLod.max_pos.distance(geoLod.min_pos)*0.5;
@@ -2289,9 +2361,8 @@ void P3DFile::build_model_info() {
 
     auto memLodID = model_info.special_lod_indices.memory;
 
-    if (memLodID != -1) {
+    if (memLodID.isDefined()) {
         auto& memLod = mlod_lods[memLodID];
-
 
         //#TODO make getMemoryPoint function
         auto found = std::find_if(memLod.selections.begin(), memLod.selections.end(), [](const mlod_selection& it) {
@@ -2305,7 +2376,7 @@ void P3DFile::build_model_info() {
             } else {
                 memPointExists = found->points[0] >= 0;
 
-                aimMemPoint = memLod.points[found->points[0]].getPosition();
+                aimMemPoint = memLod.points[found->points[0]].pos;
                 model_info.aiming_center = aimMemPoint;
             }
         }
@@ -2313,13 +2384,10 @@ void P3DFile::build_model_info() {
 
 
     }
-    //#TODO calculateNormals stuff
+    //#TODO calculateNormals stuff in initPlanes
 
 
 #pragma endregion initConvexComp
-
-
-    //InitConvexComponents
 
 
 #pragma region Armor
@@ -2335,8 +2403,7 @@ void P3DFile::build_model_info() {
     }
 #pragma endregion Armor
 
-    //CalculateHints again!!
-
+    updateHints(viewDensityCoef);
 
 #pragma region ClassDamageFreqProps
 
@@ -2364,10 +2431,22 @@ void P3DFile::build_model_info() {
 #pragma endregion ClassDamageFreqProps
 
 
-    //#TODO load skeleton
-    //#TODO load animations
+
 
     model_info.skeleton = std::make_unique<skeleton_>();
+
+
+    //#TODO set animation enabled thingy to false
+    if (auto success = model_info.skeleton->read(modelConfig, logger); success > 0) {
+        logger.error(modelConfig.getSourcePath().string(), 0, "Failed to read model config.\n");
+        //return success; 
+        //#TODO throw
+    }
+
+    //animations are loaded inside skeleton read
+
+
+
 
 
     //This seems to be old thingy? new uses buoyancy property below
@@ -2450,6 +2529,112 @@ void P3DFile::build_model_info() {
 
 }
 
+void P3DFile::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution) {
+
+    //Customize Shape (shape.cpp 8468)
+        //detect empty lods if non-first and res>900.f
+
+
+    if (resolution < 900.f && lod.num_points == 0 && lodIndex != 0) {
+        //#TODO warning empty lod detected, get name of LOD and name of model
+    }
+
+    //Delete back faces?
+
+
+
+    //Build sections based on model.cfg
+
+    if (modelConfig.isLoaded()) {
+
+        // Read sections
+        auto sectionsInherit = modelConfig.getModelConfig()->getString({ "sectionsInherit" });
+        if (!sectionsInherit) {
+            logger.error("Failed to read sections.\n");
+            //return -1;
+            //#TODO throw exception
+        }
+        else
+
+            if (sectionsInherit->length() > 0) {
+                auto sectionsRd = modelConfig.getConfig()->getArrayOfStrings({ "CfgModels", *sectionsInherit, "sections" });
+                if (!sectionsRd) { //#TODO differentiate between empty and not found
+                    logger.error("Failed to read sections.\n");
+                    //return -1;
+                    //#TODO throw exception
+                }
+                else
+                    for (auto&& it : *sectionsRd)
+                        if (!it.empty())
+                            model_info.skeleton->sections.emplace_back(it); //#TODO move sections into modelinfo
+            }
+
+        auto sectionsRd = modelConfig.getModelConfig()->getArrayOfStrings({ "sections" });
+        if (!sectionsRd) {
+            logger.error("Failed to read sections.\n");
+            //return -1;
+            //#TODO throw exception
+        }
+        else
+
+            for (auto&& it : *sectionsRd)
+                if (!it.empty())
+                    model_info.skeleton->sections.emplace_back(it);
+
+        model_info.skeleton->num_sections = model_info.skeleton->sections.size();
+    }
+
+    //scan for proxies
+    for (auto& it : lod.selections) {
+        if (std::string_view(it.name).substr(0,6) == "proxy:") {
+            
+            if (it.points.size() != 3) {
+                //#TODO error bad proxy object, not correct amount of verticies on proxy, also log proxy name
+                continue;
+            }
+            if (it.faces.size() != 1) {
+                //#TODO error Proxy object should be single face, also log proxy name
+                if (it.faces.empty()) continue;
+            }
+            for (auto& it : it.faces) {
+                auto& face = lod.faces[it];
+                face.face_flags |= FLAG_ISHIDDENPROXY;
+                face.face_flags &= ~IsHidden; //Can't be hidden
+            }
+        }
+    }
+
+
+    //shape.cpp 7927
+    I stopped here
+
+
+
+
+
+
+    //If shadow volume do extra stuff shape.cpp L7928
+    // If shadow buffer, set everything (apart of base texture if not opaque) to predefined values
+    //Create subskeleton
+    //rescan sections
+    //update material if shadowVOlume
+    //GenerateSTArray?
+    //Warning: %s:%s: 2nd UV set needed, but not defined
+    // Clear the point and vertex conversion arrays
+
+
+    //Look at TODO "this should go into finishLOD" and move that here
+    // scan selections for proxy objects
+
+
+    //optimize if no selections?
+    //if (geometryOnly&GONoUV)
+
+
+
+
+}
+
 int P3DFile::read_lods(std::istream &source, uint32_t num_lods) {
     /*
      * Reads all LODs (starting at the current position of f_source) into
@@ -2470,59 +2655,65 @@ int P3DFile::read_lods(std::istream &source, uint32_t num_lods) {
 
     source.seekg(12);
 
+
+    std::vector<float> masstempPhysx;
     for (uint32_t i = 0; i < num_lods; i++) {
         source.read(buffer, 4);
         if (strncmp(buffer, "P3DM", 4) != 0) //#TODO move into lod load
             return 0;
 
+
+        std::vector<float> masstemp;
         mlod_lod newLod;
 
-        if (!newLod.read(source, logger)) return 0;
+        if (!newLod.read(source, logger, masstemp)) return 0;
 
         //#TODO ResolGeometryOnly on resolution
         //We might want to remove normals (set them all to 0,1,0)
         //or UV's (set them all to 0 in the faces)
 
+        if (!masstemp.empty()) {
+            if (newLod.resolution == LOD_PHYSX) {
+                masstempPhysx = std::move(masstemp);
+            } else {
+                massArray = std::move(masstemp);
+            }
+        }
 
-
-
-
+        if ((newLod.resolution > LOD_SHADOW_STENCIL_START && newLod.resolution < LOD_SHADOW_STENCIL_END) ||
+            newLod.resolution == LOD_SHADOW_VOLUME_VIEW_CARGO ||
+            newLod.resolution == LOD_SHADOW_VOLUME_VIEW_PILOT ||
+            newLod.resolution == LOD_SHADOW_VOLUME_VIEW_GUNNER
+            ) { //Check if shadow volume
+            shadowVolumes.emplace_back(newLod); //copy it.
+            shadowVolumesResolutions.emplace_back(newLod.resolution);
+            
+        }
         //If lod is shadow volume, copy it into an array with shadow volume lods
         //Also keep an array of sahdow volume resolitoons "shapeSVResol"
 
         //AddShape? Yeah. The ScanShapes thing inside there.
         mlod_lods.emplace_back(std::move(newLod));
 
-        BuildSpecialLodList();
-        scanProjectedShadow();
+        shapeListUpdated();
+
+        finishLOD(mlod_lods.back(), i, newLod.resolution);
 
 
-        //Customize Shape (shape.cpp 8468)
-            //detect empty lods if non-first and res>900.f
-            //Delete back faces?
-            //Build sections based on model.cfg
-            //scan for proxies
-            //If shadow volume do extra stuff shape.cpp L7928
-            // If shadow buffer, set everything (apart of base texture if not opaque) to predefined values
-            //Create subskeleton
-            //rescan sections
-            //update material if shadowVOlume
-            //GenerateSTArray?
-            //Warning: %s:%s: 2nd UV set needed, but not defined
-            // Clear the point and vertex conversion arrays
-            // scan selections for proxy objects
-            //optimize if no selections?
-            //if (geometryOnly&GONoUV)
 
         //Tree crown needed
         //int ShapePropertiesNeeded(const TexMaterial *mat) ? set _shapePropertiesNeeded based on surface material
 
         //Blending required
 
-
-
         
     }
+
+    //Only use physx lod mass if geo is 0 mass
+    auto totalMass = std::accumulate(massArray.begin(), massArray.end(), 0.f);
+    if (totalMass == 0.f && !masstempPhysx.empty())
+        massArray = std::move(masstempPhysx);
+
 
     return mlod_lods.size();
 }
@@ -2542,7 +2733,8 @@ void P3DFile::getBoundingBox(vector3 &bbox_min, vector3 &bbox_max, bool visual_o
         if ((lod.resolution != LOD_GEOMETRY) && geometry_only)
             continue;
 
-        for (auto&[x, y, z, flags] : lod.points) {
+        for (auto&[pos, flags] : lod.points) {
+            auto&[x, y, z] = pos;
             if (first || x < bbox_min.x)
                 bbox_min.x = x;
             if (first || x > bbox_max.x)
@@ -2627,6 +2819,26 @@ int P3DFile::readMLOD(std::filesystem::path sourceFile) {
 
     current_target = sourceFile.string();
 
+    if (auto success = modelConfig.load(sourceFile, logger); success != 0) {
+        logger.error(sourceFile.string(), 0, "Failed to read model config.\n");
+        return success;
+    }
+
+    //default values are 0
+
+    // Read thermal stuff
+    if (modelConfig.isLoaded()) {
+        if (modelConfig.getConfig()->hasEntry({ "htMin" })) model_info.ht_min = *modelConfig.getConfig()->getFloat({ "htMin" });
+        if (modelConfig.getConfig()->hasEntry({ "htMax" })) model_info.ht_max = *modelConfig.getConfig()->getFloat({ "htMax" });
+        if (modelConfig.getConfig()->hasEntry({ "afMax" })) model_info.af_max = *modelConfig.getConfig()->getFloat({ "afMax" });
+        if (modelConfig.getConfig()->hasEntry({ "mfMax" })) model_info.mf_max = *modelConfig.getConfig()->getFloat({ "mfMax" });
+        if (modelConfig.getConfig()->hasEntry({ "mfAct" })) model_info.mf_act = *modelConfig.getConfig()->getFloat({ "mfAct" });
+        if (modelConfig.getConfig()->hasEntry({ "tBody" })) model_info.t_body = *modelConfig.getConfig()->getFloat({ "tBody" });
+    }
+
+
+
+
     char typeBuffer[5];
     input.read(typeBuffer, 5);
 
@@ -2637,7 +2849,6 @@ int P3DFile::readMLOD(std::filesystem::path sourceFile) {
     }
 
     input.seekg(8);
-
     input.read(reinterpret_cast<char*>(&num_lods), 4);
 
     num_lods = read_lods(input, num_lods);
@@ -2648,14 +2859,15 @@ int P3DFile::readMLOD(std::filesystem::path sourceFile) {
 
     // Write model info
     build_model_info();
-    auto success = model_info.skeleton->read(sourceFile, logger);
+    //#TODO catch throw from skeleton config read
 
 
 
-    if (success > 0) {
-        logger.error(sourceFile.string(), 0, "Failed to read model config.\n");
-        return success;
-    }
+
+
+
+
+
     return 0;
 }
 
@@ -2689,7 +2901,7 @@ int P3DFile::writeODOL(std::filesystem::path targetFile) {
     model_info.writeTo(output);
 
     // Write animations
-    if (model_info.skeleton->num_animations > 0) {
+    if (model_info.skeleton && model_info.skeleton->num_animations > 0) {
         output.put(1); //bool hasAnims
         write_animations(output);
     } else {

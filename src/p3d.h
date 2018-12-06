@@ -148,7 +148,8 @@ class mlod_lod {
 public:
 
     float getBoundingSphere(const vector3& center);
-    bool read(std::istream& source, Logger& logger);
+
+    bool read(std::istream& source, Logger& logger, std::vector<float> &mass);
     uint32_t getAndHints();
     uint32_t getOrHints();
     uint32_t getSpecialFlags();
@@ -166,13 +167,18 @@ public:
     std::vector<point> points;
     std::vector<vector3> facenormals;
     std::vector<mlod_face> faces;
-    std::vector<float> mass;
     std::vector<uint32_t> sharp_edges;
     std::vector<property> properties;
     ComparableFloat<std::milli> resolution; //Yet milli is correct. That's what Arma uses
 
     uint32_t num_selections;
     std::vector<mlod_selection> selections;
+
+
+
+
+    void updateBoundingBox();
+
     vector3 min_pos;
     vector3 max_pos;
     vector3 autocenter_pos;
@@ -561,7 +567,7 @@ struct model_info {
     void writeTo(std::ostream& output);
 
     std::vector<float> lod_resolutions;
-    uint32_t index; //#TODO rename special flags
+    uint32_t specialFlags; //#TODO rename special flags
     float bounding_sphere;
     float geo_lod_sphere;
 
@@ -621,12 +627,17 @@ struct model_info {
 
 
 
-    std::vector<uint32_t> preferredShadowVolumeLod;
-    std::vector<uint32_t> preferredShadowBufferLod;
-    std::vector<uint32_t> preferredShadowBufferVisibleLod;
+    std::vector<NullableIntegral<int32_t,-1>> preferredShadowVolumeLod;
+    std::vector<NullableIntegral<int32_t,-1>> preferredShadowBufferLod;
+    std::vector<NullableIntegral<int32_t,-1>> preferredShadowBufferVisibleLod;
 
 
-
+    float ht_min{ 0 };
+    float ht_max{ 0 };
+    float af_max{ 0 };
+    float mf_max{ 0 };
+    float mf_act{ 0 };
+    float t_body{ 0 };
 
 };
 
@@ -638,7 +649,9 @@ class Buoyant;
 class MultiLODShape {
 public:
 
+    ModelConfig modelConfig;
 
+    std::vector<float> massArray;
 
     uint32_t num_lods;
     std::vector<mlod_lod> mlod_lods;
@@ -647,6 +660,12 @@ public:
 
     //Get's property from GEO or LOD0
     std::optional<std::string> getPropertyGeo(std::string_view propName);
+    void updateHints(float viewDensityCoef);
+
+
+
+    std::vector<mlod_lod> shadowVolumes;
+    std::vector<ComparableFloat<std::milli>> shadowVolumesResolutions;
 
 
 
@@ -1247,12 +1266,14 @@ class P3DFile : public MultiLODShape { //#TODO move that inherit out of here
     
     Logger& logger;
 
+    void finishLOD(mlod_lod& mlodLod_, uint32_t uint32_, float resolution_);
     int read_lods(std::istream &f_source, uint32_t num_lods);
     //#TODO return the boxes with a pair
     void getBoundingBox(vector3 &bbox_min, vector3 &bbox_max, bool visual_only, bool geometry_only);
 
     void get_mass_data();
     void optimizeLODS();
+    void updateBounds();
     void build_model_info();
 
     void write_animations(std::ostream& output);

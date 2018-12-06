@@ -81,10 +81,43 @@ struct animation {
     float unhide_value;
 };
 
+class ConfigClass;
+class ModelConfig {
+
+    std::optional<Config> cfg;
+    std::shared_ptr<ConfigClass> modelConfig;
+    std::string modelName;
+    std::filesystem::path sourcePath;
+public:
+    int load(std::filesystem::path source, Logger& logger);
+
+
+    const std::filesystem::path& getSourcePath() const noexcept {
+        return sourcePath;
+    }
+    bool isLoaded() const noexcept {
+        return cfg.has_value();
+    }
+    auto getConfig() const {
+        return cfg->getConfig();
+    }
+    std::shared_ptr<ConfigClass> getModelConfig() const {
+        return modelConfig;
+    }
+    auto getCfgSkeletons() const {
+        return cfg->getConfig()->getClass({ "CfgSkeletons" });
+    }
+    auto getCfgModels() const {
+        return cfg->getConfig()->getClass({ "CfgModels" });
+    }
+
+};
+
+
 struct skeleton_ { //using std::vector and std::string reduced the size of this from 4,3MB to 192B
 
     void writeTo(std::ostream& output);
-    int read(std::filesystem::path source, Logger& logger);
+    int read(const ModelConfig& source, Logger& logger);
 
 
 
@@ -96,10 +129,6 @@ struct skeleton_ { //using std::vector and std::string reduced the size of this 
     uint32_t num_animations{ 0 };
     std::vector<animation> animations;
     bool is_discrete { false };
-    float ht_min { 0 };
-    float ht_max { 0 };
-    float af_max { 0 };
-    float mf_max { 0 };
-    float mf_act { 0 };
-    float t_body { 0 };
 };
+
+
