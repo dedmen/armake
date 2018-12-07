@@ -97,6 +97,12 @@ struct uv_pair {
     float v;
 };
 
+
+struct uv_paircompact {
+    short u;
+    short v;
+};
+
 struct property {
     std::string name;
     std::string value;
@@ -264,7 +270,7 @@ public:
 
     uint32_t add_point(
         vector3 point, vector3 normal, const uv_pair &uv_coords_input,
-        uint32_t point_index_mlod);
+        uint32_t point_index_mlod, const uv_pair& inverseScalingUV);
 
 
 
@@ -276,14 +282,17 @@ public:
     uint32_t special;
 
     uint32_t num_points;
-    uint32_t num_facenormals;
     uint32_t num_faces;
     uint32_t num_sharp_edges;
     std::vector<vector3> points;
 
     //#TODO ^ points seems wrong. Shouldn't be here. Should just be vector of vec3 without flags
     std::vector<vector3> normals;
-    std::vector<struct uv_pair> uv_coords;
+
+    uv_pair minUV;
+    uv_pair maxUV;
+
+    std::vector<uv_paircompact> uv_coords;
 
     class PolygonInfo { //Special data about a polygon
     public:

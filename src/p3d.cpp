@@ -110,7 +110,7 @@ float mlod_lod::getBoundingSphere(const vector3& center) {
     __itt_task_begin(p3dDomain, __itt_null, __itt_null, handle_bs2);
 
     for (auto i = 0u; i < num_points; i++) {
-        auto dist = (points[i].pos - center).magnitude_squared();
+        auto dist = (points[i] - center).magnitude_squared();
         if (dist > sphere)
             sphere = dist;
     }
@@ -124,26 +124,29 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
     //4 byte int header size
     //4 byte int version
     source.seekg(8, std::istream::cur);
-    source.read(reinterpret_cast<char*>(&num_points), 4);
-    source.read(reinterpret_cast<char*>(&num_facenormals), 4);
+
+    uint32_t numPointsTemp, numNormalsTemp;
+
+    source.read(reinterpret_cast<char*>(&numPointsTemp), 4);
+    source.read(reinterpret_cast<char*>(&numNormalsTemp), 4);
     source.read(reinterpret_cast<char*>(&num_faces), 4);
     //4 byte int flags
     source.seekg(4, std::istream::cur);
 
 
     std::vector<bool> hiddenPoints;
-    hiddenPoints.resize(num_points);
+    hiddenPoints.resize(numPointsTemp);
     std::vector<point> tempPoints;
 
-    bool empty = num_points == 0;
+    bool empty = numPointsTemp == 0;
 #pragma region Basic Geometry
     if (empty) {
-        num_points = 1;
+        numPointsTemp = 1;
         tempPoints.resize(1);
         tempPoints[0].point_flags = 0;
     } else {
-        tempPoints.resize(num_points);
-        for (int j = 0; j < num_points; j++) {
+        tempPoints.resize(numPointsTemp);
+        for (int j = 0; j < numPointsTemp; j++) {
             source.read(reinterpret_cast<char*>(&tempPoints[j]), sizeof(struct point));
             //report invalid point flags? not really needed.
 
@@ -160,9 +163,9 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
 
 
     std::vector<vector3> normalsTemp;
-    normalsTemp.resize(num_facenormals); //#TODO remove num_facenormals from header
+    normalsTemp.resize(numNormalsTemp); //#TODO remove num_facenormals from header
     //#TODO read all in one go
-    for (int j = 0; j < num_facenormals; j++) {
+    for (int j = 0; j < numNormalsTemp; j++) {
         source.read(reinterpret_cast<char*>(&normalsTemp[j]), sizeof(vector3)); //#TODO if Geometry lod and NoNormals (geoOnly parameter), set them all to 0
     }
 
@@ -180,8 +183,7 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
         //4b face type
         //4x pseudovertex
         source.read(reinterpret_cast<char*>(&loadingFaces[j]), 72);
-        //#TODO seperate face properties array
-        //texture, material, special
+
         size_t fp_tmp = source.tellg();
         std::string textureName;
         std::string materialName;
@@ -242,6 +244,31 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
 
 
 #pragma endregion FacesAndTexturesAndMaterials
+
+    minUV = uv_pair{ std::numeric_limits<float>::max(),std::numeric_limits<float>::max() };
+    maxUV = uv_pair{std::numeric_limits<float>::min(),std::numeric_limits<float>::min() };
+
+    for (auto& it : loadingFaces) {
+        for (int i = 0; i < it.face_type; ++i) {
+            auto& u = it.table[i].u;
+            auto& v = it.table[i].u;
+
+            maxUV.u = std::max(maxUV.u, u);
+            maxUV.v = std::max(maxUV.v, v);
+            minUV.u = std::min(minUV.u, u);
+            minUV.v = std::min(minUV.v, v);
+        }
+    }
+    uv_pair inverseScalingUV{
+        1/maxUV.u-minUV.u,
+        1/maxUV.v-minUV.v
+        };
+
+
+
+
+
+
 
 
     //2nd pass over faces, find min and maxUV
@@ -305,7 +332,7 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
 
 
             //#TODO uv coord compression!!!
-            auto newVert = add_point(tempPoints[faceP].pos, norm, { faceU,faceV }, faceP);
+            auto newVert = add_point(tempPoints[faceP].pos, norm, { faceU,faceV }, faceP, inverseScalingUV);
 
             newPoly.points[i] = newVert;
             vertex_to_point[newVert] = faceP;
@@ -669,9 +696,13 @@ void mlod_lod::buildSections() {
 
 }
 
-uint32_t mlod_lod::add_point(vector3 point, vector3 normal, const uv_pair& uv_coords_input, uint32_t point_index_mlod) {
+uint32_t mlod_lod::add_point(vector3 point, vector3 normal, const uv_pair& uv_coords_input, uint32_t point_index_mlod, const uv_pair& inverseScalingUV) {
 
-
+    float u_relative = (uv_coords_input.u - minUV.u) * inverseScalingUV.u;
+    float v_relative = (uv_coords_input.v - minUV.v) * inverseScalingUV.v;
+    __debugbreak(); //Check if this is correct. vertex.cpp 355
+    short u = (short)(u_relative * (INT16_MAX + INT16_MAX) + INT16_MAX);
+    short v = (short)(v_relative * (INT16_MAX + INT16_MAX) + INT16_MAX);
     // Check if there already is a vertex that satisfies the requirements
     for (uint32_t i = 0; i < num_points; i++) { //#TODO make vertex_to_point a unordered_map?
         if (vertex_to_point[i] != point_index_mlod)
@@ -682,24 +713,30 @@ uint32_t mlod_lod::add_point(vector3 point, vector3 normal, const uv_pair& uv_co
 
         // normals and uvs don't matter for non-visual lods
         if (resolution < LOD_GEOMETRY) { //#TODO use pos distance check
-            if (!float_equal(normals[i].x, normal.x, 0.0001) ||
-                !float_equal(normals[i].y, normal.y, 0.0001) ||
-                !float_equal(normals[i].z, normal.z, 0.0001))
+            if (normals[i].distance_squared(normal) > 0.0001*0.0001)
                 continue;
 
-            if (!float_equal(uv_coords[i].u, uv_coords_input.u, 0.0001) ||
-                !float_equal(uv_coords[i].v, uv_coords_input.v, 0.0001))
+            if (uv_coords[i].u != u ||
+                uv_coords[i].v != v)
                 continue;
         }
 
         return i; //vertex already exists, don't create new one
     }
 
+
+
+
+
+
+
+
+
+
     // Add vertex
     points[num_points] = std::move(point);
     normals[num_points] = normal;
-    uv_coords[num_points].u = uv_coords_input.u; //#TODO uv coords assignment operator
-    uv_coords[num_points].v = uv_coords_input.v;
+    uv_coords[num_points] = {u,v};
 
 
     //No idea what this was supposed to be
@@ -775,8 +812,7 @@ void mlod_lod::updateBoundingBox() {
 
     bool first = true;
 
-    for (auto&[pos, flags] : points) {
-        auto&[x, y, z] = pos;
+    for (auto& [x, y, z] : points) {
         if (first || x < min_pos.x)
             min_pos.x = x;
         if (first || x > max_pos.x)
@@ -2581,8 +2617,8 @@ void P3DFile::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution) {
         if (j < model_info.skeleton->num_sections) {
             for (int k = 0; k < lod.num_faces; k++) {
                 if (lod.selections[i].faces[k] > 0) {
-                    lod.faces[k].section_names += ":";
-                    lod.faces[k].section_names += lod.selections[i].name;
+                    lod.faceInfo[k].section_names += ":";
+                    lod.faceInfo[k].section_names += lod.selections[i].name;
                 }
             }
         }
@@ -2608,9 +2644,9 @@ void P3DFile::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution) {
                 if (selection.faces.empty()) continue;
             }
             for (auto& it : selection.faces) {
-                auto& face = lod.faces[it];
-                face.face_flags |= FLAG_ISHIDDENPROXY;
-                face.face_flags &= ~IsHidden; //Can't be hidden
+                auto& face = lod.faceInfo[it];
+                face.specialFlags |= FLAG_ISHIDDENPROXY;
+                face.specialFlags &= ~IsHidden; //Can't be hidden
             }
         }
     }
@@ -2671,9 +2707,9 @@ void P3DFile::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution) {
         lod.materials.emplace_back(std::move(shadowMaterial));
 
         //#TODO this should run on sections
-        for (auto& it : lod.faces) {
-            it.material_index = shadowMatOffs;
-            it.texture_index = -1;
+        for (auto& it : lod.faceInfo) {
+            it.materialIndex = shadowMatOffs;
+            it.textureIndex = -1;
         }
 
         //#TODO make a global shadow material and set this here
