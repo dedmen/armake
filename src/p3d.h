@@ -116,7 +116,7 @@ struct mlod_face {
     //std::string texture_name;
     int texture_index { -1 }; //#TODO create "optional" unsigned int type. Where the "value not set" indicator is just all bits on 1
     //std::string material_name;
-    int material_index { -1 };
+    int material_index { -1 }; //#TODO nullableintegral
     std::string section_names;
     bool operator<(const mlod_face& other) {
         uint32_t compare;
@@ -138,81 +138,26 @@ struct mlod_face {
 
 };
 
-struct mlod_selection {
-    std::string name;
-    std::vector<uint8_t> points;
-    std::vector<uint8_t> faces;
-};
-
-class mlod_lod {
-public:
-
-    float getBoundingSphere(const vector3& center);
-
-    bool read(std::istream& source, Logger& logger, std::vector<float> &mass);
-    uint32_t getAndHints();
-    uint32_t getOrHints();
-    uint32_t getSpecialFlags();
-
-
-
-    uint32_t orHints;
-    uint32_t andHints;
-    uint32_t special;
-
-    uint32_t num_points;
-    uint32_t num_facenormals;
-    uint32_t num_faces;
-    uint32_t num_sharp_edges;
-    std::vector<point> points;
-    std::vector<vector3> facenormals;
-    std::vector<mlod_face> faces;
-    std::vector<uint32_t> sharp_edges;
-    std::vector<property> properties;
-    ComparableFloat<std::milli> resolution; //Yet milli is correct. That's what Arma uses
-
-    uint32_t num_selections;
-    std::vector<mlod_selection> selections;
-
-
-
-
-    void updateBoundingBox();
-
-    vector3 min_pos;
-    vector3 max_pos;
-    vector3 autocenter_pos;
-    float boundingSphere;
-
-    std::optional<std::string> getProperty(std::string_view propName) const;
-
-
-
-    std::vector<std::string> textures;
-    std::vector<Material> materials;
-
-
-};
 
 struct odol_face {
     uint8_t face_type;
-    uint32_t table[4];
+    std::array<uint32_t, 4> points;
 
 
 
     float getArea(const std::vector<point>& pointPos) {
 
-        vector3& p1 = pointPos[table[0]].getPosition();
-        vector3& p2 = pointPos[table[1]].getPosition();
-        vector3& p3 = pointPos[table[2]].getPosition();
+        const vector3& p1 = pointPos[points[0]].pos;
+        const vector3& p2 = pointPos[points[1]].pos;
+        const vector3& p3 = pointPos[points[2]].pos;
 
 
         float area = ((p2 - p1).cross(p3 - p1)).magnitude();
 
         if (face_type == 4) {
-            vector3& p1 = pointPos[table[0]].getPosition();
-            vector3& p2 = pointPos[table[2]].getPosition();
-            vector3& p3 = pointPos[table[3]].getPosition();
+            const vector3& p1 = pointPos[points[0]].pos;
+            const vector3& p2 = pointPos[points[2]].pos;
+            const vector3& p3 = pointPos[points[3]].pos;
 
 
             area += ((p2 - p1).cross(p3 - p1)).magnitude();
@@ -264,16 +209,29 @@ struct odol_selection {
     void writeTo(std::ostream& output);
 
     std::string name;
+
+    class selectionVertex {
+    public:
+        uint32_t vertexIndex;
+        uint8_t weight;
+    };
+
+    void init(std::vector<selectionVertex> verts);
+
     uint32_t num_faces;
     std::vector<uint32_t> faces;
     uint32_t always_0;
     bool is_sectional;
     uint32_t num_sections;
     std::vector<uint32_t> sections;
+
     uint32_t num_vertices;
     std::vector<uint32_t> vertices;
-    uint32_t num_vertex_weights;
-    std::vector<uint8_t> vertex_weights;
+
+    uint32_t num_weights;
+    std::vector<uint8_t> weights;
+
+
 };
 
 struct odol_frame {
@@ -284,15 +242,105 @@ struct odol_vertexboneref {
     uint8_t weights[4][2];
 };
 
+
+
+
+struct mlod_selection {
+    std::string name;
+    std::vector<uint8_t> points;
+    std::vector<uint8_t> faces;
+};
+
+class mlod_lod {
+public:
+
+    float getBoundingSphere(const vector3& center);
+
+    bool read(std::istream& source, Logger& logger, std::vector<float> &mass);
+    uint32_t getAndHints();
+    uint32_t getOrHints();
+    uint32_t getSpecialFlags();
+    void buildSections();
+
+    uint32_t add_point(
+        vector3 point, vector3 normal, const uv_pair &uv_coords_input,
+        uint32_t point_index_mlod);
+
+
+
+
+
+
+    uint32_t orHints;
+    uint32_t andHints;
+    uint32_t special;
+
+    uint32_t num_points;
+    uint32_t num_facenormals;
+    uint32_t num_faces;
+    uint32_t num_sharp_edges;
+    std::vector<vector3> points;
+
+    //#TODO ^ points seems wrong. Shouldn't be here. Should just be vector of vec3 without flags
+    std::vector<vector3> normals;
+    std::vector<struct uv_pair> uv_coords;
+
+    class PolygonInfo { //Special data about a polygon
+    public:
+        int textureIndex;
+        int materialIndex;
+        int specialFlags;
+        float areaOverTex[2];
+        int order; //#TODO?
+    };
+
+    std::vector<odol_face> faces;
+    std::vector<PolygonInfo> faceInfo;
+    std::vector<uint32_t> sharp_edges;
+    std::vector<property> properties;
+    ComparableFloat<std::milli> resolution; //Yet milli is correct. That's what Arma uses
+
+    uint32_t num_selections;
+    std::vector<odol_selection> selections;
+
+
+
+
+    void updateBoundingBox();
+
+    vector3 min_pos;
+    vector3 max_pos;
+    vector3 autocenter_pos;
+    float boundingSphere;
+
+    std::optional<std::string> getProperty(std::string_view propName) const;
+
+
+
+    std::vector<std::string> textures;
+    std::vector<Material> materials;
+
+
+    uint32_t num_sections;
+    std::vector<struct odol_section> sections;
+
+
+
+    uint32_t num_proxies;
+    std::vector<odol_proxy> proxies;
+
+    std::vector<uint32_t> point_to_vertex;
+    std::vector<uint32_t> vertex_to_point;
+};
+
 class odol_lod {
 public:
 
     uint32_t add_point(const mlod_lod &mlod_lod, const model_info &model_info,
         uint32_t point_index_mlod, vector3 normal, struct uv_pair *uv_coords, Logger& logger);
+
     void writeTo(std::ostream& output);
 
-    uint32_t num_proxies;
-    std::vector<odol_proxy> proxies;
     uint32_t num_bones_subskeleton;
     std::vector<uint32_t> subskeleton_to_skeleton;
     uint32_t num_bones_skeleton;
@@ -311,13 +359,12 @@ public:
     std::vector<Material> materials;
     std::vector<uint32_t> point_to_vertex;
     std::vector<uint32_t> vertex_to_point;
-    std::vector<uint32_t> face_lookup;
+
     uint32_t num_faces;
     uint32_t face_allocation_size;
     uint16_t always_0;
     std::vector<struct odol_face> faces;
-    uint32_t num_sections;
-    std::vector<struct odol_section> sections;
+
     uint32_t num_selections;
     std::vector<struct odol_selection> selections;
     uint32_t num_properties;
@@ -747,16 +794,16 @@ public:
 
             if (mface.face_type >= 3) {
                 vol += stuff(
-                    ld->points[mface.table[0].points_index].getPosition(),
-                    ld->points[mface.table[1].points_index].getPosition(),
-                    ld->points[mface.table[2].points_index].getPosition()
+                    ld->points[mface.table[0].points_index].pos,
+                    ld->points[mface.table[1].points_index].pos,
+                    ld->points[mface.table[2].points_index].pos
                     );
             }
             if (mface.face_type == 4) {
                 vol += stuff(
-                    ld->points[mface.table[0].points_index].getPosition(),
-                    ld->points[mface.table[2].points_index].getPosition(),
-                    ld->points[mface.table[3].points_index].getPosition()
+                    ld->points[mface.table[0].points_index].pos,
+                    ld->points[mface.table[2].points_index].pos,
+                    ld->points[mface.table[3].points_index].pos
                     );
             }
 
@@ -857,12 +904,12 @@ public:
         vector3 pPos(0, pos.y, pos.z);
         auto lastVertID = f.table[f.face_type - 1];
 
-        vector3 lPos = v.points[lastVertID].getPosition();
+        vector3 lPos = v.points[lastVertID].pos;
         bool andIn = true;
         bool orIn = false;
         for (int i = 0; i < f.face_type; i++)
         {
-            vector3 aPos = v.points[f.table[i]].getPosition();
+            vector3 aPos = v.points[f.table[i]].pos;
 
             vector3 lineNormal(0, lPos.z - aPos.z, aPos.y - lPos.y);
             vector3 aPPos(0, aPos.y, aPos.z);
@@ -881,12 +928,12 @@ public:
         vector3 pPos(pos.x, 0, pos.z);
         auto lastVertID = f.table[f.face_type - 1];
 
-        vector3 lPos = v.points[lastVertID].getPosition();
+        vector3 lPos = v.points[lastVertID].pos;
         bool andIn = true;
         bool orIn = false;
         for (int i = 0; i < f.face_type; i++)
         {
-            vector3 aPos = v.points[f.table[i]].getPosition();
+            vector3 aPos = v.points[f.table[i]].pos;
 
             vector3 lineNormal(lPos.z - aPos.z, 0, aPos.x - lPos.x);
             vector3 aPPos(aPos.x, 0, aPos.z);
@@ -905,12 +952,12 @@ public:
         vector3 pPos(pos.x, pos.y, 0);
         auto lastVertID = f.table[f.face_type - 1];
 
-        vector3 lPos = v.points[lastVertID].getPosition();
+        vector3 lPos = v.points[lastVertID].pos;
         bool andIn = true;
         bool orIn = false;
         for (int i = 0; i < f.face_type; i++)
         {
-            vector3 aPos = v.points[f.table[i]].getPosition();
+            vector3 aPos = v.points[f.table[i]].pos;
 
             vector3 lineNormal(aPos.y - lPos.y, lPos.x - aPos.x, 0);
             vector3 aPPos(aPos.x, aPos.y, 0);
@@ -937,7 +984,7 @@ public:
                 float mCoordZ = z * stepRayZ + mMin.z + stepRayZ * 0.5; // ray Z coord
 
                 vector3 rayX(0, mCoordY, mCoordZ);
-                bool isInside = FALSE;
+                bool isInside = false;
 
                 //for each faces
                 for (auto& mface : shape.faces) {
@@ -949,7 +996,7 @@ public:
                     face.table[3] = mface.table[3].points_index;
 
                     if (insideX(face, shape, rayX)) {
-                        isInside = TRUE;
+                        isInside = true;
                         break;
                     }
                 }
@@ -975,7 +1022,7 @@ public:
                 float mCoordZ = z * stepRayZ + mMin.z + stepRayZ * 0.5; // ray Z coord
 
                 vector3 rayY(mCoordX, 0, mCoordZ);
-                bool isInside = FALSE;
+                bool isInside = false;
 
                 for (auto& mface : shape.faces) {
                     odol_face face;
@@ -986,7 +1033,7 @@ public:
                     face.table[3] = mface.table[3].points_index;
 
                     if (insideY(face, shape, rayY)) {
-                        isInside = TRUE;
+                        isInside = true;
                         break;
                     }
                 }
@@ -1012,7 +1059,7 @@ public:
                 float mCoordY = y * stepRayY + mMin.y + stepRayY * 0.5; // ray Z coord
 
                 vector3 rayY(mCoordX, mCoordY, 0);
-                bool isInside = FALSE;
+                bool isInside = false;
 
                 for (auto& mface : shape.faces) {
                     odol_face face;
@@ -1023,7 +1070,7 @@ public:
                     face.table[3] = mface.table[3].points_index;
 
                     if (insideZ(face, shape, rayY)) {
-                        isInside = TRUE;
+                        isInside = true;
                         break;
                     }
                 }

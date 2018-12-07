@@ -35,7 +35,7 @@
 #include "matrix.h"
 #include "material.h"
 
-
+//#TODO make these enums and use in p3d.cpp finishLod on shadowMaterial
 static constexpr std::array<shader_ref, 153> pixelshaders{
     shader_ref{ 0, "Normal" },
     { 1, "NormalDXTA" },

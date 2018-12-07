@@ -27,6 +27,7 @@
 #include <string>
 #include <vector>
 #include "logger.h"
+#include "rapify.h" //#TODO move config class out of rapify?
 
 struct bone {
     bone(std::string n, std::string p) : name(std::move(n)), parent(std::move(p)) {}

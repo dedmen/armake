@@ -106,6 +106,7 @@ public:
     ComparableFloat(const float& other) : value(other) {}
     ComparableFloat& operator=(float newVal) {
         value = newVal;
+        return *this;
     }
     operator float() const {
         return value;

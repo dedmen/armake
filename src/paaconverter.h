@@ -20,22 +20,37 @@
 
 class Logger;
 
+enum class PAAType : uint16_t {
+    default,
+    DXT1 = 0xFF01,
+    DXT3 = 0xFF03,
+    DXT5 = 0xFF05,
+    ARGB4444 = 0x4444,
+    ARGB1555 = 0x1555,
+    AI88 = 0x8080,
+    invalid
+};
+
+class PAAFile {
+public:
+    ///input has to be opened with binary flag
+    void readHeaders(std::istream& input);
+    bool isAlpha;
+    bool isTransparent;
+    uint16_t width;
+    uint16_t height;
+    PAAType type;
+    uint32_t avgColor{ 0 }; //#TODO packed color type
+    uint32_t maxColor{ 0 };
+};
+
+
 class PAAConverter{
     static void img2dxt1(unsigned char *input, unsigned char *output, int width, int height);
     static void img2dxt5(unsigned char *input, unsigned char *output, int width, int height);
     static void dxt12img(unsigned char *input, unsigned char *output, int width, int height);
     static void dxt52img(unsigned char *input, unsigned char *output, int width, int height);
 public:
-    enum class PAAType {
-        default,
-        DXT1 = 0xFF01,
-        DXT3 = 0xFF03,
-        DXT5 = 0xFF05,
-        ARGB4444 = 0x4444,
-        ARGB1555 = 0x1555,
-        AI88 = 0x8080,
-        invalid
-    };
 
     static constexpr PAAType typeFromString(std::string_view str) {
         if (str.empty())

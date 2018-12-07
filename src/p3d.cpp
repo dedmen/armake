@@ -33,7 +33,6 @@
 #include <numeric>
 #include <fstream>
 #include <unordered_set>
-#include "rapify.h"
 
 
 template <typename Type>
@@ -47,6 +46,42 @@ public:
 };
 
 
+
+int compare_face_lookup(std::vector<mlod_face> &faces, uint32_t a, uint32_t b) {
+
+    uint32_t a_index;
+    uint32_t b_index;
+    int compare;
+
+    a_index = a;
+    b_index = b;
+
+    compare = faces[a_index].material_index - faces[b_index].material_index;
+    if (compare != 0)
+        return compare;
+
+    compare = faces[a_index].face_flags - faces[b_index].face_flags;
+    if (compare != 0)
+        return compare;
+
+    compare = faces[a_index].texture_index - faces[b_index].texture_index;
+    if (compare != 0) //#TODO this is stupid, just compare them
+        return compare;
+
+    return faces[a_index].section_names.compare(faces[b_index].section_names);
+}
+
+
+//#TODO move this somewhere sensible
+bool resIsShadowVolume(ComparableFloat<std::milli> resolution) {
+
+    return ((resolution > LOD_SHADOW_STENCIL_START && resolution < LOD_SHADOW_STENCIL_END) ||
+        resolution == LOD_SHADOW_VOLUME_VIEW_CARGO ||
+        resolution == LOD_SHADOW_VOLUME_VIEW_PILOT ||
+        resolution == LOD_SHADOW_VOLUME_VIEW_GUNNER
+        );
+
+}
 
 __itt_domain* p3dDomain = __itt_domain_create("armake.p3d");
 __itt_string_handle* handle_mlod2odol = __itt_string_handle_create("mlod2odol");
@@ -67,7 +102,7 @@ float mlod_lod::getBoundingSphere(const vector3& center) {
 
     float sphere1 = std::transform_reduce(points.begin(), points.end(), 0.f,
         [](const auto& lhs, const auto& rhs) { return std::max(lhs, rhs); }, [&center](const auto& p) {
-        auto& point = p.getPosition();
+        auto& point = p.pos;
         return (point - center).magnitude_squared();
     });
     __itt_task_end(p3dDomain);
@@ -98,47 +133,53 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
 
     std::vector<bool> hiddenPoints;
     hiddenPoints.resize(num_points);
-
+    std::vector<point> tempPoints;
 
     bool empty = num_points == 0;
 #pragma region Basic Geometry
     if (empty) {
         num_points = 1;
-        points.resize(1);
-        points[0].point_flags = 0;
+        tempPoints.resize(1);
+        tempPoints[0].point_flags = 0;
     } else {
-        points.resize(num_points);
+        tempPoints.resize(num_points);
         for (int j = 0; j < num_points; j++) {
-            source.read(reinterpret_cast<char*>(&points[j]), sizeof(struct point));
+            source.read(reinterpret_cast<char*>(&tempPoints[j]), sizeof(struct point));
             //report invalid point flags? not really needed.
 
             //#TODO hidden points support
             //If any flags are set, set hints and use them for `clip` array
             //There is also "hidden" array for POINT_SPECIAL_HIDDEN
 
-
-            if (points[j].point_flags & 0x1000000) { //#TODO enum or #define or smth
+            //#TODO read points into array of vec3. And throw away pointflags
+            if (tempPoints[j].point_flags & 0x1000000) { //#TODO enum or #define or smth
                 hiddenPoints[j] = true;
             }
-
         }
     }
 
-    facenormals.resize(num_facenormals);
+
+    std::vector<vector3> normalsTemp;
+    normalsTemp.resize(num_facenormals); //#TODO remove num_facenormals from header
     //#TODO read all in one go
     for (int j = 0; j < num_facenormals; j++) {
-        source.read(reinterpret_cast<char*>(&facenormals[j]), sizeof(vector3)); //#TODO if Geometry lod and NoNormals (geoOnly parameter), set them all to 0
+        source.read(reinterpret_cast<char*>(&normalsTemp[j]), sizeof(vector3)); //#TODO if Geometry lod and NoNormals (geoOnly parameter), set them all to 0
     }
 
 #pragma region FacesAndTexturesAndMaterials
 
+
+    std::vector<int> faceToOrig;
+
+
+
     std::vector<mlod_face> loadingFaces;
 
-    faces.resize(num_faces);
+    loadingFaces.resize(num_faces);
     for (int j = 0; j < num_faces; j++) {
         //4b face type
         //4x pseudovertex
-        source.read(reinterpret_cast<char*>(&faces[j]), 72);
+        source.read(reinterpret_cast<char*>(&loadingFaces[j]), 72);
         //#TODO seperate face properties array
         //texture, material, special
         size_t fp_tmp = source.tellg();
@@ -151,7 +192,7 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
         std::getline(source, materialName, '\0');
         //#TODO tolower texture and material
         //#TODO check for valid flags
-        faces[j].section_names = ""; //#TODO section_names shouldn't be here
+        loadingFaces[j].section_names = ""; //#TODO section_names shouldn't be here
 
         //#TODO make seperate array with faceproperties (material,texture index and flags
 
@@ -159,15 +200,15 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
         //#REFACTOR make a custom array type for this. Give it a "AddUniqueElement" function that get's the string.
         //It will return index if it has one, or create one and then return index of new one
         if (!textureName.empty()) {
-            auto foundTex = std::find_if(textures.begin(), textures.end(), textureName);
+            auto foundTex = std::find(textures.begin(), textures.end(), textureName);
 
             __debugbreak(); //Check if this stuff is correct.
             if (foundTex == textures.end()) {
-                faces[j].texture_index = faces.size();
+                loadingFaces[j].texture_index = faces.size();
                 textures.emplace_back(textureName);
             }
             else {
-                faces[j].texture_index = foundTex - textures.begin();
+                loadingFaces[j].texture_index = foundTex - textures.begin();
             }
         }
         
@@ -178,7 +219,7 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
 
             __debugbreak(); //Check if this stuff is correct.
             if (foundMat == materials.end()) {
-                faces[j].material_index = materials.size();
+                loadingFaces[j].material_index = materials.size();
 
 
 
@@ -190,7 +231,7 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
                 materials.emplace_back(std::move(mat)); //#CHECK new element should be at index j now.
 
             } else {
-                faces[j].material_index = foundMat - materials.begin();
+                loadingFaces[j].material_index = foundMat - materials.begin();
             }
         }
 
@@ -198,6 +239,7 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
         //shape.cpp 1075
         //Set UV coords to 0 if Geo lod with nouv
     }
+
 
 #pragma endregion FacesAndTexturesAndMaterials
 
@@ -215,30 +257,68 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
     //Error if max vertex that are not duplicate (see odol Addpoint) is bigger than 32767 too many verticies
     //Poly object seems to be just the face with n points?
 
-    for (auto& face : faces) {
-        class Polygon {
-        public:
-            uint8_t face_type;
-            std::array<uint32_t, 4> points;
-        };
-        class PolygonInfo { //Special data about a polygon
-        public:
-            int textureIndex;
-            int materialIndex;
-            int specialFlags;
-            float areaOverTex[2];
-            int order; //#TODO?
-        };
-        Polygon newPoly;
+    for (int i = 0; i < loadingFaces.size(); ++i) {
+        auto& face = loadingFaces[i];
+
+
+
+
+
+
+        odol_face newPoly;
         newPoly.face_type = face.face_type;
-        bool polyIsHidden = false;
-        for (int i = 0; i < 4; ++i) {
-            newPoly.points[i] = face.table[i].points_index;
-            //#TODO polyIsHidden
-        }
+
         PolygonInfo newPolyInfo;
         newPolyInfo.textureIndex = face.texture_index;
         newPolyInfo.materialIndex = face.material_index;
+
+
+
+        bool polyIsHidden = true;
+
+
+        //clip flags
+
+
+        // Change vertex order for ODOL
+        // Tris:  0 1 2   -> 1 0 2
+        // Quads: 0 1 2 3 -> 1 0 3 2
+        //#TODO do this after points were inserted, then we only have to swap one int, instead of 2+2 floats
+        std::swap(face.table[0], face.table[1]);
+
+        if (face.face_type == 4)
+            std::swap(face.table[2], face.table[3]);
+
+
+        for (int i = 0; i < 4; ++i) {
+            auto faceP = face.table[i].points_index;
+            auto faceN = face.table[i].normals_index;
+            auto faceU = face.table[i].u;
+            auto faceV = face.table[i].v;
+
+            if (!hiddenPoints[faceP]) polyIsHidden = false;
+
+            auto norm = normalsTemp[faceN];
+
+            //#TODO check if normal is valid and fix it L1241
+
+
+
+            //#TODO uv coord compression!!!
+            auto newVert = add_point(tempPoints[faceP].pos, norm, { faceU,faceV }, faceP);
+
+            newPoly.points[i] = newVert;
+            vertex_to_point[newVert] = faceP;
+            point_to_vertex[faceP] = newVert;
+        }
+
+
+        //#TODO polyIsHidden
+
+
+
+
+
 
         int specialFlags = 0;
 
@@ -255,6 +335,40 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
         //#TODO apply material flags Line 1345
         //#TODO apply texture flags //line 1352
 
+        //#TODO only if face has material!
+        bool transmat = false;
+        switch (materials[face.material_index].pixelshader_id) {
+            case 1: //#TODO move into material class and use enum
+            case 3:
+            case 60:
+            case 58:
+            case 61:
+            case 107:
+            case 108:
+            case 109:
+            case 114:
+            case 115:
+            case 116:
+            case 117:
+            case 120:
+            case 148:
+            case 132:
+                transmat = true;
+        }
+        if (transmat) {
+            specialFlags |= FLAG_ISTRANSPARENT;
+        } else {
+
+            __debugbreak();
+            //#TODO
+            //if (is_alpha(&faces[i]))
+            //    specialFlags |= FLAG_ISALPHA;
+        }
+
+
+
+
+
         if (polyIsHidden) {
             specialFlags |= 0x400000;
         }
@@ -262,7 +376,9 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
         newPolyInfo.specialFlags = specialFlags;
 
         //#TODO add poly to faces list
-        //#TODO faceToOriginalFace
+        faces.emplace_back(newPoly);
+        faceInfo.emplace_back(newPolyInfo);
+        faceToOrig[i] = i;
     }
 
 
@@ -271,10 +387,83 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
 
     //Unroll multipass materials? Don't think we need that
 
+
+
+
+
+
+    // Sort faces
+    //If we do this, we need lookup map from oldindex->newIndex. Which is what face_lookup did in old armake
+    //if (mlod_lod.num_faces > 1) {
+    //    std::sort(mlod_lod.faces.begin(), mlod_lod.faces.end());
+    //}
+
+
+    // Write remaining vertices
+    for (int i = 0; i < tempPoints.size(); ++i) {
+        //#TODO prefill point_to_vertex with ~0's and then check that here
+        if (point_to_vertex[i] < NOPOINT) continue; //#TODO wtf? no. Doesn't work
+
+        auto newVert = add_point(tempPoints[i].pos, {}, { 0.f,0.f }, i);
+
+        point_to_vertex[i] = newVert;
+    }
+
+
+
+
+
+
+
     // make sure all points are represented with vertices?
 
-
     //set special flags
+
+
+
+
+
+    // UV clamping 1506
+    std::vector<bool> tileU, tileV;
+    tileU.resize(textures.size()); 
+    tileV.resize(textures.size());
+
+    for (int i = 0; i < num_faces; i++) {
+        if (faceInfo[i].textureIndex == -1)
+            continue;
+        if (tileU[faceInfo[i].textureIndex] && tileV[faceInfo[i].textureIndex])
+            continue;
+
+        
+        for (int j = 0; j < faces[i].face_type; j++) { //#TODO move clamplimit here into a constexpr float
+            if (uv_coords[faces[i].points[j]].u < -CLAMPLIMIT || uv_coords[faces[i].points[j]].u > 1 + CLAMPLIMIT)
+                tileU[faceInfo[i].textureIndex] = true;
+            if (uv_coords[faces[i].points[j]].v < -CLAMPLIMIT || uv_coords[faces[i].points[j]].v > 1 + CLAMPLIMIT)
+                tileV[faceInfo[i].textureIndex] = true;
+        }
+    }
+
+    for (int i = 0; i < num_faces; i++) {
+        if (faceInfo[i].specialFlags & (FLAG_NOCLAMP | FLAG_CLAMPU | FLAG_CLAMPV)) //already clamped
+            continue;
+        if (faceInfo[i].textureIndex == -1) {
+            faceInfo[i].specialFlags |= FLAG_NOCLAMP;
+            continue;
+        }
+
+        if (!tileU[faceInfo[i].textureIndex])
+            faceInfo[i].specialFlags |= FLAG_CLAMPU;
+        if (!tileV[faceInfo[i].textureIndex])
+            faceInfo[i].specialFlags |= FLAG_CLAMPV;
+        if (tileU[faceInfo[i].textureIndex] && tileV[faceInfo[i].textureIndex])
+            faceInfo[i].specialFlags |= FLAG_NOCLAMP;
+    }
+
+
+
+
+
+
     //RecalculateNormals
 
     updateBoundingBox();
@@ -351,6 +540,10 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
             if (entry == "#EndOfFile#") //Might want to  source.seekg(fp_tmp); before break. Check if fp_temp == tellg and debugbreak if not
                 break;
         } else {
+            odol_selection newSel;
+
+            newSel.name = entry;
+
             mlod_selection newSelection;
 
             newSelection.name = entry;
@@ -367,17 +560,37 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
             newSelection.faces.resize(num_faces);
             source.read(reinterpret_cast<char*>(newSelection.faces.data()), num_faces);
 
-            selections.emplace_back(std::move(newSelection));
+            std::vector<odol_selection::selectionVertex> temp;
+            for (int i = 0; i < num_points; ++i) {
+                
+                //#TODO use vertexToPoint
+                auto vertIndex = vertex_to_point[i];
+
+                auto thingy = newSelection.points[vertIndex];
+                if (thingy) temp.emplace_back(i, -thingy);
+            }
+
+            newSel.init(std::move(temp));
+
+            for (int i = 0; i < num_faces; ++i) {
+                if (newSelection.faces[faceToOrig[i]]) newSel.faces.emplace_back(i);
+            }
+
+            
+
+
+            selections.emplace_back(std::move(newSel));
             //Might want to  source.seekg(fp_tmp); before break. Check if fp_temp == tellg and debugbreak if not
         }
     }
+    num_selections = selections.size();
     //if have phases (animation tag)
     //check for keyframe property. Needs to exist otherwise warning
 
     //Sort verticies if not geometryOnly
 
 
-    num_selections = selections.size();
+
 
     source.read(reinterpret_cast<char*>(&resolution), 4);
     return true;
@@ -393,6 +606,162 @@ uint32_t mlod_lod::getOrHints() {
 
 uint32_t mlod_lod::getSpecialFlags() {
     return special;
+}
+
+void mlod_lod::buildSections() {
+    //#TODO shape.cpp 3902
+
+        // Sections
+    if (num_faces > 0) {
+        num_sections = 1;
+        for (int i = 1; i < num_faces; i++) {
+            if (compare_face_lookup(faces, i, i - 1)) {
+                num_sections++;
+                continue;
+            }
+        }
+
+        sections.resize(num_sections);
+
+        int face_start = 0;
+        int face_end = 0;
+        int k = 0;
+        for (int i = 0; i < num_faces;) {
+            sections[k].face_start = i;
+            sections[k].face_end = i;
+            sections[k].face_index_start = face_start;
+            sections[k].face_index_end = face_start;
+            sections[k].min_bone_index = 0;
+            sections[k].bones_count = 0;// num_bones_subskeleton; //#TODO fixme
+            sections[k].mat_dummy = 0;
+            sections[k].common_texture_index = faceInfo[i].textureIndex;
+            sections[k].common_face_flags = faceInfo[i].specialFlags;
+            sections[k].material_index = faceInfo[i].textureIndex;
+            sections[k].num_stages = 2; // num_stages defines number of entries in area_over_tex
+            sections[k].area_over_tex[0] = 1.0f; // @todo
+            sections[k].area_over_tex[1] = -1000.0f;
+            sections[k].unknown_long = 0;
+            int j;
+            for (j = i; j < num_faces; j++) {
+                if (compare_face_lookup(faces, j, i))
+                    break;
+
+                sections[k].face_end++;
+                sections[k].face_index_end += (faces[j].face_type == 4) ? 20 : 16;
+            }
+
+            face_start = sections[k].face_index_end;
+            i = j;
+            k++;
+        }
+    } else {
+        num_sections = 0;
+        sections.clear();
+    }
+   
+
+
+
+
+
+
+
+
+}
+
+uint32_t mlod_lod::add_point(vector3 point, vector3 normal, const uv_pair& uv_coords_input, uint32_t point_index_mlod) {
+
+
+    // Check if there already is a vertex that satisfies the requirements
+    for (uint32_t i = 0; i < num_points; i++) { //#TODO make vertex_to_point a unordered_map?
+        if (vertex_to_point[i] != point_index_mlod)
+            continue;
+
+
+        //#TODO check position difference
+
+        // normals and uvs don't matter for non-visual lods
+        if (resolution < LOD_GEOMETRY) { //#TODO use pos distance check
+            if (!float_equal(normals[i].x, normal.x, 0.0001) ||
+                !float_equal(normals[i].y, normal.y, 0.0001) ||
+                !float_equal(normals[i].z, normal.z, 0.0001))
+                continue;
+
+            if (!float_equal(uv_coords[i].u, uv_coords_input.u, 0.0001) ||
+                !float_equal(uv_coords[i].v, uv_coords_input.v, 0.0001))
+                continue;
+        }
+
+        return i; //vertex already exists, don't create new one
+    }
+
+    // Add vertex
+    points[num_points] = std::move(point);
+    normals[num_points] = normal;
+    uv_coords[num_points].u = uv_coords_input.u; //#TODO uv coords assignment operator
+    uv_coords[num_points].v = uv_coords_input.v;
+
+
+    //No idea what this was supposed to be
+    /*
+        uint32_t j;
+    uint32_t weight_index;
+
+    if (!vertexboneref.empty() && model_info.skeleton->num_bones > 0) {
+        memset(&vertexboneref[num_points], 0, sizeof(struct odol_vertexboneref));
+
+        for (i = model_info.skeleton->num_bones - 1; (int32_t)i >= 0; i--) {
+            for (j = 0; j < mlod_lod.num_selections; j++) {//#TODO find_if
+                if (stricmp(model_info.skeleton->bones[i].name.c_str(),
+                        mlod_lod.selections[j].name.c_str()) == 0)
+                    break;
+            }
+
+            if (j == mlod_lod.num_selections)
+                continue;
+
+            if (mlod_lod.selections[j].vertices[point_index_mlod] == 0)
+                continue;
+
+            if (vertexboneref[num_points].num_bones == 4) {
+                logger.warning(current_target, -1, "Vertex %u of LOD %f is part of more than 4 bones.\n", point_index_mlod, mlod_lod.resolution);
+                continue;
+            }
+
+            if (vertexboneref[num_points].num_bones == 1 && model_info.skeleton->is_discrete) {
+                logger.warning(current_target, -1, "Vertex %u of LOD %f is part of more than 1 bone in a discrete skeleton.\n", point_index_mlod, mlod_lod.resolution);
+                continue;
+            }
+
+            weight_index = vertexboneref[num_points].num_bones;
+            vertexboneref[num_points].num_bones++;
+
+            vertexboneref[num_points].weights[weight_index][0] = skeleton_to_subskeleton[i].links[0];
+            vertexboneref[num_points].weights[weight_index][1] = mlod_lod.selections[j].vertices[point_index_mlod];
+
+            // convert weight
+            if (vertexboneref[num_points].weights[weight_index][1] == 0x01)
+                vertexboneref[num_points].weights[weight_index][1] = 0xff;
+            else
+                vertexboneref[num_points].weights[weight_index][1]--;
+
+            if (model_info.skeleton->is_discrete)
+                break;
+        }
+    }
+    */
+    
+    
+    //this is done by the caller of the func
+    //vertex_to_point[num_points] = point_index_mlod;
+    //point_to_vertex[point_index_mlod] = num_points;
+
+    num_points++;
+
+    return (num_points - 1);
+
+
+
 }
 
 void mlod_lod::updateBoundingBox() {
@@ -479,96 +848,40 @@ void odol_selection::writeTo(std::ostream& output) {
         output.write(reinterpret_cast<char*>(vertices.data()), sizeof(uint32_t) * num_vertices);
     }
 
-    WRITE_CASTED(num_vertex_weights, sizeof(uint32_t));
-    if (num_vertex_weights > 0) {
+    WRITE_CASTED(num_weights, sizeof(uint32_t));
+    if (num_weights > 0) {
         output.put(0);
-        output.write(reinterpret_cast<char*>(vertex_weights.data()), sizeof(uint8_t) * num_vertex_weights);
+        output.write(reinterpret_cast<char*>(weights.data()), sizeof(uint8_t) * num_weights);
     }
 }
 
+void odol_selection::init(std::vector<selectionVertex> verts) {
 
-uint32_t odol_lod::add_point(const mlod_lod &mlod_lod, const model_info &model_info,
-        uint32_t point_index_mlod, vector3 normal, struct uv_pair *uv_coords_input, Logger& logger) {
-    uint32_t i;
-    uint32_t j;
-    uint32_t weight_index;
 
-    // Check if there already is a vertex that satisfies the requirements
-    for (i = 0; i < num_points; i++) { //#TODO make vertex_to_point a unordered_map?
-        if (vertex_to_point[i] != point_index_mlod)
-            continue;
 
-        // normals and uvs don't matter for non-visual lods
-        if (mlod_lod.resolution < LOD_GEOMETRY) {
-            if (!float_equal(normals[i].x, normal.x, 0.0001) ||
-                !float_equal(normals[i].y, normal.y, 0.0001) ||
-                !float_equal(normals[i].z, normal.z, 0.0001))
-                continue;
 
-            if (!float_equal(uv_coords[i].u, uv_coords_input->u, 0.0001) ||
-                !float_equal(uv_coords[i].v, uv_coords_input->v, 0.0001))
-                continue;
-        }
+    weights.clear();
+    vertices.clear();
+    vertices.resize(verts.size());
+    std::transform(verts.begin(), verts.end(), vertices.begin(), [](const selectionVertex& vert) {
+        return vert.vertexIndex;
+        });
+    num_vertices = verts.size();
 
-        return i;
+
+    //If there are no weights, we just don't store them.
+    bool allMax = std::all_of(verts.begin(), verts.end(), [](const selectionVertex& vert) {
+        return vert.weight == 255;
+        });
+
+    if (!allMax) {
+        weights.resize(verts.size());
+        std::transform(verts.begin(), verts.end(), weights.begin(), [](const selectionVertex& vert) {
+            return vert.weight;
+            });
+        num_weights = verts.size();
     }
-
-    // Add vertex
-    points[num_points] = mlod_lod.points[point_index_mlod].pos;
-    normals[num_points] = normal;
-    memcpy(&uv_coords[num_points], uv_coords_input, sizeof(struct uv_pair));
-
-    if (!vertexboneref.empty() && model_info.skeleton->num_bones > 0) {
-        memset(&vertexboneref[num_points], 0, sizeof(struct odol_vertexboneref));
-
-        for (i = model_info.skeleton->num_bones - 1; (int32_t)i >= 0; i--) {
-            for (j = 0; j < mlod_lod.num_selections; j++) {//#TODO find_if
-                if (stricmp(model_info.skeleton->bones[i].name.c_str(),
-                        mlod_lod.selections[j].name.c_str()) == 0)
-                    break;
-            }
-
-            if (j == mlod_lod.num_selections)
-                continue;
-
-            if (mlod_lod.selections[j].points[point_index_mlod] == 0)
-                continue;
-
-            if (vertexboneref[num_points].num_bones == 4) {
-                logger.warning(current_target, -1, "Vertex %u of LOD %f is part of more than 4 bones.\n", point_index_mlod, mlod_lod.resolution);
-                continue;
-            }
-
-            if (vertexboneref[num_points].num_bones == 1 && model_info.skeleton->is_discrete) {
-                logger.warning(current_target, -1, "Vertex %u of LOD %f is part of more than 1 bone in a discrete skeleton.\n", point_index_mlod, mlod_lod.resolution);
-                continue;
-            }
-
-            weight_index = vertexboneref[num_points].num_bones;
-            vertexboneref[num_points].num_bones++;
-
-            vertexboneref[num_points].weights[weight_index][0] = skeleton_to_subskeleton[i].links[0];
-            vertexboneref[num_points].weights[weight_index][1] = mlod_lod.selections[j].points[point_index_mlod];
-
-            // convert weight
-            if (vertexboneref[num_points].weights[weight_index][1] == 0x01)
-                vertexboneref[num_points].weights[weight_index][1] = 0xff;
-            else
-                vertexboneref[num_points].weights[weight_index][1]--;
-
-            if (model_info.skeleton->is_discrete)
-                break;
-        }
-    }
-
-    vertex_to_point[num_points] = point_index_mlod;
-    point_to_vertex[point_index_mlod] = num_points;
-
-    num_points++;
-
-    return (num_points - 1);
 }
-
 
 void odol_lod::writeTo(std::ostream& output) {
     short u, v;
@@ -764,6 +1077,8 @@ int compare_face_lookup(std::vector<mlod_face> &faces, uint32_t a, uint32_t b) {
 
 
 bool is_alpha(struct mlod_face *face) {
+
+    //#TODO if texture is transparent/has alpha see PAAFile
     return false; //#TODO fix this is_alpha function move to mlod_lod
     // @todo check actual texture maybe?
     //if (strstr(face->texture_name.c_str(), "_ca.paa") != NULL)
@@ -819,7 +1134,7 @@ void P3DFile::convert_lod(mlod_lod &mlod_lod, odol_lod &odol_lod) {
     odol_lod.num_textures = mlod_lod.textures.size();
     odol_lod.num_materials = mlod_lod.materials.size();
 
-    odol_lod.materials = mlod_lod.materials; 
+    odol_lod.materials = std::move(mlod_lod.materials); 
     for (auto& tex : mlod_lod.textures) {
         odol_lod.textures += tex;
         odol_lod.textures.push_back('\0');
@@ -842,10 +1157,6 @@ void P3DFile::convert_lod(mlod_lod &mlod_lod, odol_lod &odol_lod) {
 
     odol_lod.point_to_vertex.resize(odol_lod.num_points_mlod);
     odol_lod.vertex_to_point.resize(odol_lod.num_faces * 4 + odol_lod.num_points_mlod);
-    odol_lod.face_lookup.resize(mlod_lod.num_faces);
-
-    for (i = 0; i < mlod_lod.num_faces; i++)
-        odol_lod.face_lookup[i] = i;
 
     for (i = 0; i < odol_lod.num_points_mlod; i++)
         odol_lod.point_to_vertex[i] = NOPOINT;
@@ -857,125 +1168,8 @@ void P3DFile::convert_lod(mlod_lod &mlod_lod, odol_lod &odol_lod) {
     if (model_info.skeleton->num_bones > 0)
         odol_lod.vertexboneref.resize(odol_lod.num_faces * 4 + odol_lod.num_points_mlod);
 
-    // Set face flags
-    std::vector<bool> tileU, tileV;
-    tileU.resize(odol_lod.num_textures); tileV.resize(odol_lod.num_textures);
-
-    for (i = 0; i < mlod_lod.num_faces; i++) {
-        if (mlod_lod.faces[i].texture_index == -1)
-            continue;
-        if (tileU[mlod_lod.faces[i].texture_index] && tileV[mlod_lod.faces[i].texture_index])
-            continue;
-        for (j = 0; j < mlod_lod.faces[i].face_type; j++) {
-            if (mlod_lod.faces[i].table[j].u < -CLAMPLIMIT || mlod_lod.faces[i].table[j].u > 1 + CLAMPLIMIT)
-                tileU[mlod_lod.faces[i].texture_index] = true;
-            if (mlod_lod.faces[i].table[j].v < -CLAMPLIMIT || mlod_lod.faces[i].table[j].v > 1 + CLAMPLIMIT)
-                tileV[mlod_lod.faces[i].texture_index] = true;
-        }
-    }
-
-    for (i = 0; i < mlod_lod.num_faces; i++) {
-        if (mlod_lod.faces[i].face_flags & (FLAG_NOCLAMP | FLAG_CLAMPU | FLAG_CLAMPV))
-            continue;
-        if (mlod_lod.faces[i].texture_index == -1) {
-            mlod_lod.faces[i].face_flags |= FLAG_NOCLAMP;
-            continue;
-        }
-
-        if (!tileU[mlod_lod.faces[i].texture_index])
-            mlod_lod.faces[i].face_flags |= FLAG_CLAMPU;
-        if (!tileV[mlod_lod.faces[i].texture_index])
-            mlod_lod.faces[i].face_flags |= FLAG_CLAMPV;
-        if (tileU[mlod_lod.faces[i].texture_index] && tileU[mlod_lod.faces[i].texture_index])
-            mlod_lod.faces[i].face_flags |= FLAG_NOCLAMP;
-
-        if (is_alpha(&mlod_lod.faces[i]))
-            mlod_lod.faces[i].face_flags |= FLAG_ISALPHA;
-    }
 
 
-    //#TODO move ^ that to mlod read faces and textures and materials
-
-
-    for (i = 0; i < mlod_lod.num_selections; i++) {
-        for (j = 0; j < model_info.skeleton->num_sections; j++) {
-            if (mlod_lod.selections[i].name == model_info.skeleton->sections[j])
-                break;
-        }
-        if (j < model_info.skeleton->num_sections) {
-            for (k = 0; k < mlod_lod.num_faces; k++) {
-                if (mlod_lod.selections[i].faces[k] > 0) {
-                    mlod_lod.faces[k].section_names += ":";
-                    mlod_lod.faces[k].section_names += mlod_lod.selections[i].name;
-                }
-            }
-        }
-
-        if (strncmp(mlod_lod.selections[i].name.c_str(), "proxy:", 6) != 0)
-            continue;
-
-        //#TODO remove this, this is already in finishlod
-        for (k = 0; k < mlod_lod.num_faces; k++) {
-            if (mlod_lod.selections[i].faces[k] > 0) {
-                mlod_lod.faces[k].face_flags |= FLAG_ISHIDDENPROXY;
-                mlod_lod.faces[k].texture_index = -1;
-                mlod_lod.faces[k].material_index = -1;
-            }
-        }
-    }
-
-    // Sort faces
-    if (mlod_lod.num_faces > 1) {
-        std::sort(mlod_lod.faces.begin(), mlod_lod.faces.end());
-    }
-
-    // Write face vertices
-    face_end = 0;
-    memset(odol_lod.uv_scale, 0, sizeof(struct uv_pair) * 2);
-    for (i = 0; i < mlod_lod.num_faces; i++) {
-        odol_lod.faces[i].face_type = mlod_lod.faces[odol_lod.face_lookup[i]].face_type;
-        for (j = 0; j < odol_lod.faces[i].face_type; j++) {
-            normal = mlod_lod.facenormals[mlod_lod.faces[odol_lod.face_lookup[i]].table[j].normals_index];
-            uv_coords.u = mlod_lod.faces[odol_lod.face_lookup[i]].table[j].u;
-            uv_coords.v = mlod_lod.faces[odol_lod.face_lookup[i]].table[j].v;
-
-            uv_coords.u = fsign(uv_coords.u) * (fmod(fabs(uv_coords.u), 1.0));
-            uv_coords.v = fsign(uv_coords.v) * (fmod(fabs(uv_coords.v), 1.0));
-
-            odol_lod.uv_scale[0].u = fminf(uv_coords.u, odol_lod.uv_scale[0].u);
-            odol_lod.uv_scale[0].v = fminf(uv_coords.v, odol_lod.uv_scale[0].v);
-            odol_lod.uv_scale[1].u = fmaxf(uv_coords.u, odol_lod.uv_scale[1].u);
-            odol_lod.uv_scale[1].v = fmaxf(uv_coords.v, odol_lod.uv_scale[1].v);
-
-            // Change vertex order for ODOL
-            // Tris:  0 1 2   -> 1 0 2
-            // Quads: 0 1 2 3 -> 1 0 3 2
-            if (odol_lod.faces[i].face_type == 4)
-                k = j ^ 1;
-            else
-                k = j ^ (1 ^ (j >> 1));
-
-            odol_lod.faces[i].table[k] = odol_lod.add_point(mlod_lod, model_info,
-                mlod_lod.faces[odol_lod.face_lookup[i]].table[j].points_index, normal, &uv_coords, logger);
-        }
-        face_end += (odol_lod.faces[i].face_type == 4) ? 20 : 16;
-    }
-
-    odol_lod.face_allocation_size = face_end;
-
-    // Write remaining vertices
-    for (i = 0; i < odol_lod.num_points_mlod; i++) {
-        if (odol_lod.point_to_vertex[i] < NOPOINT)
-            continue;
-
-        normal = empty_vector;
-
-        uv_coords.u = 0.0f;
-        uv_coords.v = 0.0f;
-
-        odol_lod.point_to_vertex[i] = odol_lod.add_point(mlod_lod, model_info,
-            i, normal, &uv_coords, logger);
-    }
 
     // Normalize vertex bone ref
     odol_lod.vertexboneref_is_simple = 1;
@@ -999,214 +1193,6 @@ void P3DFile::convert_lod(mlod_lod &mlod_lod, odol_lod &odol_lod) {
         }
     }
 
-    // Sections
-    if (odol_lod.num_faces > 0) {
-        odol_lod.num_sections = 1;
-        for (i = 1; i < odol_lod.num_faces; i++) {
-            if (compare_face_lookup(mlod_lod.faces, odol_lod.face_lookup[i], odol_lod.face_lookup[i - 1])) {
-                odol_lod.num_sections++;
-                continue;
-            }
-        }
-
-        odol_lod.sections.resize(odol_lod.num_sections);
-
-        face_start = 0;
-        face_end = 0;
-        k = 0;
-        for (i = 0; i < odol_lod.num_faces;) {
-            odol_lod.sections[k].face_start = i;
-            odol_lod.sections[k].face_end = i;
-            odol_lod.sections[k].face_index_start = face_start;
-            odol_lod.sections[k].face_index_end = face_start;
-            odol_lod.sections[k].min_bone_index = 0;
-            odol_lod.sections[k].bones_count = odol_lod.num_bones_subskeleton;
-            odol_lod.sections[k].mat_dummy = 0;
-            odol_lod.sections[k].common_texture_index = mlod_lod.faces[odol_lod.face_lookup[i]].texture_index;
-            odol_lod.sections[k].common_face_flags = mlod_lod.faces[odol_lod.face_lookup[i]].face_flags;
-            odol_lod.sections[k].material_index = mlod_lod.faces[odol_lod.face_lookup[i]].material_index;
-            odol_lod.sections[k].num_stages = 2; // num_stages defines number of entries in area_over_tex
-            odol_lod.sections[k].area_over_tex[0] = 1.0f; // @todo
-            odol_lod.sections[k].area_over_tex[1] = -1000.0f;
-            odol_lod.sections[k].unknown_long = 0;
-
-            for (j = i; j < odol_lod.num_faces; j++) {
-                if (compare_face_lookup(mlod_lod.faces, odol_lod.face_lookup[j], odol_lod.face_lookup[i]))
-                    break;
-
-                odol_lod.sections[k].face_end++;
-                odol_lod.sections[k].face_index_end += (odol_lod.faces[j].face_type == 4) ? 20 : 16;
-            }
-
-            face_start = odol_lod.sections[k].face_index_end;
-            i = j;
-            k++;
-        }
-    } else {
-        odol_lod.num_sections = 0;
-        odol_lod.sections.clear();
-    }
-
-    // Selections
-    odol_lod.num_selections = mlod_lod.num_selections;
-    odol_lod.selections.resize(odol_lod.num_selections);
-    for (i = 0; i < odol_lod.num_selections; i++) {
-        auto& odolSection = odol_lod.selections[i];
-        auto& mlodSection = mlod_lod.selections[i];
-        odolSection.name = mlodSection.name;
-        std::transform(odolSection.name.begin(), odolSection.name.end(), odolSection.name.begin(), tolower);
-
-        for (j = 0; j < model_info.skeleton->num_sections; j++) {
-            if (model_info.skeleton->sections[j] == mlodSection.name.c_str())
-                break;
-        }
-        odolSection.is_sectional = j < model_info.skeleton->num_sections;
-
-        if (odolSection.is_sectional) {
-            odolSection.num_faces = 0;
-            odolSection.faces.clear();
-            odolSection.always_0 = 0;
-            odolSection.num_vertices = 0;
-            odolSection.vertices.clear();
-            odolSection.num_vertex_weights = 0;
-            odolSection.vertex_weights.clear();
-
-            odolSection.num_sections = 0;
-            for (j = 0; j < odol_lod.num_sections; j++) {
-                if (mlodSection.faces[odol_lod.face_lookup[odol_lod.sections[j].face_start]] > 0)
-                    odolSection.num_sections++;
-            }
-            odolSection.sections.resize(odolSection.num_sections);
-            k = 0;
-            for (j = 0; j < odol_lod.num_sections; j++) {
-                if (mlodSection.faces[odol_lod.face_lookup[odol_lod.sections[j].face_start]] > 0) {
-                    odolSection.sections[k] = j;
-                    k++;
-                }
-            }
-
-            continue;
-        } else {
-            odolSection.num_sections = 0;
-            odolSection.sections.clear();
-        }
-
-        odolSection.num_faces = 0;
-        for (j = 0; j < odol_lod.num_faces; j++) {
-            if (mlodSection.faces[j] > 0)
-                odolSection.num_faces++;
-        }
-
-        odolSection.faces.resize(odolSection.num_faces);
-        for (j = 0; j < odolSection.num_faces; j++)
-            odolSection.faces[j] = NOPOINT;
-
-        for (j = 0; j < odol_lod.num_faces; j++) {
-            if (mlodSection.faces[j] == 0)
-                continue;
-
-            for (k = 0; k < odolSection.num_faces; k++) {
-                if (odolSection.faces[k] == NOPOINT)
-                    break;
-            }
-            odolSection.faces[k] = odol_lod.face_lookup[j];
-        }
-
-        odolSection.always_0 = 0;
-
-        odolSection.num_vertices = 0;
-        for (j = 0; j < odol_lod.num_points; j++) {
-            if (mlodSection.points[odol_lod.vertex_to_point[j]] > 0)
-                odolSection.num_vertices++;
-        }
-
-        odolSection.num_vertex_weights = odolSection.num_vertices;
-
-        odolSection.vertices.resize(odolSection.num_vertices);
-        for (j = 0; j < odolSection.num_vertices; j++)
-            odolSection.vertices[j] = NOPOINT;
-
-        odolSection.vertex_weights.resize(odolSection.num_vertex_weights);
-
-        for (j = 0; j < odol_lod.num_points; j++) {
-            if (mlodSection.points[odol_lod.vertex_to_point[j]] == 0)
-                continue;
-
-            for (k = 0; k < odolSection.num_vertices; k++) {
-                if (odolSection.vertices[k] == NOPOINT)
-                    break;
-            }
-            odolSection.vertices[k] = j;
-            odolSection.vertex_weights[k] = mlodSection.points[odol_lod.vertex_to_point[j]];
-        }
-    }
-    //#TODO this should go into finishLOD
-    // Proxies
-    odol_lod.num_proxies = 0;
-    for (i = 0; i < mlod_lod.num_selections; i++) {
-        if (strncmp(mlod_lod.selections[i].name.c_str(), "proxy:", 6) == 0)
-            odol_lod.num_proxies++;
-    }
-    odol_lod.proxies.resize(odol_lod.num_proxies);
-    k = 0;
-    for (i = 0; i < mlod_lod.num_selections; i++) {
-        if (strncmp(mlod_lod.selections[i].name.c_str(), "proxy:", 6) != 0)
-            continue;
-
-        for (j = 0; j < odol_lod.num_faces; j++) {
-            if (mlod_lod.selections[i].faces[odol_lod.face_lookup[j]] > 0) {
-                face = j;
-                break;
-            }
-        }
-
-        if (j >= mlod_lod.num_faces) {
-            logger.warning(current_target, -1, "no-proxy-face", "No face found for proxy \"%s\".\n", mlod_lod.selections[i].name.c_str() + 6);
-            odol_lod.num_proxies--;
-            continue;
-        }
-
-        odol_lod.proxies[k].name = mlod_lod.selections[i].name.substr(6);
-        odol_lod.proxies[k].proxy_id = strtol(strrchr(odol_lod.proxies[k].name.c_str(), '.') + 1, &ptr, 10);
-        auto newLength = strrchr(odol_lod.proxies[k].name.c_str(), '.') - odol_lod.proxies[k].name.data();
-        odol_lod.proxies[k].name.resize(newLength);
-        std::transform(odol_lod.proxies[k].name.begin(), odol_lod.proxies[k].name.end(), odol_lod.proxies[k].name.begin(), tolower);
-
-        odol_lod.proxies[k].selection_index = i;
-        odol_lod.proxies[k].bone_index = -1;
-
-        if (!odol_lod.vertexboneref.empty() &&
-                odol_lod.vertexboneref[odol_lod.faces[face].table[0]].num_bones > 0) {
-            odol_lod.proxies[k].bone_index = odol_lod.vertexboneref[odol_lod.faces[face].table[0]].weights[0][0];
-        }
-
-        for (j = 0; j < odol_lod.num_sections; j++) {
-            if (face > odol_lod.sections[j].face_start)
-                continue;
-            odol_lod.proxies[k].section_index = j;
-            break;
-        }
-
-        odol_lod.proxies[k].transform_y = (
-            mlod_lod.points[mlod_lod.faces[odol_lod.face_lookup[face]].table[1].points_index].pos
-            -
-            mlod_lod.points[mlod_lod.faces[odol_lod.face_lookup[face]].table[0].points_index].pos);
-        odol_lod.proxies[k].transform_y = odol_lod.proxies[k].transform_y.normalize();
-
-        odol_lod.proxies[k].transform_z = (
-            mlod_lod.points[mlod_lod.faces[odol_lod.face_lookup[face]].table[2].points_index].pos
-            -
-            mlod_lod.points[mlod_lod.faces[odol_lod.face_lookup[face]].table[0].points_index].pos);
-        odol_lod.proxies[k].transform_z = odol_lod.proxies[k].transform_z.normalize();
-
-        odol_lod.proxies[k].transform_x =
-            odol_lod.proxies[k].transform_y.cross(odol_lod.proxies[k].transform_z);
-
-        odol_lod.proxies[k].transform_n =
-            mlod_lod.points[mlod_lod.faces[odol_lod.face_lookup[face]].table[0].points_index].pos;
-
-        k++;
-    }
 
     // Properties
     odol_lod.num_properties = mlod_lod.properties.size();
@@ -1370,7 +1356,7 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_
         if (anim->axis.empty()) {
             if (stricmp(mlod_lods[i].selections[j].name.c_str(), anim->begin.c_str()) == 0) {
                 for (k = 0; k < mlod_lods[i].num_points; k++) {
-                    if (mlod_lods[i].selections[j].points[k] > 0) {
+                    if (mlod_lods[i].selections[j].vertices[k] > 0) {
                         anim->axis_pos = mlod_lods[i].points[k].pos;
                         break;
                     }
@@ -1378,7 +1364,7 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_
             }
             if (stricmp(mlod_lods[i].selections[j].name.c_str(), anim->end.c_str()) == 0) {
                 for (k = 0; k < mlod_lods[i].num_points; k++) {
-                    if (mlod_lods[i].selections[j].points[k] > 0) {
+                    if (mlod_lods[i].selections[j].vertices[k] > 0) {
                         anim->axis_dir = mlod_lods[i].points[k].pos;
                         break;
                     }
@@ -1386,13 +1372,13 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_
             }
         } else if (stricmp(mlod_lods[i].selections[j].name.c_str(), anim->axis.c_str()) == 0) {
             for (k = 0; k < mlod_lods[i].num_points; k++) {
-                if (mlod_lods[i].selections[j].points[k] > 0) {
+                if (mlod_lods[i].selections[j].vertices[k] > 0) {
                     anim->axis_pos = mlod_lods[i].points[k].pos;
                     break;
                 }
             }
             for (k = k + 1; k < mlod_lods[i].num_points; k++) {
-                if (mlod_lods[i].selections[j].points[k] > 0) {
+                if (mlod_lods[i].selections[j].vertices[k] > 0) {
                     anim->axis_dir = mlod_lods[i].points[k].pos;
                     break;
                 }
@@ -2371,12 +2357,12 @@ void P3DFile::build_model_info() {
         vector3 aimMemPoint;
         bool memPointExists = false;
         if (found != memLod.selections.end()) {
-            if (found->points.empty()) {
+            if (found->vertices.empty()) {
                 //#TODO warning "No point in selection %s"
             } else {
-                memPointExists = found->points[0] >= 0;
+                memPointExists = found->vertices[0] >= 0;
 
-                aimMemPoint = memLod.points[found->points[0]].pos;
+                aimMemPoint = memLod.points[found->vertices[0]].pos;
                 model_info.aiming_center = aimMemPoint;
             }
         }
@@ -2584,19 +2570,44 @@ void P3DFile::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution) {
         model_info.skeleton->num_sections = model_info.skeleton->sections.size();
     }
 
+
+    //#TODO I'm quite sure this shouldn't be here
+    for (int i = 0; i < lod.num_selections; i++) {
+        int j;
+        for (j = 0; j < model_info.skeleton->num_sections; j++) {
+            if (lod.selections[i].name == model_info.skeleton->sections[j])
+                break;
+        }
+        if (j < model_info.skeleton->num_sections) {
+            for (int k = 0; k < lod.num_faces; k++) {
+                if (lod.selections[i].faces[k] > 0) {
+                    lod.faces[k].section_names += ":";
+                    lod.faces[k].section_names += lod.selections[i].name;
+                }
+            }
+        }
+
+        if (strncmp(lod.selections[i].name.c_str(), "proxy:", 6) != 0)
+            continue;
+    }
+
+
+
+
+
     //scan for proxies
-    for (auto& it : lod.selections) {
-        if (std::string_view(it.name).substr(0,6) == "proxy:") {
+    for (auto& selection : lod.selections) {
+        if (std::string_view(selection.name).substr(0,6) == "proxy:") {
             
-            if (it.points.size() != 3) {
+            if (selection.vertices.size() != 3) {
                 //#TODO error bad proxy object, not correct amount of verticies on proxy, also log proxy name
                 continue;
             }
-            if (it.faces.size() != 1) {
+            if (selection.faces.size() != 1) {
                 //#TODO error Proxy object should be single face, also log proxy name
-                if (it.faces.empty()) continue;
+                if (selection.faces.empty()) continue;
             }
-            for (auto& it : it.faces) {
+            for (auto& it : selection.faces) {
                 auto& face = lod.faces[it];
                 face.face_flags |= FLAG_ISHIDDENPROXY;
                 face.face_flags &= ~IsHidden; //Can't be hidden
@@ -2606,21 +2617,163 @@ void P3DFile::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution) {
 
 
     //shape.cpp 7927
-    I stopped here
+    //#HIGHPRIO I stopped here
 
+    if (resIsShadowVolume(resolution)) {//#TODO don't really need resolution param to finishLOD, can just take from LOD
 
+        //#TODO shadow geometry processing on lod
 
+        for (auto& it : lod.faces) {
+            it.material_index = -1; //Remove material
+            it.texture_index = -1; //Remove texture
+            it.face_flags &= IsHiddenProxy | NoShadow;
 
-
+        }
+    }
 
     //If shadow volume do extra stuff shape.cpp L7928
+
+    if (lod.resolution > LOD_SHADOW_VOLUME_START && lod.resolution < LOD_SHADOW_VOLUME_END) {
+        for (auto& it : lod.faces) {
+            it.face_flags &= IsHiddenProxy | NoShadow;
+            if (it.texture_index != -1 && is_alpha(&it)) {
+                it.face_flags |= IsTransparent;
+            } else {
+                it.texture_index = -1; //Remove texture
+            }
+            it.material_index = -1; //Remove material
+        }
+    }
+
+    //Build sections here
+    //#TODO not sure if that implementation below is correct
+
+    lod.buildSections();    
+
     // If shadow buffer, set everything (apart of base texture if not opaque) to predefined values
     //Create subskeleton
     //rescan sections
-    //update material if shadowVOlume
+
+
+
+
+
+    if (resIsShadowVolume(resolution)) {    //update material if shadowVOlume
+
+        Material shadowMaterial(logger);
+
+
+        shadowMaterial.vertexshader_id = 6; //Shadow volume
+        shadowMaterial.pixelshader_id = 146; //empty
+        shadowMaterial.fogMode = FogMode::None;
+
+        auto shadowMatOffs = lod.materials.size();
+        lod.materials.emplace_back(std::move(shadowMaterial));
+
+        //#TODO this should run on sections
+        for (auto& it : lod.faces) {
+            it.material_index = shadowMatOffs;
+            it.texture_index = -1;
+        }
+
+        //#TODO make a global shadow material and set this here
+        //txtPreload.cpp L195
+
+
+
+    }
+
     //GenerateSTArray?
     //Warning: %s:%s: 2nd UV set needed, but not defined
     // Clear the point and vertex conversion arrays
+
+
+
+
+    //#TODO this should go into finishLOD
+    // Proxies
+
+    for (int i = 0; i < lod.num_selections; ++i) {
+        auto& selection = lod.selections[i];
+        if (std::string_view(selection.name).substr(0, 6) != "proxy:") continue;
+
+        std::string_view selectionNameNoProxy = std::string_view(selection.name).substr(0, 6);
+
+
+
+        if (selection.vertices.size() != 3) {
+            //#TODO we already log error bad proxy object above.. We should log again here, but why
+            continue;
+        }
+        if (selection.faces.size() != 1) {
+            //#TODO error Proxy object should be single face, also log proxy name
+            //These are just the same checks as above :thinking:
+            if (selection.faces.empty()) continue; //#TODO warn if empty. Also do in above check
+        }
+
+        odol_proxy newProxy;
+        newProxy.name = selectionNameNoProxy;
+        char* endptr; //#TODO use stol here or from_chars using string_view
+        newProxy.proxy_id = strtol(strrchr(selectionNameNoProxy.data(), '.') + 1, &endptr, 10);
+
+        auto newLength = strrchr(newProxy.name.c_str(), '.') - newProxy.name.data();
+        newProxy.name.resize(newLength);
+        //#TODO make that better ^
+
+        std::transform(newProxy.name.begin(), newProxy.name.end(), newProxy.name.begin(), tolower);
+
+
+        newProxy.selection_index = i;
+        newProxy.bone_index = -1;
+        newProxy.section_index = -1;
+
+        //#TODO shape.cpp 8092
+        //if (!vertexboneref.empty() &&
+        //    vertexboneref[faces[face].table[0]].num_bones > 0) {
+        //    proxies[k].bone_index = vertexboneref[faces[face].table[0]].weights[0][0];
+        //}
+
+
+
+
+        //#TODO shape.cpp 8123
+        //for (j = 0; j < num_sections; j++) {
+        //    if (face > sections[j].face_start)
+        //        continue;
+        //    proxies[k].section_index = j;
+        //    break;
+        //}
+
+
+
+
+        auto& proxyFace = lod.faces[selection.faces.front()];
+
+        //#TODO fixup rotation? Shortest distance and such.
+        //shape.cpp 8074
+
+        newProxy.transform_y = (
+            lod.points[proxyFace.table[1].points_index].pos
+            -
+            lod.points[proxyFace.table[0].points_index].pos).normalize();
+
+        newProxy.transform_z = (
+            lod.points[proxyFace.table[2].points_index].pos
+            -
+            lod.points[proxyFace.table[0].points_index].pos).normalize();
+
+        newProxy.transform_x =
+            newProxy.transform_y.cross(newProxy.transform_z);
+
+        newProxy.transform_n =
+            lod.points[proxyFace.table[0].points_index].pos;
+
+        lod.proxies.emplace_back(std::move(newProxy));
+    }
+
+    lod.num_proxies = lod.proxies.size();
+
+
 
 
     //Look at TODO "this should go into finishLOD" and move that here
@@ -2629,10 +2782,10 @@ void P3DFile::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution) {
 
     //optimize if no selections?
     //if (geometryOnly&GONoUV)
+    //else recalculate facearea
 
 
-
-
+    //Done
 }
 
 int P3DFile::read_lods(std::istream &source, uint32_t num_lods) {
@@ -2680,11 +2833,7 @@ int P3DFile::read_lods(std::istream &source, uint32_t num_lods) {
             }
         }
 
-        if ((newLod.resolution > LOD_SHADOW_STENCIL_START && newLod.resolution < LOD_SHADOW_STENCIL_END) ||
-            newLod.resolution == LOD_SHADOW_VOLUME_VIEW_CARGO ||
-            newLod.resolution == LOD_SHADOW_VOLUME_VIEW_PILOT ||
-            newLod.resolution == LOD_SHADOW_VOLUME_VIEW_GUNNER
-            ) { //Check if shadow volume
+        if (resIsShadowVolume(newLod.resolution)) { //Check if shadow volume
             shadowVolumes.emplace_back(newLod); //copy it.
             shadowVolumesResolutions.emplace_back(newLod.resolution);
             
@@ -2793,7 +2942,7 @@ std::vector<std::string> P3DFile::retrieveDependencies(std::filesystem::path sou
 
     for (const auto& it : mlod_lods) {
         for (auto& tex : it.textures)
-            if (tex.front != '#')
+            if (tex.front() != '#')
                 dependencies.insert(tex);
         for (auto& mat : it.materials)
             if (mat.path.front() != '#')
