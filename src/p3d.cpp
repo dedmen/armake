@@ -2623,10 +2623,10 @@ void P3DFile::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution) {
 
         //#TODO shadow geometry processing on lod
 
-        for (auto& it : lod.faces) {
-            it.material_index = -1; //Remove material
-            it.texture_index = -1; //Remove texture
-            it.face_flags &= IsHiddenProxy | NoShadow;
+        for (auto& it : lod.faceInfo) {
+            it.materialIndex = -1; //Remove material
+            it.textureIndex = -1; //Remove texture
+            it.specialFlags &= IsHiddenProxy | NoShadow;
 
         }
     }
@@ -2634,14 +2634,14 @@ void P3DFile::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution) {
     //If shadow volume do extra stuff shape.cpp L7928
 
     if (lod.resolution > LOD_SHADOW_VOLUME_START && lod.resolution < LOD_SHADOW_VOLUME_END) {
-        for (auto& it : lod.faces) {
-            it.face_flags &= IsHiddenProxy | NoShadow;
-            if (it.texture_index != -1 && is_alpha(&it)) {
-                it.face_flags |= IsTransparent;
+        for (auto& it : lod.faceInfo) {
+            it.specialFlags &= IsHiddenProxy | NoShadow;
+            if (it.textureIndex != -1 && is_alpha(&it)) {
+                it.specialFlags |= IsTransparent;
             } else {
-                it.texture_index = -1; //Remove texture
+                it.textureIndex = -1; //Remove texture
             }
-            it.material_index = -1; //Remove material
+            it.materialIndex = -1; //Remove material
         }
     }
 
