@@ -210,11 +210,13 @@ struct odol_section {
     uint32_t unknown_long;
 };
 
+class mlod_lod;
 struct odol_selection {
 
     void writeTo(std::ostream& output);
 
     std::string name;
+    bool needsSections;
 
     class selectionVertex {
     public:
@@ -223,6 +225,9 @@ struct odol_selection {
     };
 
     void init(std::vector<selectionVertex> verts);
+    void updateSections(mlod_lod& model);
+
+
 
     uint32_t num_faces;
     std::vector<uint32_t> faces;
@@ -312,7 +317,14 @@ public:
     uint32_t num_selections;
     std::vector<odol_selection> selections;
 
-
+    std::optional<std::vector<odol_selection>::iterator> findSelectionByName(std::string_view name) const {
+        auto found = std::find_if(selections.begin(), selections.end(), [name](const odol_selection& sel)
+            {
+                return sel.name == name;
+            });
+        if (found != selections.end()) return found;
+        return {};
+    }
 
 
     void updateBoundingBox();

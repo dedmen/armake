@@ -126,7 +126,7 @@ struct skeleton_ { //using std::vector and std::string reduced the size of this 
     uint32_t num_bones{ 0 };
     std::vector<struct bone> bones;
     uint32_t num_sections{ 0 };
-    std::vector<std::string> sections;
+    std::vector<std::string> sections; //#TODO shouldn't be here
     uint32_t num_animations{ 0 };
     std::vector<animation> animations;
     bool is_discrete { false };

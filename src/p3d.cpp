@@ -431,19 +431,12 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
         //#TODO prefill point_to_vertex with ~0's and then check that here
         if (point_to_vertex[i] < NOPOINT) continue; //#TODO wtf? no. Doesn't work
 
-        auto newVert = add_point(tempPoints[i].pos, {}, { 0.f,0.f }, i);
+        auto newVert = add_point(tempPoints[i].pos, {}, { 0.f,0.f }, i, inverseScalingUV);
 
         point_to_vertex[i] = newVert;
     }
 
-
-
-
-
-
-
-    // make sure all points are represented with vertices?
-
+    //#TODO
     //set special flags
 
 
@@ -917,6 +910,32 @@ void odol_selection::init(std::vector<selectionVertex> verts) {
             });
         num_weights = verts.size();
     }
+}
+
+void odol_selection::updateSections(mlod_lod& model) {
+    //animation.cpp L152
+    __debugbreak(); //check
+    for (int i = 0; i < model.num_sections; ++i) {
+        auto& sec = model.sections[i];
+
+        bool hasSomeFaces = false;
+        bool hasAllFaces = true;
+
+        for (int i = sec.face_start; i < sec.face_end; ++i) {
+            
+            auto found = std::find(faces.begin(), faces.end(), i);
+            if (found != faces.end())
+                hasSomeFaces = true;
+            else
+                hasAllFaces = false;
+        }
+        if (hasSomeFaces != hasAllFaces) {
+            //#TODO throw warning. Section partially contained
+        }
+        if (hasAllFaces) {
+            sections.emplace_back(i);
+        }    }
+
 }
 
 void odol_lod::writeTo(std::ostream& output) {
@@ -1393,7 +1412,7 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_
             if (stricmp(mlod_lods[i].selections[j].name.c_str(), anim->begin.c_str()) == 0) {
                 for (k = 0; k < mlod_lods[i].num_points; k++) {
                     if (mlod_lods[i].selections[j].vertices[k] > 0) {
-                        anim->axis_pos = mlod_lods[i].points[k].pos;
+                        anim->axis_pos = mlod_lods[i].points[k];
                         break;
                     }
                 }
@@ -1401,7 +1420,7 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_
             if (stricmp(mlod_lods[i].selections[j].name.c_str(), anim->end.c_str()) == 0) {
                 for (k = 0; k < mlod_lods[i].num_points; k++) {
                     if (mlod_lods[i].selections[j].vertices[k] > 0) {
-                        anim->axis_dir = mlod_lods[i].points[k].pos;
+                        anim->axis_dir = mlod_lods[i].points[k];
                         break;
                     }
                 }
@@ -1409,13 +1428,13 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_
         } else if (stricmp(mlod_lods[i].selections[j].name.c_str(), anim->axis.c_str()) == 0) {
             for (k = 0; k < mlod_lods[i].num_points; k++) {
                 if (mlod_lods[i].selections[j].vertices[k] > 0) {
-                    anim->axis_pos = mlod_lods[i].points[k].pos;
+                    anim->axis_pos = mlod_lods[i].points[k];
                     break;
                 }
             }
             for (k = k + 1; k < mlod_lods[i].num_points; k++) {
                 if (mlod_lods[i].selections[j].vertices[k] > 0) {
-                    anim->axis_dir = mlod_lods[i].points[k].pos;
+                    anim->axis_dir = mlod_lods[i].points[k];
                     break;
                 }
             }
@@ -2569,39 +2588,36 @@ void P3DFile::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution) {
 
     if (modelConfig.isLoaded()) {
 
-        // Read sections
-        auto sectionsInherit = modelConfig.getModelConfig()->getString({ "sectionsInherit" });
-        if (!sectionsInherit) {
-            logger.error("Failed to read sections.\n");
-            //return -1;
-            //#TODO throw exception
-        }
-        else
+        auto curCfg = modelConfig.getModelConfig();
 
-            if (sectionsInherit->length() > 0) {
-                auto sectionsRd = modelConfig.getConfig()->getArrayOfStrings({ "CfgModels", *sectionsInherit, "sections" });
-                if (!sectionsRd) { //#TODO differentiate between empty and not found
-                    logger.error("Failed to read sections.\n");
-                    //return -1;
-                    //#TODO throw exception
-                }
-                else
-                    for (auto&& it : *sectionsRd)
-                        if (!it.empty())
-                            model_info.skeleton->sections.emplace_back(it); //#TODO move sections into modelinfo
+
+        while (curCfg) { //shape 2476
+
+            auto sectionsRd = curCfg->getArrayOfStrings({ "sections" });
+            if (!sectionsRd) {
+                logger.error("Failed to read sections.\n");
+                //return -1;
+                //#TODO throw exception
+            } else {
+                for (auto&& it : *sectionsRd)
+                    if (!it.empty()) {
+
+
+                        auto found = lod.findSelectionByName(it);
+                        if (found) (*found)->needsSections = true;
+
+                        model_info.skeleton->sections.emplace_back(it); //#TODO this (skeleton->sections) doesn't belong here, find out where it comes from and what it's used for
+                    }
+                        
             }
 
-        auto sectionsRd = modelConfig.getModelConfig()->getArrayOfStrings({ "sections" });
-        if (!sectionsRd) {
-            logger.error("Failed to read sections.\n");
-            //return -1;
-            //#TODO throw exception
+            auto sectionsInherit = modelConfig.getModelConfig()->getString({ "sectionsInherit" });
+            if (!sectionsInherit) {
+                curCfg = nullptr;
+            } else {
+                curCfg = modelConfig.getConfig()->getClass({ "CfgModels", *sectionsInherit });
+            }
         }
-        else
-
-            for (auto&& it : *sectionsRd)
-                if (!it.empty())
-                    model_info.skeleton->sections.emplace_back(it);
 
         model_info.skeleton->num_sections = model_info.skeleton->sections.size();
     }
