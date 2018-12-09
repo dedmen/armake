@@ -197,15 +197,11 @@ struct odol_section {
 
     uint32_t face_start;
     uint32_t face_end;
-    uint32_t face_index_start;
-    uint32_t face_index_end;
     uint32_t min_bone_index;
     uint32_t bones_count;
-    uint32_t mat_dummy;
     int16_t common_texture_index;
     uint32_t common_face_flags;
     int32_t material_index;
-    uint32_t num_stages;
     float area_over_tex[2];
     uint32_t unknown_long;
 };
@@ -302,10 +298,18 @@ public:
     class PolygonInfo { //Special data about a polygon
     public:
         int textureIndex;
-        int materialIndex;
+        int materialIndex; //#TODO nullableIntegral
         int specialFlags;
         float areaOverTex[2];
         int order; //#TODO?
+
+        bool operator == (const PolygonInfo& o) const {
+            return textureIndex == o.textureIndex &&
+                    materialIndex == o.materialIndex &&
+                    specialFlags == o.specialFlags ;
+        }
+
+
     };
 
     std::vector<odol_face> faces;
@@ -339,7 +343,7 @@ public:
 
 
     std::vector<std::string> textures;
-    std::vector<Material> materials;
+    std::vector<Material> materials; //#TODO create texture and material bank and store links here
 
 
     uint32_t num_sections;

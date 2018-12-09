@@ -607,6 +607,7 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
     //if have phases (animation tag)
     //check for keyframe property. Needs to exist otherwise warning
 
+    //#TODO 1860
     //Sort verticies if not geometryOnly
 
 
@@ -631,62 +632,434 @@ uint32_t mlod_lod::getSpecialFlags() {
 void mlod_lod::buildSections() {
     //#TODO shape.cpp 3902
 
-        // Sections
-    if (num_faces > 0) {
-        num_sections = 1;
-        for (int i = 1; i < num_faces; i++) {
-            if (compare_face_lookup(faces, i, i - 1)) {
-                num_sections++;
-                continue;
-            }
-        }
-
-        sections.resize(num_sections);
-
-        int face_start = 0;
-        int face_end = 0;
-        int k = 0;
-        for (int i = 0; i < num_faces;) {
-            sections[k].face_start = i;
-            sections[k].face_end = i;
-            sections[k].face_index_start = face_start;
-            sections[k].face_index_end = face_start;
-            sections[k].min_bone_index = 0;
-            sections[k].bones_count = 0;// num_bones_subskeleton; //#TODO fixme
-            sections[k].mat_dummy = 0;
-            sections[k].common_texture_index = faceInfo[i].textureIndex;
-            sections[k].common_face_flags = faceInfo[i].specialFlags;
-            sections[k].material_index = faceInfo[i].textureIndex;
-            sections[k].num_stages = 2; // num_stages defines number of entries in area_over_tex
-            sections[k].area_over_tex[0] = 1.0f; // @todo
-            sections[k].area_over_tex[1] = -1000.0f;
-            sections[k].unknown_long = 0;
-            int j;
-            for (j = i; j < num_faces; j++) {
-                if (compare_face_lookup(faces, j, i))
-                    break;
-
-                sections[k].face_end++;
-                sections[k].face_index_end += (faces[j].face_type == 4) ? 20 : 16;
-            }
-
-            face_start = sections[k].face_index_end;
-            i = j;
-            k++;
-        }
-    } else {
+    if (num_faces == 0) {
         num_sections = 0;
         sections.clear();
+        return;
     }
-   
+
+    std::vector<uint32_t> offsetMap;
+    offsetMap.resize(num_faces);
+
+    uint32_t lastO = 0;
+    for (auto& it : faces) {
+        offsetMap.emplace_back(lastO);
+        lastO += (it.face_type == 4) ? 20 : 16;
+    }
+
+
+
+    bool needsSections = std::any_of(selections.begin(), selections.end(), [](const odol_selection& sel)
+        {
+            return sel.needsSections;
+        });
+
+    bool hasAlpha = std::any_of(faceInfo.begin(), faceInfo.end(), [](const PolygonInfo& inf)
+        {
+            return inf.specialFlags & IsAlpha;
+        });
+
+    if (!hasAlpha) {//Get rid of alpha ordering if there is no alpha
+        std::for_each(faceInfo.begin(), faceInfo.end(), [](PolygonInfo& inf)
+            {
+                inf.specialFlags &= ~IsAlphaOrdered;
+            });
+    }
+
+    if (!needsSections) {
+        std::vector<odol_section> sections;
+        std::vector<odol_section>::iterator curSec = sections.end();
+
+
+        bool isSingleSection = true;
+        //#TODO use std::none_of and custom face iterator
+        for (int i = 0; i < faceInfo.size(); ++i) {
+            const PolygonInfo& inf = faceInfo[i];
+            if (inf.specialFlags & IsAlpha) {
+                isSingleSection = false;
+                break;
+            }
+
+            if (sections.empty()) {
+                sections.emplace_back();
+                curSec = sections.end() - 1;
+                curSec->face_start = offsetMap[i];
+                curSec->face_end = offsetMap[i];
+
+            } else if (curSec->common_texture_index != inf.textureIndex || curSec->common_face_flags != inf.specialFlags || curSec->material_index != inf.materialIndex) {
+                if (std::any_of(sections.begin(), sections.end(), [&inf](const odol_section& sec)
+                    {
+                        return sec.common_texture_index == inf.textureIndex &&
+                            sec.common_face_flags == inf.specialFlags &&
+                            sec.material_index == inf.materialIndex;
+                    })) {
+                    isSingleSection = false;
+                    break;
+                }
+
+                curSec->face_end += (faces[i].face_type == 4) ? 20 : 16;
+ 
+                sections.emplace_back();
+                curSec = sections.end() - 1;
+                curSec->face_start = offsetMap[i];
+                curSec->face_end = offsetMap[i];
+
+            }
+        }
+
+        if (isSingleSection) {
+            if (curSec != sections.end()) {
+                curSec->face_end = offsetMap.back(); //#TODO maybe we need to add one more?
+                //#CHECK this using a model with like 4 sections made up of 8 triangles each
+            }
+            //#TODO set sections member variable
+        }
+
+    }
+
+    struct sectionInfo {
+        PolygonInfo info;
+        //beg, end
+        std::vector<std::pair<uint32_t, uint32_t>> startEnds;
+        bool hasFace(uint32_t f) {
+            for (auto& it : startEnds) {
+                if (f >= it.first && f < it.second) return true;
+            }
+            return false;
+        }
+        void addFace(uint32_t f) {
+            addBegEnd(f, f + 1);
+        }
+        void addBegEnd(uint32_t beg, uint32_t end) {
+            for (auto& it : startEnds) {
+                if (it.second < beg || it.first > end) continue;
+                it.first = std::min(it.first, beg);
+                it.second = std::min(it.second, end);
+                return;
+            }
+            startEnds.emplace_back(beg, end);
+        }
+        void removeFace(uint32_t f) {
+            for (auto& it : startEnds) {
+                if (!(f >= it.first && f < it.second)) continue;
+
+                if (it.first < f && it.second > f+1) {
+                    startEnds.emplace_back(f + 1, it.second);
+                    it.second = f;
+                    break; //iterator invalidated
+                } else {
+                    if (it.first == f) it.first++;
+                    else if (it.second == f + 1) it.second--;
+                    if (it.first == it.second) {
+                        startEnds.erase(std::find(startEnds.begin(), startEnds.end(), it));
+                        break; //iterator invalidated
+                    }
+                }
+                break;
+            }
+        }
+
+    };
+    std::vector<sectionInfo> secInfs;
+
+    auto addSection = [&secInfs](const PolygonInfo& inf) -> uint32_t {
+        for (int i = 0; i < secInfs.size(); ++i) {
+            if (secInfs[i].info == inf) return i;
+        }
+        sectionInfo newSec;
+        newSec.info = inf;
+
+        secInfs.emplace_back(newSec);
+        return secInfs.size() - 1;
+    };
+
+
+    int lastSec = -1;
+    int lastSecStart = -1;
+    for (int i = 0; i < faces.size(); ++i) {
+        auto& prop = faceInfo[i];
+        if (lastSec > -1) {
+            auto& info = secInfs[lastSec];
+            if (info.info == prop) continue;
+            info.addBegEnd(lastSecStart, i);
+        }
+        auto secIdx = addSection(prop);
+        lastSec = secIdx;
+        lastSecStart = i;
+    }
+
+
+
+    std::for_each(selections.begin(), selections.end(), [&](const odol_selection& sel) {
+            if (sel.needsSections && sel.num_faces != 0) {
+
+                for (int i = 0; i < secInfs.size(); ++i) {
+                    auto& sec = secInfs[i];
+
+
+                    sectionInfo split;
+                    split.info = sec.info;
+                    for (int face = 0; face < sel.num_faces; ++face) {
+                        if (sec.hasFace(face)) {
+                            split.addFace(face);
+                            sec.removeFace(face);
+                        }
+                    }
+
+                    //split
+                    if (split.startEnds.empty()) continue; //no split?
+                    if (sec.startEnds.empty())
+                        sec = split;//everything moved to split
+                    else
+                        secInfs.emplace_back(split);//new section
+                }
+            }
+        });
+
+    struct sortyThing {
+        const sectionInfo* section;
+        uint32_t beg, end;
+        uint32_t indexBeg, indexEnd;
+    };
+
+    std::vector<sortyThing> sortyThings;
+
+    for (auto& section : secInfs) {
+        for (auto& it: section.startEnds) {
+            sortyThing newSorty;
+            newSorty.beg = offsetMap[it.first];
+            newSorty.end = offsetMap[it.second];
+            newSorty.indexBeg = it.first;
+            newSorty.indexEnd = it.second;
+            newSorty.section = &section;
+            sortyThings.emplace_back(newSorty);
+        }
+    }
+
+    //#TODO should be able to multithread this
+    std::sort(sortyThings.begin(), sortyThings.end(), [this](sortyThing& l, sortyThing& r) {
+        //less than operation.
+
+        auto& sec1 = *l.section;
+        auto& sec2 = *r.section;
+        bool lAlpha = sec1.info.specialFlags&IsAlphaOrdered;
+        bool rAlpha = sec2.info.specialFlags&IsAlphaOrdered;
+
+        if (lAlpha != rAlpha)
+            return lAlpha < rAlpha;
+        if (lAlpha) {
+            return l.beg < r.beg;
+        }
+
+        //#TODO move this below into a function
+
+        auto& lTex = sec1.info.textureIndex;
+        auto& rTex = sec2.info.textureIndex;
+        auto& lMat = sec1.info.materialIndex;
+        auto& rMat = sec2.info.materialIndex;
+        if (lMat != rMat) {
+            if (lMat != -1 && rMat != -1) {
+                
+                auto& lMatI = materials[lMat];
+                auto& rMatI = materials[rMat];
+
+                if (lMatI.vertexshader_id != rMatI.vertexshader_id) return lMatI.vertexshader_id < rMatI.vertexshader_id;
+                if (lMatI.pixelshader_id != rMatI.pixelshader_id) return lMatI.pixelshader_id < rMatI.pixelshader_id;
+
+                for (int i = 0; i < std::min(lMatI.textures.size(), rMatI.textures.size()); ++i) {
+                    auto& ltex = lMatI.textures[i];
+                    auto& rtex = rMatI.textures[i];
+                    if (ltex.path != rtex.path) return ltex.path < rtex.path;
+                }
+                if (lMatI.textures.size() != rMatI.textures.size()) return lMatI.textures.size() < rMatI.textures.size();
+            }
+            return lMat < rMat;
+        }
+
+        if (sec1.info.specialFlags != sec2.info.specialFlags) return sec1.info.specialFlags < sec2.info.specialFlags;
+        if (lTex != rTex) return lTex < rTex;
+        if (l.section != r.section) return l.section < r.section; //Yes, pointer comparison. They need to be seperated, order doesn't matter
+        return false; //they are equal, which means not less than.
+
+        });
+
+    if (hasAlpha) {
+
+
+        int beg = -1;
+        int end = -1;
+        for (int i = 0; i < sortyThings.size(); ++i) {
+            auto& thing = sortyThings[i];
+            if ((thing.section->info.specialFlags & (IsAlpha|IsAlphaOrdered)) == IsAlphaOrdered) {
+                if (beg == -1) beg = i;
+                end = i + 1;
+            } else if (end != -1) {
+                //#TODO should be able to multithread this
+                std::sort(sortyThings.begin()+beg, sortyThings.begin()+end, [this](sortyThing& l, sortyThing& r) {
+                    //less than operation.
+                    //#TODO move this into a function
+                    auto& sec1 = *l.section;
+                    auto& sec2 = *r.section;
+
+                    auto& lTex = sec1.info.textureIndex;
+                    auto& rTex = sec2.info.textureIndex;
+                    auto& lMat = sec1.info.materialIndex;
+                    auto& rMat = sec2.info.materialIndex;
+                    if (lMat != rMat) {
+                        if (lMat != -1 && rMat != -1) {
+
+                            auto& lMatI = materials[lMat];
+                            auto& rMatI = materials[rMat];
+
+                            if (lMatI.vertexshader_id != rMatI.vertexshader_id) return lMatI.vertexshader_id < rMatI.vertexshader_id;
+                            if (lMatI.pixelshader_id != rMatI.pixelshader_id) return lMatI.pixelshader_id < rMatI.pixelshader_id;
+
+                            for (int i = 0; i < std::min(lMatI.textures.size(), rMatI.textures.size()); ++i) {
+                                auto& ltex = lMatI.textures[i];
+                                auto& rtex = rMatI.textures[i];
+                                if (ltex.path != rtex.path) return ltex.path < rtex.path;
+                            }
+                            if (lMatI.textures.size() != rMatI.textures.size()) return lMatI.textures.size() < rMatI.textures.size();
+                        }
+                        return lMat < rMat;
+                    }
+
+                    if (sec1.info.specialFlags != sec2.info.specialFlags) return sec1.info.specialFlags < sec2.info.specialFlags;
+                    if (lTex != rTex) return lTex < rTex;
+                    if (l.section != r.section) return l.section < r.section; //Yes, pointer comparison. They need to be seperated, order doesn't matter
+                    return false; //they are equal, which means not less than.
+
+                    });
+                beg = -1;
+                end = -1;
+            }
+        }
+        if (end != -1) {
+            std::sort(sortyThings.begin() + beg, sortyThings.begin() + end, [this](sortyThing& l, sortyThing& r) {
+                //less than operation.
+                //#TODO move this into a function
+                auto& sec1 = *l.section;
+                auto& sec2 = *r.section;
+
+                auto& lTex = sec1.info.textureIndex;
+                auto& rTex = sec2.info.textureIndex;
+                auto& lMat = sec1.info.materialIndex;
+                auto& rMat = sec2.info.materialIndex;
+                if (lMat != rMat) {
+                    if (lMat != -1 && rMat != -1) {
+
+                        auto& lMatI = materials[lMat];
+                        auto& rMatI = materials[rMat];
+
+                        if (lMatI.vertexshader_id != rMatI.vertexshader_id) return lMatI.vertexshader_id < rMatI.vertexshader_id;
+                        if (lMatI.pixelshader_id != rMatI.pixelshader_id) return lMatI.pixelshader_id < rMatI.pixelshader_id;
+
+                        for (int i = 0; i < std::min(lMatI.textures.size(), rMatI.textures.size()); ++i) {
+                            auto& ltex = lMatI.textures[i];
+                            auto& rtex = rMatI.textures[i];
+                            if (ltex.path != rtex.path) return ltex.path < rtex.path;
+                        }
+                        if (lMatI.textures.size() != rMatI.textures.size()) return lMatI.textures.size() < rMatI.textures.size();
+                    }
+                    return lMat < rMat;
+                }
+
+                if (sec1.info.specialFlags != sec2.info.specialFlags) return sec1.info.specialFlags < sec2.info.specialFlags;
+                if (lTex != rTex) return lTex < rTex;
+                if (l.section != r.section) return l.section < r.section; //Yes, pointer comparison. They need to be seperated, order doesn't matter
+                return false; //they are equal, which means not less than.
+
+                });
+        }
+
+
+    }
+
+
+
+    std::vector<uint32_t> ordering;
+    ordering.resize(num_faces);
+
+    uint32_t curOrder = 0;
+    for (auto&it : sortyThings) {
+        auto beg = it.indexBeg;
+        auto end = it.indexEnd;
+
+        for (uint32_t i = beg; i < end; ++i) {
+            ordering[i] = curOrder++;
+        }
+    }
+
+    //reorder named selections
+
+    for (auto& it : selections) {
+        if (it.num_faces == 0) continue;
+
+    
+        std::vector<uint32_t> newFaces;
+        newFaces.resize(it.faces.size());
+
+        for (uint32_t i = 0; i < it.faces.size(); ++i) {
+            newFaces[i] = ordering[it.faces[i]];
+        }
+        it.faces = newFaces;
+    }
+
+    //Reorder faces and build sections
+    std::vector<odol_face> newFaces;
+
+    uint32_t begOffs=0;
+    odol_section curSec;
+    const sectionInfo* lastSorty = nullptr;
+    for (auto& it : sortyThings) {
+
+
+        auto beginOffsetInNewFaces = begOffs;
+
+        for (int i = it.indexBeg; i < it.indexEnd; ++i) {
+            newFaces.emplace_back(faces[i]);
+        }
+        auto offsSize = it.end - it.beg;
+        begOffs += offsSize;
+        auto endOffsetInNewFaces = begOffs;
+
+        if (lastSorty != it.section) {
+            if (lastSorty) {
+                sections.emplace_back(lastSec);
+            }
+            curSec = odol_section(); //null out
+
+
+            curSec.common_texture_index = it.section->info.textureIndex;
+            curSec.material_index = it.section->info.materialIndex;
+            curSec.common_face_flags = it.section->info.specialFlags;
+            curSec.area_over_tex[0] = it.section->info.areaOverTex[0];
+            curSec.area_over_tex[1] = it.section->info.areaOverTex[1];
+            curSec.unknown_long = it.section->info.order; //#TODO rename unknown long
+            //#TODO
+            //sections[k].face_index_start = face_start; //quite sure the face index shouldn't even be in there
+            //sections[k].face_index_end = face_start;
+            curSec.min_bone_index = 0; //I think these are always 0? atleast here?
+            curSec.bones_count = 0;// num_bones_subskeleton; //#TODO fixme
+            //sections[k].mat_dummy = 0;
+            //sections[k].num_stages = 2; // num_stages defines number of entries in area_over_tex
+
+
+            curSec.face_start = beginOffsetInNewFaces;
+            curSec.face_end = endOffsetInNewFaces;
 
 
 
 
-
-
-
-
+            lastSorty = it.section;
+        } else {
+            curSec.face_end = endOffsetInNewFaces;
+        }
+    }
+    if (lastSorty) {
+        sections.emplace_back(curSec);
+    }
+    faces = std::move(newFaces); //move sorted faces
 }
 
 uint32_t mlod_lod::add_point(vector3 point, vector3 normal, const uv_pair& uv_coords_input, uint32_t point_index_mlod, const uv_pair& inverseScalingUV) {
@@ -836,19 +1209,22 @@ std::optional<std::string> mlod_lod::getProperty(std::string_view propName) cons
 }
 
 void odol_section::writeTo(std::ostream& output) {
-    WRITE_CASTED(face_index_start, sizeof(uint32_t));
-    WRITE_CASTED(face_index_end, sizeof(uint32_t));
+    WRITE_CASTED(face_start, sizeof(uint32_t));
+    WRITE_CASTED(face_end, sizeof(uint32_t));
     WRITE_CASTED(min_bone_index, sizeof(uint32_t));
     WRITE_CASTED(bones_count, sizeof(uint32_t));
-    WRITE_CASTED(mat_dummy, sizeof(uint32_t)); //always 0
+
+    output.write("\0\0\0\0", 4); //matDummy always 0
+
     WRITE_CASTED(common_texture_index, sizeof(uint16_t));
     WRITE_CASTED(common_face_flags, sizeof(uint32_t));
     WRITE_CASTED(material_index, sizeof(int32_t));
-    if (material_index == -1)
+    if (material_index == -1) //#TODO write surface material path here
         output.put(0); //#TODO surface material?
+
+    uint32_t num_stages = 2; //has to be.
     WRITE_CASTED(num_stages, sizeof(uint32_t)); //#TODO has to be 2!!! Else assert trip
-    if (num_stages > 2)
-        __debugbreak(); //This doesn't work. I can't print this
+
     output.write(reinterpret_cast<char*>(area_over_tex), sizeof(float) * num_stages);
     WRITE_CASTED(unknown_long, sizeof(uint32_t));
 }
