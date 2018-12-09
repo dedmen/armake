@@ -35,6 +35,11 @@ class PAAFile {
 public:
     ///input has to be opened with binary flag
     void readHeaders(std::istream& input);
+
+    bool skipMipmap(std::istream& input);
+    bool convertMipmap(std::istream& input, std::ostream& target, Logger& logger);
+
+
     bool isAlpha;
     bool isTransparent;
     uint16_t width;
@@ -42,15 +47,17 @@ public:
     PAAType type;
     uint32_t avgColor{ 0 }; //#TODO packed color type
     uint32_t maxColor{ 0 };
+    uint32_t mipmap;
 };
 
 
 class PAAConverter{
+public:
     static void img2dxt1(unsigned char *input, unsigned char *output, int width, int height);
     static void img2dxt5(unsigned char *input, unsigned char *output, int width, int height);
     static void dxt12img(unsigned char *input, unsigned char *output, int width, int height);
     static void dxt52img(unsigned char *input, unsigned char *output, int width, int height);
-public:
+
 
     static constexpr PAAType typeFromString(std::string_view str) {
         if (str.empty())

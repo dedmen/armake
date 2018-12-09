@@ -107,6 +107,120 @@ void PAAFile::readHeaders(std::istream& input) {
         input.ignore(tagglen); //unknown tag
         break;
     }
+
+    //Actually this is size of palette
+    //#TODO
+    input.read(reinterpret_cast<char*>(&mipmap), 4);
+
+
+    input.seekg(mipmap);
+
+
+}
+
+bool PAAFile::skipMipmap(std::istream& input) {
+    uint16_t width;
+    uint16_t height;
+    input.read(reinterpret_cast<char*>(&width), sizeof(width));
+    input.read(reinterpret_cast<char*>(&height), sizeof(height));
+    if (width == 0 || height == 0) return false;
+
+    uint32_t datalen = 0;
+    //compressed Size
+    input.read(reinterpret_cast<char*>(&datalen), 3);
+    input.ignore(datalen); //skip mipmap
+}
+
+bool PAAFile::convertMipmap(std::istream& input, std::ostream& target, Logger& logger) {
+    
+
+    uint16_t width;
+    uint16_t height;
+    input.read(reinterpret_cast<char*>(&width), sizeof(width));
+    input.read(reinterpret_cast<char*>(&height), sizeof(height));
+    if (width == 0 || height == 0) return false;
+
+    uint32_t datalen = 0;
+    //compressed Size
+    input.read(reinterpret_cast<char*>(&datalen), 3);
+
+
+    std::vector<unsigned char> compressedData;
+    compressedData.resize(datalen);
+    input.read(reinterpret_cast<char*>(compressedData.data()), datalen);
+
+    int compression = COMP_NONE;
+    if (width % 32768 != width && (type == PAAType::DXT1 || type == PAAType::DXT3 || type == PAAType::DXT5)) {
+        width -= 32768;
+        compression = COMP_LZO;
+    }
+    else if (type == PAAType::ARGB4444 || type == PAAType::ARGB1555 || type == PAAType::AI88) {
+        compression = COMP_LZSS;
+    }
+
+    int imgdatalen = width * height;
+    if (type == PAAType::DXT1)
+        imgdatalen /= 2;
+    std::vector<unsigned char> imgdata;
+    imgdata.resize(imgdatalen);
+
+    if (compression == COMP_LZO) {
+        lzo_uint out_len = imgdatalen;
+        if (lzo_init() != LZO_E_OK) {
+            logger.error("Failed to initialize LZO for decompression.\n"); //#TODO throw exceptions instead
+            return false;
+        }
+        if (lzo1x_decompress(compressedData.data(), datalen, imgdata.data(), &out_len, NULL) != LZO_E_OK) {
+            logger.error("Failed to decompress LZO data.\n");
+            return false;
+        }
+    }
+    else if (compression == COMP_LZSS) {
+        logger.error("LZSS compression support is not implemented.\n");
+        return false;
+    }
+    else {
+        memcpy(imgdata.data(), compressedData.data(), imgdata.size());
+    }
+
+    std::vector<unsigned char> outputdata;
+    outputdata.resize(width * height * 4);
+
+    switch (type) {
+    case PAAType::DXT1:
+        PAAConverter::dxt12img(imgdata.data(), outputdata.data(), width, height);
+        break;
+    case PAAType::DXT3:
+        logger.error("DXT3 support is not implemented.\n");
+        return false;
+    case PAAType::DXT5:
+        PAAConverter::dxt52img(imgdata.data(), outputdata.data(), width, height);
+        break;
+    case PAAType::ARGB4444:
+        logger.error("ARGB4444 support is not implemented.\n");
+        return false;
+    case PAAType::ARGB1555:
+        logger.error("ARGB1555 support is not implemented.\n");
+        return false;
+    case PAAType::AI88:
+        logger.error("GRAY / AI88 support is not implemented.\n");
+        return false;
+    default:
+        logger.error("Unrecognized PAA type.\n");
+        return false;
+    }
+
+    if (!stbi_write_png_to_func([](void *context, void *data, int size)
+        {
+            static_cast<std::ostream*>(context)->write(static_cast<const char*>(data), size);
+        }, &target, width, height, 4, outputdata.data(), width * 4)) {
+        logger.error("Failed to write image to output.\n");
+        return false;
+    }
+
+    return true;
+
+
 }
 
 void PAAConverter::img2dxt1(unsigned char *input, unsigned char *output, int width, int height) {
@@ -474,12 +588,12 @@ int PAAConverter::img2paa(std::istream &source, std::ostream &target, Logger& lo
     target.write(reinterpret_cast<char*>(&paatype), 2);
 
     // TAGGs
-    target.write("GGATCGVA", 8);
+    target.write("GGATCGVA", 8); //#TODO implement this properly
     target.write("\x04\x00\x00\x00", 4);
     calculate_average_color(imgdata.data(), width * height, color);
     target.write(reinterpret_cast<const char*>(color), sizeof(color));
 
-    target.write("GGATCXAM", 8);
+    target.write("GGATCXAM", 8); //#TODO implement this properly
     target.write("\x04\x00\x00\x00", 4);
     calculate_maximum_color(imgdata.data(), width * height, color);
     target.write(reinterpret_cast<const char*>(color), sizeof(color));
@@ -581,175 +695,17 @@ int PAAConverter::paa2img(std::istream &source, std::ostream &target, Logger& lo
      * Returns 0 on success and a positive integer on failure.
      */
 
-    uint32_t tagglen;
-    uint32_t mipmap;
-    PAAType paatype;
 
-    uint32_t maxColor;
-    uint32_t avgColor;
-
-    bool isAlpha = false;
-    bool isTransparent = false;
-
-    //#TODO use PAAFile
-
-    source.read(reinterpret_cast<char*>(&paatype), 2); //plaette size
-
-    while (true) {
-        char taggsig[5];
-        source.read(taggsig, 4);
-        taggsig[4] = 0x00;
-        if (std::string_view(taggsig) != "GGAT") {
-            break; //This is not a tag.
-        }
-
-        char taggname[5];
-        source.read(taggname, 4);
-        taggname[4] = 0x00;
-        std::string_view tagName(taggname);
-        __debugbreak(); //check if this is correct
-
-        source.read(reinterpret_cast<char*>(&tagglen), 4);
-        if (tagName == "SFFO") {
-            //source.ignore(tagglen);
-            //fseek(f, tagglen, SEEK_CUR);
-            //continue;
-        }
-
-        if (tagName == "CGVA") { //avg color
-            source.read(reinterpret_cast<char*>(&avgColor), 4);
-            continue;
-        }
-
-        if (tagName == "CXAM") { //max color
-            source.read(reinterpret_cast<char*>(&maxColor), 4);
-            continue;
-        }
-
-        if (tagName == "ZIWS") { //??? SWIZ ?? WAT?
-            //source.ignore(tagglen);
-            //Seems to be 32bit. Dunno what this is.
-            //0x08 0x01 0x02 0x03 ??
-            //source.read(reinterpret_cast<char*>(&xxx), 4);
-            //continue;
-        }
-
-        if (tagName == "GALF") { //Flags. Is alpha/istransparent
-            uint32_t flags;
-            source.read(reinterpret_cast<char*>(&flags), 4);
-            if (flags & 1) isAlpha = true;
-            if (flags & 2) isTransparent = true;
-            continue;
-        }
-
-        source.ignore(tagglen); //unknown tag
-        break;
-    }
-    source.seekg(-4); //Go back to before we tried to read the last invalid TAGG
-
-    //Actually this is size of palette
-    //#TODO
-    source.read(reinterpret_cast<char*>(&mipmap), 4);
-
-
-    source.seekg(mipmap);
-
-
-
-    //Read mipmaps now, there might be multiple
-     //if width and height both are 0, that's the end indicator for the last mipmap
-    uint16_t width;
-    uint16_t height;
-    source.read(reinterpret_cast<char*>(&width), sizeof(width));
-    source.read(reinterpret_cast<char*>(&height), sizeof(height));
-
-    //#TODO width and height might have special magic value (1234, 8765) to indicate LZW
-
-
-    //#TODO check for invalid texture size, >4096 or <2 and throw exception
-   
-
-
-
-
-    uint32_t datalen = 0;
-    //compressed Size
-    source.read(reinterpret_cast<char*>(&datalen),3);
-
-    std::vector<unsigned char> compressedData;
-    compressedData.resize(datalen);
-    source.read(reinterpret_cast<char*>(compressedData.data()), datalen);
-
-    int compression = COMP_NONE;
-    if (width % 32768 != width && (paatype == PAAType::DXT1 || paatype == PAAType::DXT3 || paatype == PAAType::DXT5)) {
-        width -= 32768;
-        compression = COMP_LZO;
-    }
-    else if (paatype == PAAType::ARGB4444 || paatype == PAAType::ARGB1555 || paatype == PAAType::AI88) {
-        compression = COMP_LZSS;
+    PAAFile file;
+    file.readHeaders(source);
+    if (file.convertMipmap(source, target, logger)) { //Convert top-most mipmap
+        return 0;
+    } else {
+        return 1;
     }
 
-    int imgdatalen = width * height;
-    if (paatype == PAAType::DXT1)
-        imgdatalen /= 2;
-    std::vector<unsigned char> imgdata;
-    imgdata.resize(imgdatalen);
 
-    if (compression == COMP_LZO) {
-        lzo_uint out_len = imgdatalen;
-        if (lzo_init() != LZO_E_OK) {
-            logger.error("Failed to initialize LZO for decompression.\n");
-            return 3;
-        }
-        if (lzo1x_decompress(compressedData.data(), datalen, imgdata.data(), &out_len, NULL) != LZO_E_OK) {
-            logger.error("Failed to decompress LZO data.\n");
-            return 3;
-        }
-    }
-    else if (compression == COMP_LZSS) {
-        logger.error("LZSS compression support is not implemented.\n");
-        return 3;
-    }
-    else {
-        memcpy(imgdata.data(), compressedData.data(), imgdata.size());
-    }
 
-    std::vector<unsigned char> outputdata;
-    outputdata.resize(width * height * 4);
-
-    switch (paatype) {
-    case PAAType::DXT1:
-        dxt12img(imgdata.data(), outputdata.data(), width, height);
-        break;
-    case PAAType::DXT3:
-        logger.error("DXT3 support is not implemented.\n");
-        return 4;
-    case PAAType::DXT5:
-        dxt52img(imgdata.data(), outputdata.data(), width, height);
-        break;
-    case PAAType::ARGB4444:
-        logger.error("ARGB4444 support is not implemented.\n");
-        return 4;
-    case PAAType::ARGB1555:
-        logger.error("ARGB1555 support is not implemented.\n");
-        return 4;
-    case PAAType::AI88:
-        logger.error("GRAY / AI88 support is not implemented.\n");
-        return 4;
-    default:
-        logger.error("Unrecognized PAA type.\n");
-        return 4;
-    }
-
-    if (!stbi_write_png_to_func([](void *context, void *data, int size)
-        {
-            static_cast<std::ostream*>(context)->write(static_cast<const char*>(data), size);
-        }, &target, width, height, 4, outputdata.data(), width * 4)) {
-        logger.error("Failed to write image to output.\n");
-        return 5;
-    }
-
-    return 0;
 }
 
 int PAAConverter::cmd_img2paa(Logger& logger) {
