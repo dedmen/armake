@@ -45,33 +45,6 @@ public:
     void write(std::ostream& str) { str.seekp(offset); str.write(reinterpret_cast<const char*>(&value), sizeof(Type)); }
 };
 
-
-
-int compare_face_lookup(std::vector<mlod_face> &faces, uint32_t a, uint32_t b) {
-
-    uint32_t a_index;
-    uint32_t b_index;
-    int compare;
-
-    a_index = a;
-    b_index = b;
-
-    compare = faces[a_index].material_index - faces[b_index].material_index;
-    if (compare != 0)
-        return compare;
-
-    compare = faces[a_index].face_flags - faces[b_index].face_flags;
-    if (compare != 0)
-        return compare;
-
-    compare = faces[a_index].texture_index - faces[b_index].texture_index;
-    if (compare != 0) //#TODO this is stupid, just compare them
-        return compare;
-
-    return faces[a_index].section_names.compare(faces[b_index].section_names);
-}
-
-
 //#TODO move this somewhere sensible
 bool resIsShadowVolume(ComparableFloat<std::milli> resolution) {
 
@@ -615,6 +588,228 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
 
     source.read(reinterpret_cast<char*>(&resolution), 4);
     return true;
+}
+
+void mlod_lod::writeODOL(std::ostream& output) {
+    short u, v;
+    int x, y, z;
+    long i;
+    uint32_t temp;
+    char *ptr;
+
+    WRITE_CASTED(num_proxies, sizeof(uint32_t));
+    for (i = 0; i < num_proxies; i++) {
+        output.write(proxies[i].name.c_str(), proxies[i].name.length() + 1);
+        WRITE_CASTED(proxies[i].transform_x, sizeof(vector3));
+        WRITE_CASTED(proxies[i].transform_y, sizeof(vector3));
+        WRITE_CASTED(proxies[i].transform_z, sizeof(vector3));
+        WRITE_CASTED(proxies[i].transform_n, sizeof(vector3));
+        WRITE_CASTED(proxies[i].proxy_id, sizeof(uint32_t));
+        WRITE_CASTED(proxies[i].selection_index, sizeof(uint32_t));
+        WRITE_CASTED(proxies[i].bone_index, sizeof(int32_t));
+        WRITE_CASTED(proxies[i].section_index, sizeof(uint32_t));
+    }
+
+
+    //#TODO CreateSubskeleton in FinalizeLOD 7975
+
+    // Set sub skeleton references
+    uint32_t num_bones_skeleton = model_info.skeleton->num_bones;
+    uint32_t num_bones_subskeleton = model_info.skeleton->num_bones;
+    std::vector<uint32_t> subskeleton_to_skeleton;
+    subskeleton_to_skeleton.resize(num_bones_skeleton);
+    std::vector<odol_bonelink> skeleton_to_subskeleton;
+    skeleton_to_subskeleton.resize(num_bones_skeleton);
+
+    for (i = 0; i < model_info.skeleton->num_bones; i++) {
+        subskeleton_to_skeleton[i] = i;
+        skeleton_to_subskeleton[i].num_links = 1;
+        skeleton_to_subskeleton[i].links[0] = i;
+    }
+
+
+
+    WRITE_CASTED(num_bones_subskeleton, sizeof(uint32_t));
+    //#TODO use size() on array instead of num var
+    output.write(reinterpret_cast<const char*>(subskeleton_to_skeleton.data()), sizeof(uint32_t) * num_bones_subskeleton);
+
+
+    WRITE_CASTED(num_bones_skeleton, sizeof(uint32_t));
+    for (i = 0; i < num_bones_skeleton; i++) {
+        WRITE_CASTED(skeleton_to_subskeleton[i].num_links, sizeof(uint32_t));
+        output.write(reinterpret_cast<const char*>(skeleton_to_subskeleton[i].links), sizeof(uint32_t) * skeleton_to_subskeleton[i].num_links);
+    }
+
+    WRITE_CASTED(num_points, sizeof(uint32_t));
+    WRITE_CASTED(face_area, sizeof(float));
+    WRITE_CASTED(orHints, sizeof(uint32_t));
+    WRITE_CASTED(andHints, sizeof(uint32_t));
+
+
+    WRITE_CASTED(min_pos, sizeof(vector3));
+    WRITE_CASTED(max_pos, sizeof(vector3));
+    WRITE_CASTED(autocenter_pos, sizeof(vector3));
+    WRITE_CASTED(boundingSphere, sizeof(float));
+    
+
+    uint32_t num_textures = textures.size();
+    WRITE_CASTED(num_textures, sizeof(uint32_t));
+
+    std::string texString;
+    for (auto& tex : textures) {
+        texString += tex;
+        texString.push_back('\0');
+    }
+    __debugbreak(); //check if the textures string is correct. null char delimited array of texture paths
+
+    output.write(texString.c_str(), texString.length() + 1);
+
+    uint32_t num_materials = materials.size();
+    WRITE_CASTED(num_materials, sizeof(uint32_t));
+    for (uint32_t i = 0; i < num_materials; i++) //#TODO ranged for
+        materials[i].writeTo(output);
+
+    // the point-to-vertex and vertex-to-point arrays are just left out
+    output.write("\0\0\0\0\0\0\0\0", sizeof(uint32_t) * 2);
+
+    WRITE_CASTED(num_faces, sizeof(uint32_t));
+
+    uint32_t face_allocation_size = std::transform_reduce(faces.begin(), faces.end(), std::plus<>(), [](const odol_face& f) {
+        return (f.face_type == 4) ? 20 : 16;
+        });
+
+
+    WRITE_CASTED(face_allocation_size, sizeof(uint32_t));
+    output.write("\0\0", sizeof(uint16_t)); //always 0
+
+    for (i = 0; i < num_faces; i++) {
+        WRITE_CASTED(faces[i].face_type, sizeof(uint8_t));
+        output.write(reinterpret_cast<char*>(faces[i].points.data()), sizeof(uint32_t) * faces[i].face_type);
+    }
+
+    WRITE_CASTED(num_sections, sizeof(uint32_t));
+    for (i = 0; i < num_sections; i++) {
+        sections[i].writeTo(output);
+    }
+
+    //#TODO may want a array writer for this. It's always number followed by elements
+    WRITE_CASTED(num_selections, sizeof(uint32_t));
+    for (i = 0; i < num_selections; i++) {
+        selections[i].writeTo(output);
+    }
+
+    uint32_t num_properties = properties.size();
+    WRITE_CASTED(num_properties, sizeof(uint32_t));
+    for (auto& prop : properties) {
+        output.write(prop.name.c_str(), prop.name.length() + 1);
+        output.write(prop.value.c_str(), prop.value.length() + 1);
+    }
+
+    //#TODO animation phases
+    WRITE_CASTED(num_frames, sizeof(uint32_t));
+    // @todo frames
+
+
+
+
+    uint32_t icon_color = 0xff9d8254; //#TODO
+    uint32_t selected_color = 0xff9d8254;
+
+    
+
+    WRITE_CASTED(icon_color, sizeof(uint32_t));
+    WRITE_CASTED(selected_color, sizeof(uint32_t));
+    WRITE_CASTED(special, sizeof(uint32_t));
+    WRITE_CASTED(vertexboneref_is_simple, sizeof(bool));
+
+    size_t fp_vertextable_size = output.tellp();
+    output.write("\0\0\0\0", 4);
+
+    //#TODO? This? stuff?
+    // pointflags
+    WRITE_CASTED(num_points, 4);
+    output.put(1);
+    if (num_points > 0)
+        output.write("\0\0\0\0", 4);
+
+    // uvs
+    WRITE_CASTED(minUV, sizeof(struct uv_pair));
+    WRITE_CASTED(maxUV, sizeof(struct uv_pair));
+
+
+    std::vector<uv_paircompact> uv_coords;
+
+
+    uint32_t num_uvs = uv_coords.size();
+    WRITE_CASTED(num_uvs, sizeof(uint32_t));
+    //#TODO LZO/LZW compression for this
+    output.put(0);//is LZ compressed
+    if (num_points > 0) {
+        output.put(0); //thingy.. Complicated. Only in non compressed thing
+        for (i = 0; i < num_uvs; i++) { //#TODO foreach
+            // write compressed pair
+            WRITE_CASTED(uv_coords[i].u, sizeof(int16_t));
+            WRITE_CASTED(uv_coords[i].v, sizeof(int16_t));
+        }
+    }
+    output.write("\x01\0\0\0", 4); //Other UV stages, 32bit int. Here we say we have 1 UV stage, That's the one we've just written.
+    //Write the same stuff as above again for a potential second UV stage
+    //#TODO ^
+
+    // points
+    WRITE_CASTED(num_points, sizeof(uint32_t));
+    if (num_points > 0) {
+        output.put(0);
+        output.write(reinterpret_cast<char*>(points.data()), sizeof(vector3) * num_points);
+    }
+
+    // normals
+    WRITE_CASTED(num_points, sizeof(uint32_t));
+    output.put(0);//is LZ compressed
+    if (num_points > 0) {
+        output.put(0); //thingy.. Complicated. Only in non compressed thing
+        for (i = 0; i < num_points; i++) {
+            // write compressed triplet
+            x = (int)(-511.0f * normals[i].x + 0.5);
+            y = (int)(-511.0f * normals[i].y + 0.5);
+            z = (int)(-511.0f * normals[i].z + 0.5);
+
+            x = MAX(MIN(x, 511), -511);
+            y = MAX(MIN(y, 511), -511);
+            z = MAX(MIN(z, 511), -511);
+
+            temp = (((uint32_t)z & 0x3FF) << 20) | (((uint32_t)y & 0x3FF) << 10) | ((uint32_t)x & 0x3FF);
+            output.write(reinterpret_cast<char*>(&temp), sizeof(uint32_t));
+        }
+    }
+
+    //#TODO st coords? in FinalizeLOD
+    // ST coordinates
+    output.write("\0\0\0\0", 4);
+
+    // vertex bone ref
+    if (vertexboneref.empty() || num_points == 0) {
+        output.write("\0\0\0\0", 4);
+    } else {
+        WRITE_CASTED(num_points, sizeof(uint32_t));
+        output.put(0);
+        output.write(reinterpret_cast<char*>(vertexboneref.data()), sizeof(struct odol_vertexboneref) * num_points);
+    }
+
+    // neighbor bone ref
+    output.write("\0\0\0\0", 4);
+
+    temp = static_cast<size_t>(output.tellp()) - fp_vertextable_size;
+    output.seekp(fp_vertextable_size);
+    WRITE_CASTED(temp, 4);
+    output.seekp(0, std::ostream::end);
+
+
+    // has Collimator info?
+    output.write("\0\0\0\0", sizeof(uint32_t)); //If 1 then need to write CollimatorInfo structure
+
+    // unknown byte
+    output.write("\0", 1);
 }
 
 uint32_t mlod_lod::getAndHints() {
@@ -1167,6 +1362,37 @@ uint32_t mlod_lod::add_point(vector3 point, vector3 normal, const uv_pair& uv_co
 
 }
 
+void mlod_lod::buildSubskeleton(bool neighbour_faces) {
+    
+
+    //create vertex bone ref
+
+    //if neighbor create neightbor bone ref
+
+
+    //split sections after bones
+
+    //set sections bone references
+
+
+    //build skeletonToSubSkeleto
+
+    //create hierarchy 5571
+
+    //log if needed to create sections for skeleton
+
+
+
+    //lots of stuff
+
+
+
+
+
+
+
+}
+
 void mlod_lod::updateBoundingBox() {
 
  /*
@@ -1369,7 +1595,7 @@ void odol_lod::writeTo(std::ostream& output) {
 
     for (i = 0; i < num_faces; i++) {
         WRITE_CASTED(faces[i].face_type, sizeof(uint8_t));
-        output.write(reinterpret_cast<char*>(faces[i].table), sizeof(uint32_t) * faces[i].face_type);
+        output.write(reinterpret_cast<char*>(faces[i].points.data()), sizeof(uint32_t) * faces[i].face_type);
     }
 
     WRITE_CASTED(num_sections, sizeof(uint32_t));
@@ -1482,31 +1708,6 @@ void odol_lod::writeTo(std::ostream& output) {
     output.write("\0", 1);
 }
 
-int compare_face_lookup(std::vector<mlod_face> &faces, uint32_t a, uint32_t b) {
-
-    uint32_t a_index;
-    uint32_t b_index;
-    int compare;
-
-    a_index = a;
-    b_index = b;
-
-    compare = faces[a_index].material_index - faces[b_index].material_index;
-    if (compare != 0)
-        return compare;
-
-    compare = faces[a_index].face_flags - faces[b_index].face_flags;
-    if (compare != 0)
-        return compare;
-
-    compare = faces[a_index].texture_index - faces[b_index].texture_index;
-    if (compare != 0) //#TODO this is stupid, just compare them
-        return compare;
-
-    return faces[a_index].section_names.compare(faces[b_index].section_names);
-}
-
-
 bool is_alpha(struct mlod_face *face) {
 
     //#TODO if texture is transparent/has alpha see PAAFile
@@ -1566,11 +1767,7 @@ void P3DFile::convert_lod(mlod_lod &mlod_lod, odol_lod &odol_lod) {
     odol_lod.num_materials = mlod_lod.materials.size();
 
     odol_lod.materials = std::move(mlod_lod.materials); 
-    for (auto& tex : mlod_lod.textures) {
-        odol_lod.textures += tex;
-        odol_lod.textures.push_back('\0');
-    }
-    __debugbreak(); //check if the textures string is correct. null char delimited array of texture paths
+
 
 #pragma endregion TexturesAndMaterials
 
@@ -2172,7 +2369,7 @@ void P3DFile::get_mass_data() {
     vector3 centerOfMass = empty_vector;
     float mass = 0;
     for (int i = 0; i < mass_lod->num_points; i++) {
-        auto& pos = mass_lod->points[i].pos;
+        auto& pos = mass_lod->points[i];
         mass += massArray[i];
         centerOfMass += pos * massArray[i];
     }
@@ -2181,7 +2378,7 @@ void P3DFile::get_mass_data() {
 
     matrix inertia = empty_matrix;
     for (int i = 0; i < mass_lod->num_points; i++) {
-        auto& pos = mass_lod->points[i].pos;
+        auto& pos = mass_lod->points[i];
         matrix r_tilda = vector_tilda(pos - model_info.centre_of_mass);
         inertia = matrix_sub(inertia, matrix_mult_scalar(massArray[i], matrix_mult(r_tilda, r_tilda)));
     }
@@ -2368,7 +2565,7 @@ void P3DFile::updateBounds() {
     for (auto& lod : mlod_lods) {
 
         for (auto& it : lod.points) {
-            it.pos -= boundingCenterChange;
+            it -= boundingCenterChange;
         }
         //#TODO update animation phases for lod
 
@@ -2793,7 +2990,7 @@ void P3DFile::build_model_info() {
             } else {
                 memPointExists = found->vertices[0] >= 0;
 
-                aimMemPoint = memLod.points[found->vertices[0]].pos;
+                aimMemPoint = memLod.points[found->vertices[0]];
                 model_info.aiming_center = aimMemPoint;
             }
         }
@@ -3045,8 +3242,8 @@ void P3DFile::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution) {
 
 
     //shape.cpp 7927
-    //#HIGHPRIO I stopped here
 
+    bool neighbourFaces = false;
     if (resIsShadowVolume(resolution)) {//#TODO don't really need resolution param to finishLOD, can just take from LOD
 
         //#TODO shadow geometry processing on lod
@@ -3057,6 +3254,7 @@ void P3DFile::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution) {
             it.specialFlags &= IsHiddenProxy | NoShadow;
 
         }
+        neighbourFaces = true; //#TODO just call resIsShadowVolume again
     }
 
     //If shadow volume do extra stuff shape.cpp L7928
@@ -3079,7 +3277,15 @@ void P3DFile::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution) {
     lod.buildSections();    
 
     // If shadow buffer, set everything (apart of base texture if not opaque) to predefined values
+    
+    if (skeletonSource) {
+        lod.buildSubskeleton(neighbourFaces);
+    }
+
     //Create subskeleton
+
+
+
     //rescan sections
 
 
@@ -3181,20 +3387,20 @@ void P3DFile::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution) {
         //shape.cpp 8074
 
         newProxy.transform_y = (
-            lod.points[proxyFace.table[1].points_index].pos
+            lod.points[proxyFace.points[1]]
             -
-            lod.points[proxyFace.table[0].points_index].pos).normalize();
+            lod.points[proxyFace.points[0]]).normalize();
 
         newProxy.transform_z = (
-            lod.points[proxyFace.table[2].points_index].pos
+            lod.points[proxyFace.points[2]]
             -
-            lod.points[proxyFace.table[0].points_index].pos).normalize();
+            lod.points[proxyFace.points[0]]).normalize();
 
         newProxy.transform_x =
             newProxy.transform_y.cross(newProxy.transform_z);
 
         newProxy.transform_n =
-            lod.points[proxyFace.table[0].points_index].pos;
+            lod.points[proxyFace.points[0]];
 
         lod.proxies.emplace_back(std::move(newProxy));
     }

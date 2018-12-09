@@ -263,7 +263,11 @@ public:
 
     float getBoundingSphere(const vector3& center);
 
-    bool read(std::istream& source, Logger& logger, std::vector<float> &mass);
+    bool read(std::istream& source, Logger& logger, std::vector<float> &mass); //#TODO rename load MLOD
+
+    void writeODOL(std::ostream& output);
+
+
     uint32_t getAndHints();
     uint32_t getOrHints();
     uint32_t getSpecialFlags();
@@ -272,10 +276,7 @@ public:
     uint32_t add_point(
         vector3 point, vector3 normal, const uv_pair &uv_coords_input,
         uint32_t point_index_mlod, const uv_pair& inverseScalingUV);
-
-
-
-
+    void buildSubskeleton(bool neighbour_faces_);
 
 
     uint32_t orHints;
@@ -379,7 +380,7 @@ public:
     vector3 autocenter_pos;
     float sphere;
     uint32_t num_textures;
-    std::string textures;
+
     uint32_t num_materials;
     std::vector<Material> materials;
     std::vector<uint32_t> point_to_vertex;
