@@ -80,7 +80,6 @@
 
 #define NOPOINT UINT32_MAX //=-1 as int32_t
 
-
 //#include "utils.h"
 #include "model_config.h"
 #include "material.h"
@@ -151,25 +150,46 @@ struct odol_face {
 
 
 
-    float getArea(const std::vector<point>& pointPos) {
+    float getArea(const std::vector<vector3>& pointPos) {
 
-        const vector3& p1 = pointPos[points[0]].pos;
-        const vector3& p2 = pointPos[points[1]].pos;
-        const vector3& p3 = pointPos[points[2]].pos;
+        const vector3& p1 = pointPos[points[0]];
+        const vector3& p2 = pointPos[points[1]];
+        const vector3& p3 = pointPos[points[2]];
 
 
         float area = ((p2 - p1).cross(p3 - p1)).magnitude();
 
         if (face_type == 4) {
-            const vector3& p1 = pointPos[points[0]].pos;
-            const vector3& p2 = pointPos[points[2]].pos;
-            const vector3& p3 = pointPos[points[3]].pos;
-
+            const vector3& p1 = pointPos[points[0]];
+            const vector3& p2 = pointPos[points[2]];
+            const vector3& p3 = pointPos[points[3]];
 
             area += ((p2 - p1).cross(p3 - p1)).magnitude();
         }
         return area * 0.5f;
     }
+
+    float getAreaTop(const std::vector<vector3>& pointPos) {
+
+        const vector3& p1 = pointPos[points[0]];
+        const vector3& p2 = pointPos[points[1]];
+        const vector3& p3 = pointPos[points[2]];
+
+
+        float area = std::max(((p2 - p1).cross(p3 - p1)).y, 0.f);
+
+        if (face_type == 4) {
+            const vector3& p1 = pointPos[points[0]];
+            const vector3& p2 = pointPos[points[2]];
+            const vector3& p3 = pointPos[points[3]];
+
+            area += std::max(((p2 - p1).cross(p3 - p1)).y, 0.f);
+        }
+        return area * 0.5f;
+    }
+
+
+
 
 };
 
@@ -204,6 +224,8 @@ struct odol_section {
     int32_t material_index;
     float area_over_tex[2];
     uint32_t unknown_long;
+    uint32_t face_start_index;
+    uint32_t face_end_index;
 };
 
 class mlod_lod;
@@ -216,6 +238,7 @@ struct odol_selection {
 
     class selectionVertex {
     public:
+        selectionVertex(uint32_t vi, uint8_t w) : vertexIndex(vi), weight(w) {}
         uint32_t vertexIndex;
         uint8_t weight;
     };
@@ -263,6 +286,7 @@ public:
 
     float getBoundingSphere(const vector3& center);
 
+    void updateColors();
     bool read(std::istream& source, Logger& logger, std::vector<float> &mass); //#TODO rename load MLOD
 
     void writeODOL(std::ostream& output);
@@ -276,12 +300,16 @@ public:
     uint32_t add_point(
         vector3 point, vector3 normal, const uv_pair &uv_coords_input,
         uint32_t point_index_mlod, const uv_pair& inverseScalingUV);
-    void buildSubskeleton(bool neighbour_faces_);
+    void buildSubskeleton(std::unique_ptr<skeleton_>& skeleton,bool neighbour_faces_);
 
 
-    uint32_t orHints;
-    uint32_t andHints;
-    uint32_t special;
+    uint32_t orHints{ 0 };
+    uint32_t andHints{ 0 };
+    uint32_t special{ 0 };
+    float faceArea;
+    ColorInt icon_color{ 0xff9d8254 };
+    ColorInt selected_color{ 0xff9d8254 };
+
 
     uint32_t num_points;
     uint32_t num_faces;
@@ -322,7 +350,7 @@ public:
     uint32_t num_selections;
     std::vector<odol_selection> selections;
 
-    std::optional<std::vector<odol_selection>::iterator> findSelectionByName(std::string_view name) const {
+    std::optional<std::vector<odol_selection>::iterator> findSelectionByName(std::string_view name) {
         auto found = std::find_if(selections.begin(), selections.end(), [name](const odol_selection& sel)
             {
                 return sel.name == name;
@@ -357,55 +385,17 @@ public:
 
     std::vector<uint32_t> point_to_vertex;
     std::vector<uint32_t> vertex_to_point;
-};
 
-class odol_lod {
-public:
+    //Skeleton stuff
+    bool vertexboneref_is_simple;
+    std::vector<struct odol_vertexboneref> vertexboneref;
 
-    uint32_t add_point(const mlod_lod &mlod_lod, const model_info &model_info,
-        uint32_t point_index_mlod, vector3 normal, struct uv_pair *uv_coords, Logger& logger);
-
-    void writeTo(std::ostream& output);
 
     uint32_t num_bones_subskeleton;
     std::vector<uint32_t> subskeleton_to_skeleton;
     uint32_t num_bones_skeleton;
     std::vector<odol_bonelink> skeleton_to_subskeleton;
-    uint32_t num_points;
-    uint32_t num_points_mlod;
-    float face_area;
-    uint32_t clip_flags[2];
-    vector3 min_pos;
-    vector3 max_pos;
-    vector3 autocenter_pos;
-    float sphere;
-    uint32_t num_textures;
-
-    uint32_t num_materials;
-    std::vector<Material> materials;
-    std::vector<uint32_t> point_to_vertex;
-    std::vector<uint32_t> vertex_to_point;
-
-    uint32_t num_faces;
-    uint32_t face_allocation_size;
-    uint16_t always_0;
-    std::vector<struct odol_face> faces;
-
-    uint32_t num_selections;
-    std::vector<struct odol_selection> selections;
-    uint32_t num_properties;
-    std::vector<property> properties;
-    uint32_t num_frames;
-    struct odol_frame *frames;
-    uint32_t icon_color;
-    uint32_t selected_color;
-    uint32_t flags;
-    bool vertexboneref_is_simple;
-    struct uv_pair uv_scale[4];
-    std::vector<struct uv_pair> uv_coords;
-    std::vector<vector3> points;
-    std::vector<vector3> normals;
-    std::vector<struct odol_vertexboneref> vertexboneref;
+   
 };
 
 template <typename Type, Type nullVal>
@@ -721,6 +711,23 @@ class Buoyant;
 
 class MultiLODShape {
 public:
+    MultiLODShape(Logger& logger) : logger(logger) {}
+
+    Logger& logger;
+
+    void finishLOD(mlod_lod& mlodLod_, uint32_t uint32_, float resolution_);
+    int read_lods(std::istream &f_source, uint32_t num_lods);
+    //#TODO return the boxes with a pair
+    void getBoundingBox(vector3 &bbox_min, vector3 &bbox_max, bool visual_only, bool geometry_only);
+
+    void get_mass_data();
+    void optimizeLODS();
+    void updateBounds();
+    void build_model_info();
+
+    void write_animations(std::ostream& output);
+
+
 
     ModelConfig modelConfig;
 
@@ -820,16 +827,16 @@ public:
 
             if (mface.face_type >= 3) {
                 vol += stuff(
-                    ld->points[mface.table[0].points_index].pos,
-                    ld->points[mface.table[1].points_index].pos,
-                    ld->points[mface.table[2].points_index].pos
+                    ld->points[mface.points[0]],
+                    ld->points[mface.points[1]],
+                    ld->points[mface.points[2]]
                     );
             }
             if (mface.face_type == 4) {
                 vol += stuff(
-                    ld->points[mface.table[0].points_index].pos,
-                    ld->points[mface.table[2].points_index].pos,
-                    ld->points[mface.table[3].points_index].pos
+                    ld->points[mface.points[0]],
+                    ld->points[mface.points[2]],
+                    ld->points[mface.points[3]]
                     );
             }
 
@@ -882,10 +889,10 @@ public:
             return;
         }
         float invStep = (float)_maxSpheres / maxSize;
-#undef max
-        int xSegments = std::max(xSize*invStep, (float)_minSpheres);
-        int ySegments = std::max(ySize*invStep, (float)_minSpheres);
-        int zSegments = std::max(zSize*invStep, (float)_minSpheres);
+
+        float xSegments = std::max(xSize*invStep, (float)_minSpheres);
+        float ySegments = std::max(ySize*invStep, (float)_minSpheres);
+        float zSegments = std::max(zSize*invStep, (float)_minSpheres);
 
         _stepX = xSize / xSegments;
         _stepY = ySize / ySegments;
@@ -924,18 +931,18 @@ public:
         }
     }
 
-    bool insideX(odol_face& f, const mlod_lod& v, vector3 pos) const {
+    bool insideX(const odol_face& f, const mlod_lod& v, vector3 pos) const {
         if (f.face_type < 3) return false;
 
         vector3 pPos(0, pos.y, pos.z);
-        auto lastVertID = f.table[f.face_type - 1];
+        auto lastVertID = f.points[f.face_type - 1];
 
-        vector3 lPos = v.points[lastVertID].pos;
+        vector3 lPos = v.points[lastVertID];
         bool andIn = true;
         bool orIn = false;
         for (int i = 0; i < f.face_type; i++)
         {
-            vector3 aPos = v.points[f.table[i]].pos;
+            vector3 aPos = v.points[f.points[i]];
 
             vector3 lineNormal(0, lPos.z - aPos.z, aPos.y - lPos.y);
             vector3 aPPos(0, aPos.y, aPos.z);
@@ -948,18 +955,18 @@ public:
         return andIn == orIn;
     }
 
-    bool insideY(odol_face& f, const mlod_lod& v, vector3 pos) const {
+    bool insideY(const odol_face& f, const mlod_lod& v, vector3 pos) const {
         if (f.face_type < 3) return false;
 
         vector3 pPos(pos.x, 0, pos.z);
-        auto lastVertID = f.table[f.face_type - 1];
+        auto lastVertID = f.points[f.face_type - 1];
 
-        vector3 lPos = v.points[lastVertID].pos;
+        vector3 lPos = v.points[lastVertID];
         bool andIn = true;
         bool orIn = false;
         for (int i = 0; i < f.face_type; i++)
         {
-            vector3 aPos = v.points[f.table[i]].pos;
+            vector3 aPos = v.points[f.points[i]];
 
             vector3 lineNormal(lPos.z - aPos.z, 0, aPos.x - lPos.x);
             vector3 aPPos(aPos.x, 0, aPos.z);
@@ -972,18 +979,18 @@ public:
         return andIn == orIn;
     }
 
-    bool insideZ(odol_face& f, const mlod_lod& v, vector3 pos) const {
+    bool insideZ(const odol_face& f, const mlod_lod& v, vector3 pos) const {
         if (f.face_type < 3) return false;
 
         vector3 pPos(pos.x, pos.y, 0);
-        auto lastVertID = f.table[f.face_type - 1];
+        auto lastVertID = f.points[f.face_type - 1];
 
-        vector3 lPos = v.points[lastVertID].pos;
+        vector3 lPos = v.points[lastVertID];
         bool andIn = true;
         bool orIn = false;
         for (int i = 0; i < f.face_type; i++)
         {
-            vector3 aPos = v.points[f.table[i]].pos;
+            vector3 aPos = v.points[f.points[i]];
 
             vector3 lineNormal(aPos.y - lPos.y, lPos.x - aPos.x, 0);
             vector3 aPPos(aPos.x, aPos.y, 0);
@@ -1014,14 +1021,7 @@ public:
 
                 //for each faces
                 for (auto& mface : shape.faces) {
-                    odol_face face;
-                    face.face_type = mface.face_type;
-                    face.table[0] = mface.table[0].points_index;
-                    face.table[1] = mface.table[1].points_index;
-                    face.table[2] = mface.table[2].points_index;
-                    face.table[3] = mface.table[3].points_index;
-
-                    if (insideX(face, shape, rayX)) {
+                    if (insideX(mface, shape, rayX)) {
                         isInside = true;
                         break;
                     }
@@ -1051,14 +1051,7 @@ public:
                 bool isInside = false;
 
                 for (auto& mface : shape.faces) {
-                    odol_face face;
-                    face.face_type = mface.face_type;
-                    face.table[0] = mface.table[0].points_index;
-                    face.table[1] = mface.table[1].points_index;
-                    face.table[2] = mface.table[2].points_index;
-                    face.table[3] = mface.table[3].points_index;
-
-                    if (insideY(face, shape, rayY)) {
+                    if (insideY(mface, shape, rayY)) {
                         isInside = true;
                         break;
                     }
@@ -1088,14 +1081,7 @@ public:
                 bool isInside = false;
 
                 for (auto& mface : shape.faces) {
-                    odol_face face;
-                    face.face_type = mface.face_type;
-                    face.table[0] = mface.table[0].points_index;
-                    face.table[1] = mface.table[1].points_index;
-                    face.table[2] = mface.table[2].points_index;
-                    face.table[3] = mface.table[3].points_index;
-
-                    if (insideZ(face, shape, rayY)) {
+                    if (insideZ(mface, shape, rayY)) {
                         isInside = true;
                         break;
                     }
@@ -1177,7 +1163,7 @@ public:
                     }
 
                     //if all checks returns true, then this point is inside
-                    rays[x + y * _arraySizeX * 10 + z * _arraySizeX * 10 * _arraySizeY * 10] = 2;//true; //DBG
+                    rays[x + y * _arraySizeX * 10 + z * _arraySizeX * 10 * _arraySizeY * 10] = true;
                 }
             }
         }
@@ -1336,24 +1322,10 @@ public:
 
 
 class P3DFile : public MultiLODShape { //#TODO move that inherit out of here
-    
-    Logger& logger;
 
-    void finishLOD(mlod_lod& mlodLod_, uint32_t uint32_, float resolution_);
-    int read_lods(std::istream &f_source, uint32_t num_lods);
-    //#TODO return the boxes with a pair
-    void getBoundingBox(vector3 &bbox_min, vector3 &bbox_max, bool visual_only, bool geometry_only);
-
-    void get_mass_data();
-    void optimizeLODS();
-    void updateBounds();
-    void build_model_info();
-
-    void write_animations(std::ostream& output);
-    void convert_lod(mlod_lod &mlod_lod, odol_lod &odol_lod);
 
 public:
-    P3DFile(Logger& logger) : logger(logger){}
+    P3DFile(Logger& logger) : MultiLODShape(logger){}
 
     std::vector<std::string> retrieveDependencies(std::filesystem::path sourceFile);
 

@@ -17,23 +17,13 @@
  */
 
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <string.h>
-//#include <unistd.h>
-#include <math.h>
+#include <cstdlib>
+#include <string>
 #include <iostream>
 #include <fstream>
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
 #include "args.h"
-#include "filesystem.h"
 #include "rapify.h"
-#include "utils.h"
 #include "derapify.h"
 #include <filesystem>
 

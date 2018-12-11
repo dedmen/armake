@@ -24,11 +24,6 @@
 ////#include <unistd.h>
 #include <time.h>
 
-#ifdef _WIN32
-#include <windows.h>
-#include <wchar.h>
-#endif
-
 #include "filesystem.h"
 #include "utils.h"
 #include "preprocess.h"

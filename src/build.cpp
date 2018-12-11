@@ -23,12 +23,7 @@
 #include <string.h>
 #include <filesystem>
 #include "unpack.h"
-#include <iostream>
-//#include <unistd.h>
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
 extern "C" {
 #include "sha1.h"
 }

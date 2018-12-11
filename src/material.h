@@ -25,21 +25,12 @@
 #include <string>
 #include "logger.h"
 #include "matrix.h"
+#include "utils.h"
 #include <bitset>
 
 struct shader_ref {
     uint32_t id;
     std::string_view name;
-};
-
-struct color {
-    color() {}
-    color(std::vector<float> vec): r(vec[0]), g(vec[1]), b(vec[2]), a(vec[3]) {}
-    color(float r, float g, float b, float a): r(r), g(g), b(b), a(a) {}
-    float r;
-    float g;
-    float b;
-    float a;
 };
 
 enum class TextureFilter : uint32_t {
@@ -194,12 +185,12 @@ public:
 
     std::string path;
     uint32_t type { MATERIALTYPE }; //This is actually version
-    struct color emissive;
-    struct color ambient;
-    struct color diffuse;
-    struct color forced_diffuse;
-    struct color specular;
-    struct color specular2;
+    ColorFloat emissive;
+    ColorFloat ambient;
+    ColorFloat diffuse;
+    ColorFloat forced_diffuse;
+    ColorFloat specular;
+    ColorFloat specular2;
     float specular_power;
     uint32_t pixelshader_id{0};
     uint32_t vertexshader_id{0};

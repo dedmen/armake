@@ -22,6 +22,7 @@
 #include <ratio>
 #include <string>
 #include <functional>
+#include <algorithm>
 
 
 #include "lib/ittnotify.h"
@@ -214,3 +215,74 @@ inline bool iequals(std::string_view a, std::string_view b) {
     });
 }
 
+
+
+
+class ColorFloat {
+public:
+    float r, g, b, a;
+    ColorFloat() noexcept : r(0), g(0), b(0), a(0) {}
+    ColorFloat(std::vector<float> vec) : r(vec[0]), g(vec[1]), b(vec[2]), a(vec[3]) {}
+    ColorFloat(float r, float g, float b, float a) noexcept : r(r), g(g), b(b), a(a) {}
+    ColorFloat(float r, float g, float b) noexcept : r(r), g(g), b(b), a(1) {}
+
+
+
+
+    ColorFloat operator *(ColorFloat other) const noexcept {
+        return ColorFloat(r*other.r, g*other.g, b*other.b, a*other.a);
+    }
+    ColorFloat operator *(float c) const noexcept {
+        return ColorFloat(r*c, g*c, b*c, a*c);
+    }
+    ColorFloat operator +(ColorFloat other) const noexcept {
+        return ColorFloat(r + other.r, g + other.g, b + other.b, a + other.a);
+    }
+    ColorFloat operator -(ColorFloat other) const noexcept {
+        return ColorFloat(r - other.r, g - other.g, b - other.b, a - other.a);
+    }
+
+    ColorFloat& operator +=(ColorFloat other) noexcept {
+        r += other.r;
+        g += other.g;
+        b += other.b;
+        a += other.a;
+        return *this;
+    }
+    ColorFloat& operator -=(ColorFloat other) noexcept {
+        r -= other.r;
+        g -= other.g;
+        b -= other.b;
+        a -= other.a;
+        return *this;
+    }
+};
+
+
+class ColorInt {
+public:
+    uint32_t value; //ARGB
+    ColorInt() : value(0) {}
+    ColorInt(uint32_t v) : value(v) {}
+    ColorInt(uint8_t r, uint8_t g, uint8_t b, uint8_t a) : value(a << 24 | r << 16 | g << 8 | b) {}
+    ColorInt(ColorFloat f) {
+        uint8_t _r = static_cast<uint8_t>(std::clamp(f.r, 0.f, 1.f) * 255);
+        uint8_t _g = static_cast<uint8_t>(std::clamp(f.g, 0.f, 1.f) * 255);
+        uint8_t _b = static_cast<uint8_t>(std::clamp(f.b, 0.f, 1.f) * 255);
+        uint8_t _a = static_cast<uint8_t>(std::clamp(f.a, 0.f, 1.f) * 255);
+        value = (_a << 24 | _r << 16 | _g << 8 | _b);
+    }
+
+
+
+
+    uint8_t getA() const { return (value >> 24) & 0xff; }
+    uint8_t getR() const { return (value >> 16) & 0xff; }
+    uint8_t getG() const { return (value >> 8) & 0xff; }
+    uint8_t getB() const { return (value >> 0) & 0xff; }
+
+    operator ColorFloat() const {
+        constexpr float mult = 1.0f / 255;
+        return ColorFloat(getR()*mult, getG()*mult, getB()*mult, getA()*mult);
+    }
+};

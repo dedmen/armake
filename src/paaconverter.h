@@ -40,13 +40,19 @@ public:
     bool convertMipmap(std::istream& input, std::ostream& target, Logger& logger);
 
 
+    ColorFloat getTotalColor() {
+        //#TODO handle undefined avg/max color? Maybe just set to black by default in PAAConverter
+        return ColorFloat(avgColor)*ColorFloat(maxColor);
+    }
+
+
     bool isAlpha;
     bool isTransparent;
     uint16_t width;
     uint16_t height;
     PAAType type;
-    uint32_t avgColor{ 0 }; //#TODO packed color type
-    uint32_t maxColor{ 0 };
+    ColorInt avgColor;
+    ColorInt maxColor;
     uint32_t mipmap;
 };
 

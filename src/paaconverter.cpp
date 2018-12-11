@@ -27,12 +27,6 @@
 #include <string.h>
 #include <filesystem>
 #include <fstream>
-//#include <unistd.h>
-#include <math.h>
-
-#ifdef _WIN32
-#include <windows.h>
-#endif
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -79,12 +73,12 @@ void PAAFile::readHeaders(std::istream& input) {
         }
 
         if (tagName == "CGVA") { //avg color
-            input.read(reinterpret_cast<char*>(&avgColor), 4);
+            input.read(reinterpret_cast<char*>(&avgColor.value), 4);
             continue;
         }
 
         if (tagName == "CXAM") { //max color
-            input.read(reinterpret_cast<char*>(&maxColor), 4);
+            input.read(reinterpret_cast<char*>(&maxColor.value), 4);
             continue;
         }
 
@@ -129,6 +123,7 @@ bool PAAFile::skipMipmap(std::istream& input) {
     //compressed Size
     input.read(reinterpret_cast<char*>(&datalen), 3);
     input.ignore(datalen); //skip mipmap
+    return true;
 }
 
 bool PAAFile::convertMipmap(std::istream& input, std::ostream& target, Logger& logger) {

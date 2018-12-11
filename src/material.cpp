@@ -248,7 +248,7 @@ int Material::read() {
      */
 
     extern std::string current_target; //#TODO take current_target as parameter from p3d
-    const struct color default_color = { 0.0f, 0.0f, 0.0f, 1.0f };
+    const ColorFloat default_color = { 0.0f, 0.0f, 0.0f, 1.0f };
 
     // Write default values
     depr_3 = 1;
@@ -521,12 +521,12 @@ void Material::writeTo(std::ostream& output) {
 
     output.write(path.c_str(), path.length() + 1);
     WRITE_CASTED(type, sizeof(uint32_t));
-    WRITE_CASTED(emissive, sizeof(struct color));
-    WRITE_CASTED(ambient, sizeof(struct color));
-    WRITE_CASTED(diffuse, sizeof(struct color));
-    WRITE_CASTED(forced_diffuse, sizeof(struct color));
-    WRITE_CASTED(specular, sizeof(struct color));
-    WRITE_CASTED(specular2, sizeof(struct color));
+    WRITE_CASTED(emissive, sizeof(ColorFloat));
+    WRITE_CASTED(ambient, sizeof(ColorFloat));
+    WRITE_CASTED(diffuse, sizeof(ColorFloat));
+    WRITE_CASTED(forced_diffuse, sizeof(ColorFloat));
+    WRITE_CASTED(specular, sizeof(ColorFloat));
+    WRITE_CASTED(specular2, sizeof(ColorFloat));
     WRITE_CASTED(specular_power, sizeof(float));
     WRITE_CASTED(pixelshader_id, sizeof(uint32_t));
     WRITE_CASTED(vertexshader_id, sizeof(uint32_t));

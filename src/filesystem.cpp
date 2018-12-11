@@ -23,20 +23,6 @@
 #include <stdint.h>
 #include <string.h>
 
-#ifdef _WIN32
-#include <windows.h>
-#include <wchar.h>
-#else
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <err.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <fnmatch.h>
-#include <dirent.h>
-//#include <unistd.h>
-#endif
-
 #include "filesystem.h"
 #include "utils.h"
 #include <string>

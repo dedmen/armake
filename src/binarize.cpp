@@ -16,14 +16,8 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <string.h>
-//#include <unistd.h>
-
 #ifdef _WIN32
+#define NOMINMAX
 #include <windows.h>
 #include <wchar.h>
 #else
@@ -33,11 +27,9 @@
 
 #include "args.h"
 #include "filesystem.h"
-#include "utils.h"
 #include "rapify.h"
 #include "p3d.h"
 #include "binarize.h"
-#include "utils.h"
 #include <filesystem>
 
 
