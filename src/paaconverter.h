@@ -46,14 +46,14 @@ public:
     }
 
 
-    bool isAlpha;
-    bool isTransparent;
-    uint16_t width;
-    uint16_t height;
+    bool isAlpha = false;
+    bool isTransparent = false;
+    uint16_t width{0};
+    uint16_t height{0};
     PAAType type;
-    ColorInt avgColor;
-    ColorInt maxColor;
-    uint32_t mipmap;
+    ColorInt avgColor{0xff802020};
+    ColorInt maxColor{0xffffffff};
+    uint32_t mipmap{0};
 };
 
 

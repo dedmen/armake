@@ -338,7 +338,7 @@ int ModelConfig::load(std::filesystem::path source, Logger& logger) {
     std::stringstream buf;
     p.preprocess(model_config_path.string(), std::ifstream(model_config_path), buf, Preprocessor::ConstantMapType());
     buf.seekg(0);
-    auto cfg = Config::fromPreprocessedText(buf, p.getLineref(), logger);
+    auto config = Config::fromPreprocessedText(buf, p.getLineref(), logger);
 
     current_target = source.string();
 
@@ -356,11 +356,11 @@ int ModelConfig::load(std::filesystem::path source, Logger& logger) {
 
 
     // Check if model entry even exists
-    modelConfig = cfg->getClass({ "CfgModels", modelName });
+    modelConfig = config->getClass({ "CfgModels", modelName });
     if (!modelConfig) {
         logger.error("Failed to find model config entry.\n");
 
-        auto defaultConfig = cfg->getClass({ "CfgModels", "default" });
+        auto defaultConfig = config->getClass({ "CfgModels", "default" });
         if (defaultConfig) {
             modelConfig = defaultConfig;
             logger.error("Falling back to \"default\" model config\n");
@@ -370,6 +370,7 @@ int ModelConfig::load(std::filesystem::path source, Logger& logger) {
             return 1; //#TODO fix this error code. That's not the correct one
         }
     }
+    cfg = std::move(config);
 
     return 0;
 }

@@ -56,6 +56,7 @@ void PAAFile::readHeaders(std::istream& input) {
         input.read(taggsig, 4);
         taggsig[4] = 0x00;
         if (std::string_view(taggsig) != "GGAT") {
+            input.seekg(-4, std::istream::cur); //Go back the 4 bytes of the invalid tag we tried to read
             break; //This is not a tag.
         }
 
@@ -63,13 +64,24 @@ void PAAFile::readHeaders(std::istream& input) {
         input.read(taggname, 4);
         taggname[4] = 0x00;
         std::string_view tagName(taggname);
-        __debugbreak(); //check if this is correct
+
         uint32_t tagglen;
         input.read(reinterpret_cast<char*>(&tagglen), 4);
         if (tagName == "SFFO") {
-            //source.ignore(tagglen);
-            //fseek(f, tagglen, SEEK_CUR);
-            //continue;
+
+            auto offsCount = tagglen/sizeof(uint32_t);
+
+            std::vector<uint32_t> offs;
+            offs.reserve(offsCount);
+
+            for (int i = 0; i < offsCount; ++i) {
+                uint32_t val;
+                input.read(reinterpret_cast<char*>(&val), 4);
+                if (val != 0) //There are 0's in here? There are always 16 elements even though only some of them are filled.
+                offs.emplace_back(val); //#TODO these are mipmap offsets, we should store these
+            }
+            mipmap = offs[0]; //#TODO there can be 0 mipmaps here theoretically
+            continue;
         }
 
         if (tagName == "CGVA") { //avg color
@@ -99,16 +111,20 @@ void PAAFile::readHeaders(std::istream& input) {
         }
 
         input.ignore(tagglen); //unknown tag
-        break;
     }
 
-    //Actually this is size of palette
-    //#TODO
-    input.read(reinterpret_cast<char*>(&mipmap), 4);
+    //#TODO Read 16bit size of palette and palette
+    uint16_t paletteSize;
+    input.read(reinterpret_cast<char*>(&paletteSize), sizeof(paletteSize));
 
+    auto pos = input.tellg();
+    input.seekg(mipmap, std::ifstream::beg);
 
-    input.seekg(mipmap);
-
+    input.read(reinterpret_cast<char*>(&width), sizeof(width));
+    width &= 0x7fff;//compression flag
+    input.read(reinterpret_cast<char*>(&height), sizeof(height));
+    //mipmap will read this again, we just want this to fill the width/height vars
+    input.seekg(pos);
 
 }
 

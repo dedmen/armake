@@ -462,7 +462,7 @@ bool matches_includepath(std::filesystem::path startPath, std::string_view inclu
         }
 
         // compensate for missing leading slash in PBOPREFIX
-        if (prefix[0] != '\\')
+        if (prefix[0] != '\\' && includepath[0] == '\\')
             return (strcmp(prefix.data(), includepath.data() +1) == 0);
         else
             return (strcmp(prefix.data(), includepath.data()) == 0);

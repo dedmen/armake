@@ -56,6 +56,34 @@ bool resIsShadowVolume(ComparableFloat<std::milli> resolution) {
 
 }
 
+
+bool is_alpha(std::string textureName) {
+    static thread_local std::map<std::string, PAAFile> texCache; //#TODO global threadsafe texture cache thing
+
+    if (texCache.find(textureName) != texCache.end()) {
+        auto& texture = texCache[textureName];
+        return texture.isAlpha || texture.isTransparent;
+    } else {
+        PAAFile paf;
+
+        auto found = find_file(textureName, ""); //#TODO proper origin
+        if (!found) {
+            //#TODO warning
+
+            return false;
+        }
+        std::ifstream texIn(*found, std::ifstream::binary);
+        paf.readHeaders(texIn);
+
+        //#TODO handle jpg textures.. maybe?
+
+        texCache[textureName] = paf;
+        return paf.isAlpha || paf.isTransparent;
+    }
+}
+
+
+
 __itt_domain* p3dDomain = __itt_domain_create("armake.p3d");
 __itt_string_handle* handle_mlod2odol = __itt_string_handle_create("mlod2odol");
 __itt_string_handle* handle_bs1 = __itt_string_handle_create("bs1");
@@ -95,10 +123,10 @@ float mlod_lod::getBoundingSphere(const vector3& center) {
 void mlod_lod::updateColors() {
     std::map<std::string, PAAFile> texCache;
 
-    float areaSum;
-    float areaTSum;
-    float alphaSum;
-    float alphaTSum;
+    float areaSum=0;
+    float areaTSum=0;
+    float alphaSum=0;
+    float alphaTSum=0;
 
     ColorFloat colorSum;
     ColorFloat colorTSum;
@@ -258,13 +286,11 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
         //It will return index if it has one, or create one and then return index of new one
         if (!textureName.empty()) {
             auto foundTex = std::find(textures.begin(), textures.end(), textureName);
-
-            __debugbreak(); //Check if this stuff is correct.
+         
             if (foundTex == textures.end()) {
                 loadingFaces[j].texture_index = faces.size();
                 textures.emplace_back(textureName);
-            }
-            else {
+            } else {
                 loadingFaces[j].texture_index = foundTex - textures.begin();
             }
         }
@@ -306,7 +332,7 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
     for (auto& it : loadingFaces) {
         for (int i = 0; i < it.face_type; ++i) {
             auto& u = it.table[i].u;
-            auto& v = it.table[i].u;
+            auto& v = it.table[i].v;
 
             maxUV.u = std::max(maxUV.u, u);
             maxUV.v = std::max(maxUV.v, v);
@@ -338,6 +364,9 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
     //the poly object is done in odol, see Odol's "AddPoint"
     //Error if max vertex that are not duplicate (see odol Addpoint) is bigger than 32767 too many verticies
     //Poly object seems to be just the face with n points?
+    vertex_to_point.reserve(tempPoints.size());
+    point_to_vertex.resize(tempPoints.size());
+    faceToOrig.resize(loadingFaces.size());
     int allFaceSpecFlagsAnd = ~0;
     for (int i = 0; i < loadingFaces.size(); ++i) {
         auto& face = loadingFaces[i];
@@ -372,7 +401,7 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
             std::swap(face.table[2], face.table[3]);
 
 
-        for (int i = 0; i < 4; ++i) {
+        for (int i = 0; i < face.face_type; ++i) {
             auto faceP = face.table[i].points_index;
             auto faceN = face.table[i].normals_index;
             auto faceU = face.table[i].u;
@@ -390,10 +419,13 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
             auto newVert = add_point(tempPoints[faceP].pos, norm, { faceU,faceV }, faceP, inverseScalingUV);
 
             newPoly.points[i] = newVert;
+
+            if (newVert+1 > vertex_to_point.size())
+                vertex_to_point.resize(vertex_to_point.size()+1);
             vertex_to_point[newVert] = faceP;
             point_to_vertex[faceP] = newVert;
         }
-
+        
 
         //#TODO polyIsHidden
 
@@ -419,32 +451,35 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
 
         //#TODO only if face has material!
         bool transmat = false;
-        switch (materials[face.material_index].pixelshader_id) {
-            case 1: //#TODO move into material class and use enum
-            case 3:
-            case 60:
-            case 58:
-            case 61:
-            case 107:
-            case 108:
-            case 109:
-            case 114:
-            case 115:
-            case 116:
-            case 117:
-            case 120:
-            case 148:
-            case 132:
-                transmat = true;
-        }
+        if (face.material_index != -1) //#TODO nullable
+            switch (materials[face.material_index].pixelshader_id) {
+                case 1: //#TODO move into material class and use enum
+                case 3:
+                case 60:
+                case 58:
+                case 61:
+                case 107:
+                case 108:
+                case 109:
+                case 114:
+                case 115:
+                case 116:
+                case 117:
+                case 120:
+                case 148:
+                case 132:
+                    transmat = true;
+            }
         if (transmat) {
             specialFlags |= FLAG_ISTRANSPARENT;
-        } else {
+        } else if (face.texture_index != -1) {
 
-            __debugbreak();
-            //#TODO
-            //if (is_alpha(&faces[i]))
-            //    specialFlags |= FLAG_ISALPHA;
+            
+            if (is_alpha(textures[face.texture_index])) {
+                __debugbreak();
+                specialFlags |= FLAG_ISALPHA;
+            }
+                
         }
 
 
@@ -463,7 +498,6 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
         faceInfo.emplace_back(newPolyInfo);
         faceToOrig[i] = i;
     }
-
 
 #pragma endregion Basic Geometry
 
@@ -490,6 +524,9 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
         auto newVert = add_point(tempPoints[i].pos, {}, { 0.f,0.f }, i, inverseScalingUV);
 
         point_to_vertex[i] = newVert;
+        if (newVert > vertex_to_point.size())
+            vertex_to_point.resize(vertex_to_point.size()+1);
+        vertex_to_point[newVert] = i;
     }
 
     //#TODO
@@ -501,7 +538,8 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
     
 
 
-
+    vertex_to_point.shrink_to_fit(); //#TODO shrink the others too
+    point_to_vertex.shrink_to_fit();
 
 
 
@@ -576,7 +614,7 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
         if (entry.front() == '#') {
 
             if (entry == "#Mass#") {
-                if (empty) {
+                if (empty) { //#TODO empty var not set correctly. Check tagg_len
                     mass.resize(1);
                     mass[0] = 0.0f; //#TODO get rid of this Shouldn't be hard to detect empty mass array
                 } else {
@@ -611,7 +649,7 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
                 properties.emplace_back(property{ std::move(name), std::move(value) });
             }
             source.seekg(fp_tmp);
-
+            //#TODO #Selected#
             if (entry == "#EndOfFile#") //Might want to  source.seekg(fp_tmp); before break. Check if fp_temp == tellg and debugbreak if not
                 break;
         } else {
@@ -655,7 +693,7 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
 
 
             selections.emplace_back(std::move(newSel));
-            //Might want to  source.seekg(fp_tmp); before break. Check if fp_temp == tellg and debugbreak if not
+            //#TODO Might want to  source.seekg(fp_tmp); before break. Check if fp_temp == tellg and debugbreak if not
         }
     }
     num_selections = selections.size();
@@ -723,7 +761,8 @@ void mlod_lod::writeODOL(std::ostream& output) {
         texString += tex;
         texString.push_back('\0');
     }
-    __debugbreak(); //check if the textures string is correct. null char delimited array of texture paths
+    if (textures.size() > 1)
+        __debugbreak(); //check if the textures string is correct. null char delimited array of texture paths
 
     output.write(texString.c_str(), texString.length() + 1);
 
@@ -750,8 +789,9 @@ void mlod_lod::writeODOL(std::ostream& output) {
         output.write(reinterpret_cast<char*>(faces[i].points.data()), sizeof(uint32_t) * faces[i].face_type);
     }
 
+    uint32_t num_sections = sections.size();
     WRITE_CASTED(num_sections, sizeof(uint32_t));
-    for (i = 0; i < num_sections; i++) {
+    for (i = 0; i < num_sections; i++) {//#TODO foreach
         sections[i].writeTo(output);
     }
 
@@ -885,20 +925,19 @@ void mlod_lod::buildSections() {
     //#TODO shape.cpp 3902
 
     if (num_faces == 0) {
-        num_sections = 0;
         sections.clear();
         return;
     }
 
     std::vector<uint32_t> offsetMap;
-    offsetMap.resize(num_faces);
+    offsetMap.reserve(num_faces);
 
     uint32_t lastO = 0;
     for (auto& it : faces) {
         offsetMap.emplace_back(lastO);
         lastO += (it.face_type == 4) ? 20 : 16;
     }
-
+    offsetMap.emplace_back(lastO);
 
 
     bool needsSections = std::any_of(selections.begin(), selections.end(), [](const odol_selection& sel)
@@ -910,7 +949,7 @@ void mlod_lod::buildSections() {
         {
             return inf.specialFlags & IsAlpha;
         });
-
+    //#TODO can do the below async
     if (!hasAlpha) {//Get rid of alpha ordering if there is no alpha
         std::for_each(faceInfo.begin(), faceInfo.end(), [](PolygonInfo& inf)
             {
@@ -1039,7 +1078,10 @@ void mlod_lod::buildSections() {
         lastSec = secIdx;
         lastSecStart = i;
     }
-
+    if (lastSec >= 0) {
+        auto& info = secInfs[lastSec];
+        info.addBegEnd(lastSecStart, faces.size());
+    }
 
 
     std::for_each(selections.begin(), selections.end(), [&](const odol_selection& sel) {
@@ -1319,12 +1361,12 @@ uint32_t mlod_lod::add_point(vector3 point, vector3 normal, const uv_pair& uv_co
 
     float u_relative = (uv_coords_input.u - minUV.u) * inverseScalingUV.u;
     float v_relative = (uv_coords_input.v - minUV.v) * inverseScalingUV.v;
-    __debugbreak(); //Check if this is correct. vertex.cpp 355
-    short u = (short)(u_relative * (INT16_MAX + INT16_MAX) + INT16_MAX);
-    short v = (short)(v_relative * (INT16_MAX + INT16_MAX) + INT16_MAX);
+    //#CHECK the UV code seems to be correct, But check if ingame result looks correct
+    short u = (short)(u_relative * 2 * INT16_MAX - INT16_MAX);
+    short v = (short)(v_relative * 2 * INT16_MAX - INT16_MAX);
     // Check if there already is a vertex that satisfies the requirements
     for (uint32_t i = 0; i < num_points; i++) { //#TODO make vertex_to_point a unordered_map?
-        if (vertex_to_point[i] != point_index_mlod)
+        if (!vertex_to_point.empty() && vertex_to_point[i] != point_index_mlod)
             continue;
 
 
@@ -1353,11 +1395,12 @@ uint32_t mlod_lod::add_point(vector3 point, vector3 normal, const uv_pair& uv_co
 
 
     // Add vertex
-    points[num_points] = std::move(point);
-    normals[num_points] = normal;
-    uv_coords[num_points] = {u,v};
+    points.emplace_back(point);
+    normals.emplace_back(normal);
+    uv_coords.emplace_back(uv_paircompact{u,v});
 
 
+    //#TODO seems like this belongs into skeleton scan thing
     //No idea what this was supposed to be
     /*
         uint32_t j;
@@ -1505,7 +1548,6 @@ void mlod_lod::updateBoundingBox() {
     min_pos = empty_vector;
     max_pos = empty_vector;
 
-
     bool first = true;
 
     for (auto& [x, y, z] : points) {
@@ -1621,7 +1663,7 @@ void odol_selection::init(std::vector<selectionVertex> verts) {
 void odol_selection::updateSections(mlod_lod& model) {
     //animation.cpp L152
     __debugbreak(); //check
-    for (int i = 0; i < model.num_sections; ++i) {
+    for (int i = 0; i < model.sections.size(); ++i) {
         auto& sec = model.sections[i];
 
         bool hasSomeFaces = false;
@@ -1645,31 +1687,6 @@ void odol_selection::updateSections(mlod_lod& model) {
 
 }
 
-bool is_alpha(std::string textureName) {
-    static thread_local std::map<std::string, PAAFile> texCache; //#TODO global threadsafe texture cache thing
-
-    if (texCache.find(textureName) != texCache.end()) {
-        auto& texture = texCache[textureName];
-        return texture.isAlpha || texture.isTransparent;
-    } else {
-        PAAFile paf;
-
-        auto found = find_file(textureName, ""); //#TODO proper origin
-        if (!found) {
-            //#TODO warning
-
-            return false;
-        }
-        std::ifstream texIn(*found, std::ifstream::binary);
-        paf.readHeaders(texIn);
-
-        //#TODO handle jpg textures.. maybe?
-
-        texCache[textureName] = paf;
-        return paf.isAlpha || paf.isTransparent;
-    }
-}
-
 void model_info::writeTo(std::ostream& output) {
     auto num_lods = lod_resolutions.size();
 
@@ -1685,8 +1702,8 @@ void model_info::writeTo(std::ostream& output) {
  
 
     WRITE_CASTED(aiming_center, sizeof(vector3));
-    WRITE_CASTED(map_icon_color, sizeof(uint32_t));
-    WRITE_CASTED(map_selected_color, sizeof(uint32_t));
+    WRITE_CASTED(map_icon_color.value, sizeof(uint32_t));
+    WRITE_CASTED(map_selected_color.value, sizeof(uint32_t));
     WRITE_CASTED(view_density, sizeof(float));
     WRITE_CASTED(bbox_min, sizeof(vector3));
     WRITE_CASTED(bbox_max, sizeof(vector3));
@@ -1737,6 +1754,7 @@ void model_info::writeTo(std::ostream& output) {
     WRITE_CASTED(map_type, sizeof(char));
 
     //#TODO mass array
+    uint32_t n_floats = 0;
     WRITE_CASTED(n_floats, sizeof(uint32_t)); //_massArray size
     //! array of mass assigned to all points of geometry level
     //! this is used to calculate angular inertia tensor (_invInertia)
@@ -1765,6 +1783,8 @@ void model_info::writeTo(std::ostream& output) {
     WRITE_CASTED(destruct_type, sizeof(char)); //#TODO propertyDamage string
     WRITE_CASTED(property_frequent, sizeof(bool)); //#TODO is this properly read from odol?
 
+
+    uint32_t always_0 = 0;
     WRITE_CASTED(always_0, sizeof(uint32_t)); //@todo Array of unused Selection Names
 
 
@@ -1915,13 +1935,13 @@ void MultiLODShape::updateHints(float viewDensityCoef) {
 
     //Inside calculate hints
     //#TODO packed color type
-    model_info.map_icon_color = 0xff9d8254;
-    model_info.map_selected_color = 0xff9d8254;
+    model_info.map_icon_color = mlod_lods[0].icon_color;
+    model_info.map_selected_color = mlod_lods[0].selected_color;
 #pragma endregion Color
 
     //In CalculateViewDensity using the coef
 #pragma region ViewDensity
-    int colorAlpha = (model_info.map_icon_color >> 24) & 0xff;
+    int colorAlpha = model_info.map_icon_color.getA();
     float alpha = colorAlpha * (1.0 / 255); //#TODO color getAsFloat func to packed color type
 
     float transp = 1 - alpha * 1.5;
@@ -1958,7 +1978,7 @@ void MultiLODShape::BuildSpecialLodList() {
     model_info.shadowVolumeCount = 0;
     model_info.shadowBufferCount = 0;
 
-    for (uint32_t i = 0; i < num_lods; i++) {
+    for (uint32_t i = 0; i < mlod_lods.size(); i++) {
         auto& resolution = mlod_lods[i].resolution;
         auto& indicies = model_info.special_lod_indices;
 
@@ -2250,12 +2270,12 @@ void MultiLODShape::optimizeLODS() {
         } else if (model_info.lod_resolutions[i] >= 20000 && model_info.lod_resolutions[i] <= 20999) {
             //Edit lods
         } else {
-            mlod_lods[offs] = std::move(mlod_lods[i]);
+            mlod_lods[offs] = std::move(mlod_lods[i]);//#TODO do nothing if offs==i
             //#TODO move resolution too
             offs++;
         }
     }
-    __debugbreak(); //check if this is correct
+
     mlod_lods.resize(offs);
     num_lods = offs;
 
@@ -2309,6 +2329,18 @@ void MultiLODShape::optimizeLODS() {
 #pragma endregion Scan Shadow lods
 
 
+
+}
+
+void MultiLODShape::updateBoundingSphere() {
+    float sphere1 = 0.f;
+    for (auto& lod : mlod_lods) {
+        sphere1 = std::max(sphere1, lod.getBoundingSphere({0,0,0}));
+    }
+
+    //#TODO anim phase
+
+   model_info.bounding_sphere = sqrt(sphere1);
 
 }
 
@@ -2378,12 +2410,12 @@ void MultiLODShape::updateBounds() {
         //boundingCenterChange = -model_info.bounding_center; useless. It's already 0
     }
     if (boundingCenterChange.magnitude_squared() < 1e-10 && model_info.bounding_sphere > 0) {
-        model_info.bounding_sphere += boundingCenterChange.magnitude();
+        updateBoundingSphere();
     }
 
 
     //Adjust existing positions for changed center
-
+    //#TODO if change is 0, don't do anything here
     model_info.bounding_center += boundingCenterChange;
 
 
@@ -2413,8 +2445,7 @@ void MultiLODShape::updateBounds() {
 
     //#TODO apply bounding center change to all lods
 
-
-    model_info.bounding_sphere += boundingCenterChange.magnitude(); //#TODO Arma does this again, but we already did that above? is this correct?
+    updateBoundingSphere();
 
 
     //#TODO apply bounding center change to tree crown
@@ -2689,7 +2720,7 @@ void MultiLODShape::build_model_info() {
 
 #pragma region PreferredShadowLODs
     {
-        auto& preferredShadowVolumeLod = model_info.preferredShadowVolumeLod;
+        auto& preferredShadowVolumeLod = model_info.preferredShadowVolumeLod;//#TODO these should be -1 by default
         auto& preferredShadowBufferLod = model_info.preferredShadowBufferLod;
         auto& preferredShadowBufferVisibleLod = model_info.preferredShadowBufferVisibleLod;
 
@@ -2868,9 +2899,10 @@ void MultiLODShape::build_model_info() {
         model_info.destruct_type = std::move(*damageProp);
     } else {
         auto dammageProp = getPropertyGeo("dammage"); //DUH
-        model_info.destruct_type = std::move(*dammageProp);
-        //#TODO print warning about wrong name
-
+        if (dammageProp) {
+             model_info.destruct_type = std::move(*dammageProp);
+            //#TODO print warning about wrong name
+        }
     }
 
     auto frequentProp = getPropertyGeo("frequent");
@@ -2878,10 +2910,10 @@ void MultiLODShape::build_model_info() {
 
 #pragma endregion ClassDamageFreqProps
 
+    //#TODO load skeleton source thing?
 
 
-
-    model_info.skeleton = std::make_unique<skeleton_>();
+   
 
 
     //#TODO set animation enabled thingy to false
@@ -2949,32 +2981,9 @@ void MultiLODShape::build_model_info() {
         }
     }
 
-
-
-
-
-
-
     //THE END!
 
-    model_info.n_floats = 0;
-
-
-    // the real indices to the lods are calculated by the engine when the model is loaded
-
-
-
-
     BuildSpecialLodList();
-
-
-
-    // according to BIS: first LOD that can be used for shadowing
-    model_info.min_shadow = num_lods; // @todo
-    model_info.always_0 = 0;
-
-
-
 }
 
 void MultiLODShape::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution) {
@@ -3012,7 +3021,7 @@ void MultiLODShape::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution
 
                         auto found = lod.findSelectionByName(it);
                         if (found) (*found)->needsSections = true;
-
+                        //#TODO this really doesn't belong here, skeleton is not initalized yet
                         model_info.skeleton->sections.emplace_back(it); //#TODO this (skeleton->sections) doesn't belong here, find out where it comes from and what it's used for
                     }
                         
@@ -3087,7 +3096,7 @@ void MultiLODShape::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution
 
     // If shadow buffer, set everything (apart of base texture if not opaque) to predefined values
     
-    if (model_info.skeleton) { //'TODO make sure this is loaded after htMin/htMax/afMax and so on are read in readlod
+    if (model_info.skeleton) { //#TODO make sure this is loaded after htMin/htMax/afMax and so on are read in readlod
         lod.buildSubskeleton(model_info.skeleton, neighbourFaces);
     }
 
@@ -3456,6 +3465,7 @@ int P3DFile::readMLOD(std::filesystem::path sourceFile) {
     input.seekg(8);
     input.read(reinterpret_cast<char*>(&num_lods), 4);
 
+    model_info.skeleton = std::make_unique<skeleton_>();
     num_lods = read_lods(input, num_lods);
     if (num_lods <= 0) {
         logger.error(sourceFile.string(), 0, "Failed to read LODs.\n");

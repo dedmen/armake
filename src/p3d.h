@@ -306,14 +306,14 @@ public:
     uint32_t orHints{ 0 };
     uint32_t andHints{ 0 };
     uint32_t special{ 0 };
-    float faceArea;
+    float faceArea{0};
     ColorInt icon_color{ 0xff9d8254 };
     ColorInt selected_color{ 0xff9d8254 };
 
 
-    uint32_t num_points;
-    uint32_t num_faces;
-    uint32_t num_sharp_edges;
+    uint32_t num_points{0};
+    uint32_t num_faces{0};
+    uint32_t num_sharp_edges{0};
     std::vector<vector3> points;
 
     //#TODO ^ points seems wrong. Shouldn't be here. Should just be vector of vec3 without flags
@@ -375,7 +375,7 @@ public:
     std::vector<Material> materials; //#TODO create texture and material bank and store links here
 
 
-    uint32_t num_sections;
+   
     std::vector<struct odol_section> sections;
 
 
@@ -640,8 +640,8 @@ struct model_info {
 
 
     vector3 aiming_center;
-    uint32_t map_icon_color;
-    uint32_t map_selected_color;
+    ColorInt map_icon_color;
+    ColorInt map_selected_color;
     float view_density;
     vector3 bbox_min;
     vector3 bbox_max;
@@ -666,7 +666,7 @@ struct model_info {
     std::unique_ptr<struct skeleton_> skeleton;
     MapType map_type { MapType::Hide };
 
-    uint32_t n_floats;
+
     float mass;
     float mass_reciprocal; //#TODO rename invMass
     float armor;
@@ -678,7 +678,7 @@ struct model_info {
     std::string class_type;
     std::string destruct_type;
     bool property_frequent { false };
-    uint32_t always_0;
+
     uint32_t numberGraphicalLods;
 
 
@@ -722,6 +722,7 @@ public:
 
     void get_mass_data();
     void optimizeLODS();
+    void updateBoundingSphere();
     void updateBounds();
     void build_model_info();
 
