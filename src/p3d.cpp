@@ -1894,6 +1894,7 @@ std::optional<std::string> MultiLODShape::getPropertyGeo(std::string_view propNa
 
         if (foundProp)
             return foundProp;
+        return {};
     }
 
     if (model_info.special_lod_indices.geometry.isNull() && mlod_lods.empty()) {
@@ -1905,6 +1906,7 @@ std::optional<std::string> MultiLODShape::getPropertyGeo(std::string_view propNa
     auto& lod0 = mlod_lods.front();
     auto foundProp = lod0.getProperty(propName);
 
+    //#TODO this is kinda useless.. Because if geo is defined, it will jump out in the if(geo.isdefined)
     if (foundProp && model_info.special_lod_indices.geometry.isDefined()) {
         //#TODO warning Property %s not in geometry lod
     }
