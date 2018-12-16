@@ -2530,7 +2530,7 @@ void MultiLODShape::build_model_info() {
 #pragma endregion ViewDensityCoef
 
 #pragma region LODDensityCoef
-    auto LODDensCoef = getPropertyGeo("viewdensitycoef");
+    auto LODDensCoef = getPropertyGeo("loddensitycoef");
     if (LODDensCoef)
         model_info.lod_density_coef = stof(*LODDensCoef);
 #pragma endregion LODDensityCoef
@@ -2882,6 +2882,9 @@ void MultiLODShape::build_model_info() {
     } else {
         model_info.inv_armor = 1e10;
     }
+
+    //#TODO explosionshielding right after "armor" in class
+
 #pragma endregion Armor
 
     updateHints(viewDensityCoef);
