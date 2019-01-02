@@ -209,6 +209,7 @@ void skeleton_::writeTo(std::ostream& output) {
     output.write(name.c_str(), name.length() + 1);
 
     if (!name.empty()) {
+        //#TODO Arma binarize set's this to true even with 'skeletonInherit=""' ??
         output.put(0); // is inherited @todo ?
         output.write(reinterpret_cast<char*>(&num_bones), sizeof(uint32_t));
         for (int i = 0; i < num_bones; i++) { //#TODO ranged for

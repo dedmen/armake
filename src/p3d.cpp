@@ -1557,6 +1557,13 @@ void mlod_lod::buildSubskeleton(std::unique_ptr<skeleton_>& skeleton, bool neigh
 
 }
 
+void mlod_lod::applyBoundingCenter(const vector3& boundingCenterChange) {
+    for (auto& it : points) {
+        it -= boundingCenterChange;
+    }
+    //#TODO update animation phases for lod
+}
+
 void mlod_lod::updateBoundingBox() {
 
  /*
@@ -1779,14 +1786,14 @@ void model_info::writeTo(std::ostream& output) {
 
     //output.write("\0\0\0\0\0", 4); // compression header for empty array
     WRITE_CASTED(mass, sizeof(float));
-    WRITE_CASTED(mass_reciprocal, sizeof(float));
+    WRITE_CASTED(mass_reciprocal, sizeof(float)); //#TODO this is wrong. I print 1, arma prints 10000000000
     WRITE_CASTED(armor, sizeof(float));
     WRITE_CASTED(inv_armor, sizeof(float));
 
 
     //#TODO check if this is correctly placed
 #if P3DVERSION > 72
-    WRITE_CASTED(explosionShielding, sizeof(float)); //v72
+    WRITE_CASTED(explosionShielding, sizeof(float)); //v72 //#TODO default value is 1?
 #endif
 
 
@@ -2028,7 +2035,7 @@ void MultiLODShape::BuildSpecialLodList() {
             model_info.shadowVolumeCount++;
         }
         if (resolution > LOD_SHADOW_VOLUME_START && resolution < LOD_SHADOW_VOLUME_END) {//#TODO this is shadowBuffer
-            if (model_info.shadowBuffer == -1) model_info.shadowVolume = i;
+            if (model_info.shadowBuffer == -1) model_info.shadowBuffer = i;
             model_info.shadowBufferCount++;
         }
     }
@@ -2449,10 +2456,17 @@ void MultiLODShape::updateBounds() {
 
     for (auto& lod : mlod_lods) {
 
-        for (auto& it : lod.points) {
-            it -= boundingCenterChange;
+        lod.applyBoundingCenter(boundingCenterChange);
+
+
+        lod.min_pos -= boundingCenterChange;
+        lod.max_pos -= boundingCenterChange;
+        lod.autocenter_pos -= boundingCenterChange;
+
+
+        for (auto& px : lod.proxies) {
+            px.transform_z -= boundingCenterChange;
         }
-        //#TODO update animation phases for lod
 
 
     }
@@ -2639,7 +2653,38 @@ void MultiLODShape::build_model_info() {
             //model_info.sb_source = _projShadow ? SBSource::Visual : SBSource::None;
             model_info.prefer_shadow_volume = false;
         } else if (!shadowVolumes.empty()) {
-            //#TODO see *sbSourceProp == "shadowvolume" lower down thing that needs shapeSV. This seems to be same
+            //Create a shadowBuffer LOD if we don't have one yet
+            if (shadowVolumes.size() == shadowVolumesResolutions.size()) {
+                ComparableFloat<std::milli> lastResolution = LOD_SHADOW_VOLUME_START;
+                for (int i = 0; i < shadowVolumes.size(); ++i) {
+                    auto res = shadowVolumesResolutions[i]; //#TODO why not just get it from the shadowVolume?
+
+                    if (res > LOD_SHADOW_STENCIL_START && res < LOD_SHADOW_STENCIL_END)
+                        res = LOD_SHADOW_VOLUME_START + (res - LOD_SHADOW_STENCIL_START);
+                    else
+                        res = lastResolution + 10.f;
+                    lastResolution = res;
+
+
+                    mlod_lod newLod(shadowVolumes[i]);
+                    newLod.resolution = res;
+
+                    newLod.applyBoundingCenter(model_info.bounding_center);
+                    newLod.min_pos -= model_info.bounding_center;
+                    newLod.max_pos -= model_info.bounding_center;
+
+                    finishLOD(newLod, num_lods, LOD_SHADOW_VOLUME_START);
+
+                    mlod_lods.emplace_back(std::move(newLod));
+                    num_lods++;
+                    shapeListUpdated();
+
+                    model_info.shadowBuffer = num_lods - 1;
+                    model_info.shadowBufferCount = 1;
+                    model_info.sb_source = SBSource::ShadowVolume;
+                }
+            }
+
         } else {
             model_info.sb_source = projectedShadow ? SBSource::Visual : SBSource::None;
         }
@@ -2683,15 +2728,23 @@ void MultiLODShape::build_model_info() {
                     res = lastResolution + 10.f;
                 lastResolution = res;
 
-                //#TODO add shape, and set resoltion member variable
 
-                //#TODO apply bounding center offset and fix minMax
+                mlod_lod newLod(shadowVolumes[i]);
+                newLod.resolution = res;
 
-                //Run customizeShape
+                newLod.applyBoundingCenter(model_info.bounding_center);
+                newLod.min_pos -= model_info.bounding_center;
+                newLod.max_pos -= model_info.bounding_center;
 
-                //shape.cpp 8717
+                finishLOD(newLod, num_lods, LOD_SHADOW_VOLUME_START);
 
+                mlod_lods.emplace_back(std::move(newLod));
+                num_lods++;
+                shapeListUpdated();
 
+                model_info.shadowBuffer = num_lods - 1;
+                model_info.shadowBufferCount = 1;
+                model_info.sb_source = SBSource::ShadowVolume;
             }
         }
 

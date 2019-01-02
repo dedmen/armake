@@ -19,7 +19,7 @@
 #pragma once
 
 
-#define P3DVERSION 71
+#define P3DVERSION 73
 
 #define MAXTEXTURES 128
 #define MAXMATERIALS 128
@@ -198,7 +198,7 @@ struct odol_proxy {
     vector3 transform_x;
     vector3 transform_y;
     vector3 transform_z;
-    vector3 transform_n;
+    vector3 transform_n; //position
     uint32_t proxy_id;
     uint32_t selection_index;
     int32_t bone_index;
@@ -301,6 +301,7 @@ public:
         vector3 point, vector3 normal, const uv_pair &uv_coords_input,
         uint32_t point_index_mlod, const uv_pair& inverseScalingUV);
     void buildSubskeleton(std::unique_ptr<skeleton_>& skeleton,bool neighbour_faces_);
+    void applyBoundingCenter(const vector3& vector3_base_);
 
 
     uint32_t orHints{ 0 };
@@ -660,7 +661,7 @@ struct model_info {
     bool ai_cover { false };
     bool force_not_alpha;
     SBSource sb_source;
-    bool prefer_shadow_volume;
+    bool prefer_shadow_volume { true };
     float shadow_offset;
     bool animated { false };
     std::unique_ptr<struct skeleton_> skeleton;
