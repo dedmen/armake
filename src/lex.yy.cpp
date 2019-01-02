@@ -1122,8 +1122,20 @@ YY_RULE_SETUP
 
     float val;
     auto res = std::from_chars(trimmedString.data(), trimmedString.data() + trimmedString.size(), val);
-    if (res.ec != std::errc::invalid_argument) //Not a number
-        REJECT;
+
+    if (res.ec != std::errc::invalid_argument) {//It's a number. They don't have to be quoted
+
+        auto end = trimmedString.data() + trimmedString.size();
+
+        //Basically only whitespace is allowed after that, if we have any stray characters, then this is not just a number but infact a unquoted string
+        auto isEndClean = std::all_of(res.ptr, end, [](char x)
+            {
+                return x == '\n' || x == '\r' || x == ' ' || x == '\t';
+            });
+       
+        if (isEndClean)//If end is not clean, this is not JUST a number.
+            REJECT;
+    }
 
     if (lineref.empty) 
         staticData.logger->warning(LoggerMessageType::unquoted_string, "String \"%s\" is not quoted properly. line: %i\n", yytext, yylineno);
@@ -1148,8 +1160,19 @@ YY_RULE_SETUP
 
     float val;
     auto res = std::from_chars(trimmedString.data(), trimmedString.data() + trimmedString.size(), val);
-    if (res.ec != std::errc::invalid_argument) //Not a number
-        REJECT;
+    if (res.ec != std::errc::invalid_argument) {//It's a number. They don't have to be quoted
+
+        auto end = trimmedString.data() + trimmedString.size();
+
+        //Basically only whitespace is allowed after that, if we have any stray characters, then this is not just a number but infact a unquoted string
+        auto isEndClean = std::all_of(res.ptr, end, [](char x)
+            {
+                return x == '\n' || x == '\r' || x == ' ' || x == '\t';
+            });
+
+        if (isEndClean)//If end is not clean, this is not JUST a number.
+            REJECT;
+    }
 
     if (lineref.empty) 
         staticData.logger->warning(LoggerMessageType::unquoted_string, "String \"%s\" is not quoted properly.  line: %i\n", yytext, yylineno);

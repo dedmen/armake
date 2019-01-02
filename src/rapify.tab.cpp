@@ -1799,8 +1799,8 @@ void yyerror(YYLTYPE* yylloc, ConfigClass &result, struct lineref &lineref, pars
     if (lineref.empty)
         staticData.logger->error("%s Line %i\n", s, yylloc->first_line);
     else
-        staticData.logger->error(lineref.file_names[lineref.file_index[yylloc->first_line]],
-                lineref.line_number[yylloc->first_line], "%s\n", s);
+        staticData.logger->error(lineref.file_names[lineref.file_index[yylloc->first_line-1]],
+                lineref.line_number[yylloc->first_line-1], "%s\n", s);
 
     fprintf(stderr, " %s", text.c_str());
 }
