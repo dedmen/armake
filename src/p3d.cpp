@@ -205,10 +205,11 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
 
     //4 byte int header size
     //4 byte int version
-    source.seekg(8, std::istream::cur);
 
-    uint32_t numPointsTemp, numNormalsTemp;
-
+    uint32_t numPointsTemp, numNormalsTemp, version, version2;
+    
+    source.read(reinterpret_cast<char*>(&version), 4);
+    source.read(reinterpret_cast<char*>(&version2), 4);
     source.read(reinterpret_cast<char*>(&numPointsTemp), 4);
     source.read(reinterpret_cast<char*>(&numNormalsTemp), 4);
     source.read(reinterpret_cast<char*>(&num_faces), 4);
@@ -300,7 +301,6 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
                 return searchName == mat.path;
             });
 
-            __debugbreak(); //Check if this stuff is correct.
             if (foundMat == materials.end()) {
                 loadingFaces[j].material_index = materials.size();
 
@@ -366,6 +366,7 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
     //Poly object seems to be just the face with n points?
     vertex_to_point.reserve(tempPoints.size());
     point_to_vertex.resize(tempPoints.size());
+    std::fill(point_to_vertex.begin(), point_to_vertex.end(), NOPOINT);
     faceToOrig.resize(loadingFaces.size());
     int allFaceSpecFlagsAnd = ~0;
     for (int i = 0; i < loadingFaces.size(); ++i) {
@@ -519,12 +520,12 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
     // Write remaining vertices
     for (int i = 0; i < tempPoints.size(); ++i) {
         //#TODO prefill point_to_vertex with ~0's and then check that here
-        if (point_to_vertex[i] < NOPOINT) continue; //#TODO wtf? no. Doesn't work
+        if (point_to_vertex[i] != NOPOINT) continue; //#TODO wtf? no. Doesn't work
 
         auto newVert = add_point(tempPoints[i].pos, {}, { 0.f,0.f }, i, inverseScalingUV);
 
         point_to_vertex[i] = newVert;
-        if (newVert > vertex_to_point.size())
+        if (newVert+1 > vertex_to_point.size())
             vertex_to_point.resize(vertex_to_point.size()+1);
         vertex_to_point[newVert] = i;
     }
@@ -653,6 +654,12 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
             if (entry == "#EndOfFile#") //Might want to  source.seekg(fp_tmp); before break. Check if fp_temp == tellg and debugbreak if not
                 break;
         } else {
+
+
+            if (tagg_len != numPointsTemp + num_faces) {
+                __debugbreak(); //#TODO throw error you douche
+            }
+
             odol_selection newSel;
 
             newSel.name = entry;
@@ -666,15 +673,15 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
                 newSelection.points[0] = 0;
             }
             else {
-                newSelection.points.resize(num_points);
-                source.read(reinterpret_cast<char*>(newSelection.points.data()), num_points);
+                newSelection.points.resize(numPointsTemp);
+                source.read(reinterpret_cast<char*>(newSelection.points.data()), numPointsTemp);
             }
 
             newSelection.faces.resize(num_faces);
             source.read(reinterpret_cast<char*>(newSelection.faces.data()), num_faces);
 
             std::vector<odol_selection::selectionVertex> temp;
-            for (int i = 0; i < num_points; ++i) {
+            for (int i = 0; i < numPointsTemp; ++i) {
                 
                 //#TODO use vertexToPoint
                 auto vertIndex = vertex_to_point[i];
@@ -695,6 +702,12 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
             selections.emplace_back(std::move(newSel));
             //#TODO Might want to  source.seekg(fp_tmp); before break. Check if fp_temp == tellg and debugbreak if not
         }
+
+        auto overread = fp_tmp - source.tellg();
+        if (source.tellg() > fp_tmp) { //overread
+            __debugbreak();
+        }
+
     }
     num_selections = selections.size();
     //if have phases (animation tag)
@@ -716,6 +729,8 @@ void mlod_lod::writeODOL(std::ostream& output) {
     long i;
     uint32_t temp;
     char *ptr;
+    num_faces = faces.size(); //#TODO fix dis Probably want a temp faces size thing variable in the readmlod
+
 
     WRITE_CASTED(num_proxies, sizeof(uint32_t));
     for (i = 0; i < num_proxies; i++) {
@@ -841,6 +856,7 @@ void mlod_lod::writeODOL(std::ostream& output) {
     WRITE_CASTED(num_uvs, sizeof(uint32_t));
     //#TODO LZO/LZW compression for this
     output.put(0);//is LZ compressed
+    //#TODO this should be num uv_coords
     if (num_points > 0) {
         output.put(0); //thingy.. Complicated. Only in non compressed thing
         for (i = 0; i < num_uvs; i++) { //#TODO foreach
@@ -861,6 +877,7 @@ void mlod_lod::writeODOL(std::ostream& output) {
     }
 
     // normals
+    //#TODO shouldn't this be num normals?
     WRITE_CASTED(num_points, sizeof(uint32_t));
     output.put(0);//is LZ compressed
     if (num_points > 0) {
@@ -2077,7 +2094,7 @@ void MultiLODShape::write_animations(std::ostream& output) {
         output.write(anim->name.c_str(), anim->name.length() + 1);
         output.write(anim->source.c_str(), anim->source.length() + 1);
         WRITE_CASTED(anim->min_value, sizeof(float), 1, f_target);
-        WRITE_CASTED(anim->max_value, sizeof(float), 1, f_target);
+        WRITE_CASTED(anim->max_value, sizeof(float), 1, f_target); //#TODO get rid of f_target
         WRITE_CASTED(anim->min_value, sizeof(float), 1, f_target);
         WRITE_CASTED(anim->max_value, sizeof(float), 1, f_target);
         //WRITE_CASTED(anim->min_phase, sizeof(float), 1, f_target);

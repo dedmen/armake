@@ -234,7 +234,7 @@ struct odol_selection {
     void writeTo(std::ostream& output);
 
     std::string name;
-    bool needsSections;
+    bool needsSections = false;
 
     class selectionVertex {
     public:
@@ -248,17 +248,17 @@ struct odol_selection {
 
 
 
-    uint32_t num_faces;
+    uint32_t num_faces = 0;
     std::vector<uint32_t> faces;
-    uint32_t always_0;
-    bool is_sectional;
-    uint32_t num_sections;
+    uint32_t always_0 = 0;
+    bool is_sectional = false;
+    uint32_t num_sections = 0;
     std::vector<uint32_t> sections;
 
-    uint32_t num_vertices;
+    uint32_t num_vertices = 0;
     std::vector<uint32_t> vertices;
 
-    uint32_t num_weights;
+    uint32_t num_weights = 0;
     std::vector<uint8_t> weights;
 
 
