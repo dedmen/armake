@@ -3296,31 +3296,31 @@ void MultiLODShape::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution
 
 
 
-
-    if (resIsShadowVolume(resolution)) {    //update material if shadowVOlume
-
-        Material shadowMaterial(logger);
-
-
-        shadowMaterial.vertexshader_id = 6; //Shadow volume
-        shadowMaterial.pixelshader_id = 146; //empty
-        shadowMaterial.fogMode = FogMode::None;
-
-        auto shadowMatOffs = lod.materials.size();
-        lod.materials.emplace_back(std::move(shadowMaterial));
-
-        //#TODO this should run on sections
-        for (auto& it : lod.faceInfo) {
-            it.materialIndex = shadowMatOffs;
-            it.textureIndex = -1;
-        }
-
-        //#TODO make a global shadow material and set this here
-        //txtPreload.cpp L195
-
-
-
-    }
+    //#FIXME
+    //if (resIsShadowVolume(resolution)) {    //update material if shadowVOlume
+    //
+    //    Material shadowMaterial(logger);
+    //
+    //
+    //    shadowMaterial.vertexshader_id = 6; //Shadow volume
+    //    shadowMaterial.pixelshader_id = 146; //empty
+    //    shadowMaterial.fogMode = FogMode::None;
+    //
+    //    auto shadowMatOffs = lod.materials.size();
+    //    lod.materials.emplace_back(std::move(shadowMaterial));
+    //
+    //    //#TODO this should run on sections
+    //    for (auto& it : lod.faceInfo) {
+    //        it.materialIndex = shadowMatOffs;
+    //        it.textureIndex = -1;
+    //    }
+    //
+    //    //#TODO make a global shadow material and set this here
+    //    //txtPreload.cpp L195
+    //
+    //
+    //
+    //}
 
     //GenerateSTArray?
     //Warning: %s:%s: 2nd UV set needed, but not defined
