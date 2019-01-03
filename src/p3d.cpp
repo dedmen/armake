@@ -128,8 +128,8 @@ void mlod_lod::updateColors() {
     float alphaSum=0;
     float alphaTSum=0;
 
-    ColorFloat colorSum;
-    ColorFloat colorTSum;
+    ColorFloat colorSum(0, 0, 0); //initializer to set alpha to 1.0
+    ColorFloat colorTSum(0, 0, 0);
 
 
 
@@ -187,8 +187,8 @@ void mlod_lod::updateColors() {
         alphaSum += color.a*ar;
         alphaTSum += color.a*arT;
 
-        colorSum += color * materialColor*color.a*ar;
-        colorTSum += color * materialColor*color.a*arT;
+        colorSum += color * materialColor*(color.a*ar);
+        colorTSum += color * materialColor*(color.a*arT);
     }
 
     if (alphaSum > 0.f) colorSum = colorSum * (1 / alphaSum);
@@ -198,10 +198,11 @@ void mlod_lod::updateColors() {
     if (areaTSum > 0.f) colorTSum.a = (alphaTSum / areaTSum);
 
     icon_color = colorSum;
+    ColorInt test(colorSum);
     selected_color = colorTSum;
 }
 
-bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &mass) {
+bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &mass, bool noUV, bool noNormals) {
 
     //4 byte int header size
     //4 byte int version
@@ -249,8 +250,13 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
     std::vector<vector3> normalsTemp;
     normalsTemp.resize(numNormalsTemp); //#TODO remove num_facenormals from header
     //#TODO read all in one go
-    for (int j = 0; j < numNormalsTemp; j++) {
-        source.read(reinterpret_cast<char*>(&normalsTemp[j]), sizeof(vector3)); //#TODO if Geometry lod and NoNormals (geoOnly parameter), set them all to 0
+    for (unsigned int j = 0; j < numNormalsTemp; j++) {
+        vector3 normal;
+        source.read(reinterpret_cast<char*>(&normal), sizeof(vector3)); //#TODO if Geometry lod and NoNormals (geoOnly parameter), set them all to 0
+        if (noNormals) {
+            normal = { 0,0,0 };
+        }
+        normalsTemp[j] = normal;
     }
 
 #pragma region FacesAndTexturesAndMaterials
@@ -317,6 +323,13 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
                 loadingFaces[j].material_index = foundMat - materials.begin();
             }
         }
+        if (noUV) {
+            loadingFaces[j].table->u = 0;
+            loadingFaces[j].table->v = 0;
+        }
+        
+
+
 
         //check and fix UV
         //shape.cpp 1075
@@ -340,6 +353,9 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
             minUV.v = std::min(minUV.v, v);
         }
     }
+    //No faces
+    if (minUV.u > maxUV.u) { minUV.u = 0; maxUV.u = 1; }
+    if (minUV.v > maxUV.v) { minUV.v = 0; maxUV.v = 1; }
     uv_pair inverseScalingUV{
         1/maxUV.u-minUV.u,
         1/maxUV.v-minUV.v
@@ -518,6 +534,7 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
 
 
     // Write remaining vertices
+    if (!loadingFaces.empty()) //#TODO this doesn't conform, but empty GEOM exports single vertex and I don't know where to filter this out
     for (int i = 0; i < tempPoints.size(); ++i) {
         //#TODO prefill point_to_vertex with ~0's and then check that here
         if (point_to_vertex[i] != NOPOINT) continue; //#TODO wtf? no. Doesn't work
@@ -530,11 +547,17 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
         vertex_to_point[newVert] = i;
     }
 
+    if (num_faces == 0) {
+        allFaceSpecFlagsAnd = 0;
+    }
+
+
     //#TODO
     //set special flags
     special &= IsAlpha | IsTransparent | IsAnimated | OnSurface;
     special |= allFaceSpecFlagsAnd & (NoShadow | ZBiasMask);
-    //#TODO calc Hints 1487
+
+    //#TODO calc Hints 1487 CalculateHints
     //Needs clip flags 864
     
 
@@ -615,9 +638,8 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
         if (entry.front() == '#') {
 
             if (entry == "#Mass#") {
-                if (empty) { //#TODO empty var not set correctly. Check tagg_len
-                    mass.resize(1);
-                    mass[0] = 0.0f; //#TODO get rid of this Shouldn't be hard to detect empty mass array
+                if (empty) {
+                    mass.clear();
                 } else {
                     //#TODO check that tagSize matches?
                     mass.resize(num_points);
@@ -628,11 +650,25 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
             //#TODO ^
             
 
-            //#UVSet
-            //32 bit stageID. If >1 then unsupported
-            //if == 1
-            //else skip
-
+            //if (entry == "#UVSet#") {
+            //    uint32_t stage;
+            //    source.read(reinterpret_cast<char*>(&stage), 4);
+            //    if (stage > 1) {
+            //        //#TODO warning. Unsupported. Can only have 2 UV sets
+            //    }
+            //    if (stage == 1) {
+            //
+            //
+            //        if (noUV) {
+            //            //#TODO warning. Special lod has 2nd uv set
+            //        }
+            //
+            //        //second UV set
+            //        //#TODO
+            //    } else {
+            //         //skip. But we already do that before the EOF check
+            //    }
+            //}
 
             if (entry == "#SharpEdges#") {
                 num_sharp_edges = tagg_len / (2 * sizeof(uint32_t));
@@ -713,8 +749,8 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
     //if have phases (animation tag)
     //check for keyframe property. Needs to exist otherwise warning
 
-    //#TODO 1860
-    //Sort verticies if not geometryOnly
+    //shape.cpp 1860
+    //#TODOSort verticies if not geometryOnly
 
 
 
@@ -725,7 +761,6 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
 
 void mlod_lod::writeODOL(std::ostream& output) {
     short u, v;
-    int x, y, z;
     long i;
     uint32_t temp;
     char *ptr;
@@ -771,16 +806,11 @@ void mlod_lod::writeODOL(std::ostream& output) {
     uint32_t num_textures = textures.size();
     WRITE_CASTED(num_textures, sizeof(uint32_t));
 
-    std::string texString;
     for (auto& tex : textures) {
-        texString += tex;
-        texString.push_back('\0');
+        output.write(tex.c_str(), tex.length() + 1);
+
     }
-    if (textures.size() > 1)
-        __debugbreak(); //check if the textures string is correct. null char delimited array of texture paths
-
-    output.write(texString.c_str(), texString.length() + 1);
-
+  
     uint32_t num_materials = materials.size();
     WRITE_CASTED(num_materials, sizeof(uint32_t));
     for (uint32_t i = 0; i < num_materials; i++) //#TODO ranged for
@@ -839,8 +869,9 @@ void mlod_lod::writeODOL(std::ostream& output) {
 
     //#TODO? This? stuff?
     // pointflags
+    //#FIXME num_points can be 1 with one single point at 0,0,0 TFAR 152 geo lod
     WRITE_CASTED(num_points, 4);
-    output.put(1);
+    output.put(num_points ? 1 : 0);
     if (num_points > 0)
         output.write("\0\0\0\0", 4);
 
@@ -849,7 +880,7 @@ void mlod_lod::writeODOL(std::ostream& output) {
     WRITE_CASTED(maxUV, sizeof(struct uv_pair));
 
 
-    std::vector<uv_paircompact> uv_coords;
+    //std::vector<uv_paircompact> uv_coords;
 
 
     uint32_t num_uvs = uv_coords.size();
@@ -878,15 +909,16 @@ void mlod_lod::writeODOL(std::ostream& output) {
 
     // normals
     //#TODO shouldn't this be num normals?
-    WRITE_CASTED(num_points, sizeof(uint32_t));
+    auto num_normals = normals.size();
+    WRITE_CASTED(num_normals, sizeof(uint32_t));
     output.put(0);//is LZ compressed
-    if (num_points > 0) {
+    if (num_normals > 0) {
         output.put(0); //thingy.. Complicated. Only in non compressed thing
-        for (i = 0; i < num_points; i++) {
+        for (auto& [nx,ny,nz] : normals) {
             // write compressed triplet
-            x = (int)(-511.0f * normals[i].x + 0.5);
-            y = (int)(-511.0f * normals[i].y + 0.5);
-            z = (int)(-511.0f * normals[i].z + 0.5);
+            int x = (int)(-511.0f * nx + 0.5);
+            int y = (int)(-511.0f * ny + 0.5);
+            int z = (int)(-511.0f * nz + 0.5);
 
             x = MAX(MIN(x, 511), -511);
             y = MAX(MIN(y, 511), -511);
@@ -919,11 +951,24 @@ void mlod_lod::writeODOL(std::ostream& output) {
     output.seekp(0, std::ostream::end);
 
 
-    // has Collimator info?
+    // has Collimator info? v>=65
     output.write("\0\0\0\0", sizeof(uint32_t)); //If 1 then need to write CollimatorInfo structure
 
-    // unknown byte
-    output.write("\0", 1);
+    // unknown byte v>=68 "endbool property" ?
+    bool something = true;
+
+
+    if (num_sections > 0) { //#TODO do this in finishLOD and store in variable
+
+        for (auto& section : sections) {
+            //Check if all materials for the sections that have materials can be loaded
+       //If a material load fails/failed then set something=false;
+        }
+       
+
+    }
+
+    output.put(something ? 1 : 0);
 }
 
 uint32_t mlod_lod::getAndHints() {
@@ -1564,6 +1609,19 @@ void mlod_lod::applyBoundingCenter(const vector3& boundingCenterChange) {
     //#TODO update animation phases for lod
 }
 
+void mlod_lod::cleanupBackfaces() {
+    
+    if (!selections.empty()) return;
+
+    //#TODO shape.cpp 2166
+
+
+
+
+
+
+}
+
 void mlod_lod::updateBoundingBox() {
 
  /*
@@ -1740,9 +1798,11 @@ void model_info::writeTo(std::ostream& output) {
     WRITE_CASTED(bbox_visual_min, sizeof(vector3));
     WRITE_CASTED(bbox_visual_max, sizeof(vector3));
 
+    //0x89
     WRITE_CASTED(bounding_center, sizeof(vector3));
+    //0x95
     WRITE_CASTED(geometry_center, sizeof(vector3));
-
+    //0xA5
     WRITE_CASTED(centre_of_mass, sizeof(vector3));
     WRITE_CASTED(inv_inertia, sizeof(matrix));
     WRITE_CASTED(autocenter, sizeof(bool));
@@ -1803,8 +1863,8 @@ void model_info::writeTo(std::ostream& output) {
     WRITE_CASTED(min_shadow, sizeof(uint32_t));
     WRITE_CASTED(can_blend, sizeof(bool));
 
-    WRITE_CASTED(class_type, sizeof(char)); //#TODO propertyClass string
-    WRITE_CASTED(destruct_type, sizeof(char)); //#TODO propertyDamage string
+    output.write(destruct_type.c_str(), destruct_type.length() + 1);
+    output.write(destruct_type.c_str(), destruct_type.length() + 1);
     WRITE_CASTED(property_frequent, sizeof(bool)); //#TODO is this properly read from odol?
 
 
@@ -2041,6 +2101,8 @@ void MultiLODShape::BuildSpecialLodList() {
     }
 
     if (model_info.special_lod_indices.geometry.isDefined()) {
+        //#TODO also set sections
+        //#TODO this is 0 in BI binarize? Maybe forced 0 when no faces in geo?
         mlod_lods[model_info.special_lod_indices.geometry].special |= IsAlpha | IsAlphaFog | IsColored;
     }
     if (model_info.special_lod_indices.geometry_simple.isDefined()) {
@@ -2202,6 +2264,53 @@ void MultiLODShape::write_animations(std::ostream& output) {
             WRITE_CASTED(anim->axis_dir, sizeof(vector3));
         }
     }
+}
+
+bool MultiLODShape::isLodTypePermanent(ComparableFloat<std::milli> res) {
+    if (res <= 900.f) return false;
+    if (res == LOD_MEMORY) return true;
+    if (res == LOD_GEOMETRY) return true;
+    if (res == LOD_GEOMETRY_SIMPLE) return true;
+    if (res == LOD_PHYSX || res == LOD_PHYSX_OLD) return true;
+    if (res == LOD_FIRE_GEOMETRY) return true;
+    if (res == LOD_VIEW_GEOMETRY) return true;
+    if (res == LOD_VIEW_PILOT_GEOMETRY) return true;
+    if (res == LOD_VIEW_GUNNER_GEOMETRY) return true;
+    if (res == LOD_VIEW_CARGO_GEOMETRY) return true;
+    if (res == LOD_LAND_CONTACT) return true;
+    if (res == LOD_ROADWAY) return true;
+    if (res == LOD_PATHS) return true;
+    if (res == LOD_HITPOINTS) return true;
+    if (res == LOD_WRECK) return true;
+    if (res == LOD_SUB_PARTS) return true;
+    return false;
+}
+
+std::pair<bool, bool> MultiLODShape::lodFinishExclusions(ComparableFloat<std::milli> res) {
+    if (res <= 900.f) return { false,false };
+
+    if (
+        res == LOD_GEOMETRY ||
+        res == LOD_GEOMETRY_SIMPLE ||
+        res == LOD_PHYSX ||
+        res == LOD_PHYSX_OLD ||
+        res == LOD_VIEW_GEOMETRY ||
+        res == LOD_FIRE_GEOMETRY ||
+        res == LOD_VIEW_PILOT_GEOMETRY ||
+        res == LOD_VIEW_CARGO_GEOMETRY ||
+        res == LOD_VIEW_GUNNER_GEOMETRY ||
+        res == LOD_MEMORY ||
+        res == LOD_LAND_CONTACT ||
+        res == LOD_ROADWAY ||
+        res == LOD_PATHS ||
+        res == LOD_HITPOINTS
+        )
+        return { true,true };
+    else if (resIsShadowVolume(res))
+        return { true, false };
+    else if (res > LOD_SHADOW_VOLUME_START && res < LOD_SHADOW_VOLUME_END)
+        return { false, true };
+    return { false,false };
 }
 
 
@@ -2366,7 +2475,7 @@ void MultiLODShape::updateBoundingSphere() {
 
     //#TODO anim phase
 
-   model_info.bounding_sphere = sqrt(sphere1);
+   model_info.bounding_sphere = sphere1; //getBoundingSphere returns sqrt already
 
 }
 
@@ -2405,9 +2514,9 @@ void MultiLODShape::updateBounds() {
             model_info.bbox_visual_min.x = std::min(model_info.bbox_visual_min.x, lod.min_pos.x);
             model_info.bbox_visual_min.y = std::min(model_info.bbox_visual_min.y, lod.min_pos.y);
             model_info.bbox_visual_min.z = std::min(model_info.bbox_visual_min.z, lod.min_pos.z);
-            model_info.bbox_visual_max.x = std::max(model_info.bbox_visual_max.x, lod.min_pos.x);
-            model_info.bbox_visual_max.y = std::max(model_info.bbox_visual_max.y, lod.min_pos.y);
-            model_info.bbox_visual_max.z = std::max(model_info.bbox_visual_max.z, lod.min_pos.z);
+            model_info.bbox_visual_max.x = std::max(model_info.bbox_visual_max.x, lod.max_pos.x);
+            model_info.bbox_visual_max.y = std::max(model_info.bbox_visual_max.y, lod.max_pos.y);
+            model_info.bbox_visual_max.z = std::max(model_info.bbox_visual_max.z, lod.max_pos.z);
             idx++;
         }
         if (idx == 0) {//Wut? no graphical lods?
@@ -2673,9 +2782,10 @@ void MultiLODShape::build_model_info() {
                     newLod.min_pos -= model_info.bounding_center;
                     newLod.max_pos -= model_info.bounding_center;
 
-                    finishLOD(newLod, num_lods, LOD_SHADOW_VOLUME_START);
-
+                    finishLOD(newLod, num_lods, LOD_SHADOW_VOLUME_START, false);
+                    //#TODO source models shouldn't have shadowBuffer present. Throw error if already exists
                     mlod_lods.emplace_back(std::move(newLod));
+                    model_info.lod_resolutions.emplace_back(res);
                     num_lods++;
                     shapeListUpdated();
 
@@ -2736,9 +2846,10 @@ void MultiLODShape::build_model_info() {
                 newLod.min_pos -= model_info.bounding_center;
                 newLod.max_pos -= model_info.bounding_center;
 
-                finishLOD(newLod, num_lods, LOD_SHADOW_VOLUME_START);
+                finishLOD(newLod, num_lods, LOD_SHADOW_VOLUME_START, false);
 
                 mlod_lods.emplace_back(std::move(newLod));
+                model_info.lod_resolutions.emplace_back(res);
                 num_lods++;
                 shapeListUpdated();
 
@@ -3061,7 +3172,7 @@ void MultiLODShape::build_model_info() {
     BuildSpecialLodList();
 }
 
-void MultiLODShape::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution) {
+void MultiLODShape::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution, bool noUV) {
 
     //Customize Shape (shape.cpp 8468)
         //detect empty lods if non-first and res>900.f
@@ -3071,6 +3182,7 @@ void MultiLODShape::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution
         //#TODO warning empty lod detected, get name of LOD and name of model
     }
 
+    lod.cleanupBackfaces();
     //Delete back faces?
 
 
@@ -3308,22 +3420,30 @@ void MultiLODShape::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution
 
 
     //optimize if no selections?
-    //if (geometryOnly&GONoUV)
-    //else recalculate facearea
-
-    lod.faceArea = 0.f;
-    for(auto& it : lod.sections) {
-        float area = 0.f;
-        for (int i = it.face_start_index; i < it.face_end_index; ++i) {
-            area += lod.faces[i].getArea(lod.points);
+    if (noUV) {
+        for (auto& sec : lod.sections) {
+            sec.area_over_tex[0] = 1.0f;
+            sec.area_over_tex[1] = 1.0f;
         }
-        if (!(it.common_face_flags & IsHiddenProxy)) {
-            lod.faceArea += area;
-
-            if (it.common_face_flags & NoBackfaceCull)
+    } else {
+        lod.faceArea = 0.f;
+        for (auto& it : lod.sections) {
+            float area = 0.f;
+            for (int i = it.face_start_index; i < it.face_end_index; ++i) {
+                area += lod.faces[i].getArea(lod.points);
+            }
+            if (!(it.common_face_flags & IsHiddenProxy)) {
                 lod.faceArea += area;
+
+                if (it.common_face_flags & NoBackfaceCull)
+                    lod.faceArea += area;
+            }
         }
+
     }
+
+
+
 
 
     //Done
@@ -3360,7 +3480,20 @@ int MultiLODShape::read_lods(std::istream &source, uint32_t num_lods) {
         std::vector<float> masstemp;
         mlod_lod newLod;
 
-        if (!newLod.read(source, logger, masstemp)) return 0;
+        auto lodStart = source.tellg();
+
+
+        if (!newLod.read(source, logger, masstemp, false, false)) return 0;
+
+        auto ex = lodFinishExclusions(newLod.resolution); //if this is non false,false AND newLod has faces we want to reload the geom
+
+        if ((ex.first || ex.second) && newLod.num_faces > 0) {
+            newLod = mlod_lod();
+            masstemp.clear();
+            source.seekg(lodStart);
+            newLod.read(source, logger, masstemp, ex.first, ex.second);
+        }
+
 
         //#TODO ResolGeometryOnly on resolution
         //We might want to remove normals (set them all to 0,1,0)
@@ -3387,7 +3520,9 @@ int MultiLODShape::read_lods(std::istream &source, uint32_t num_lods) {
 
         shapeListUpdated();
 
-        finishLOD(mlod_lods.back(), i, newLod.resolution);
+        
+
+        finishLOD(mlod_lods.back(), i, mlod_lods.back().resolution, ex.first);
 
 
 
@@ -3532,7 +3667,7 @@ int P3DFile::readMLOD(std::filesystem::path sourceFile) {
     input.read(typeBuffer, 5);
 
     if (strncmp(typeBuffer, "MLOD", 4) != 0) {
-        if (strcmp(args.positionals[0], "binarize") == 0)
+        //if (strcmp(args.positionals[0], "binarize") == 0)
             logger.error(sourceFile.string(), 0, "Source file is not MLOD.\n");
         return -3;
     }
@@ -3624,36 +3759,68 @@ int P3DFile::writeODOL(std::filesystem::path targetFile) {
     //lod end
 
 
+    std::vector<char> permanentLod;
+    permanentLod.resize(num_lods);
 
-    //#TODO set properly LODShape::IsPermanent ||
-    // i == _nGraphical - 1 && (_nGraphical > 1 || _lods[i]->NFaces() < 100)
+    for (unsigned int i = 0; i < num_lods; ++i) {
+        permanentLod[i] =
 
-    // Write LOD face defaults (or rather, don't)
-    for (uint32_t i = 0; i < num_lods; i++)
-        output.put(1); //bool array, telling engine if it should load the LOD right away, or rather stream it in later
+            isLodTypePermanent(model_info.lod_resolutions[i]) //#TODO take from lod
+            ||
+            (i == model_info.numberGraphicalLods - 1 && (model_info.numberGraphicalLods > 1 || mlod_lods[i].num_faces < 100));
+    }
 
-    //#TODO iterate once for non-permantent to save
-    //32bit number of faces
-    //32bit color
-    //32bit special
-    //32bit or hints
-    //char subskeletonSize>0
-    //32bit number of verticies
-    //float total area of faces
+
+    // Write LOD face defaults 
+    output.write(permanentLod.data(), num_lods);
+
+    // Write LODs non permanent
+    for (uint32_t i = 0; i < num_lods; i++) {
+        if (permanentLod[i]) continue;
+
+        auto& lod = mlod_lods[i];
+
+        WRITE_CASTED(lod.num_faces, 4);
+        WRITE_CASTED(lod.icon_color, 4);
+        WRITE_CASTED(lod.special, 4);
+        WRITE_CASTED(lod.orHints, 4);
+        output.put(lod.skeleton_to_subskeleton.empty() ? 0 : 1);
+        WRITE_CASTED(lod.num_points, 4);
+        WRITE_CASTED(lod.faceArea, 4);
+    }
+
+
+    std::vector<uint32_t> lodOrder;
+    lodOrder.resize(num_lods);
+    for (uint32_t i = 0; i < num_lods; i++) lodOrder[i] = i;
+
+    std::sort(lodOrder.begin(), lodOrder.end(), [&](uint32_t l, uint32_t r) {
+        auto resl = model_info.lod_resolutions[l];
+        auto resr = model_info.lod_resolutions[r];
+        bool pl = isLodTypePermanent(resl);
+        bool pr = isLodTypePermanent(resr);
+
+        if (pl != pr) { //permanent first
+            return pl > pr;
+        }
+
+        return resl > resr;
+        });
+    
 
 
     // Write LODs
     for (uint32_t i = 0; i < num_lods; i++) {
-
+        auto idx = lodOrder[i];
 
         // Write start address
-        startOffsets[i].setValue(output.tellp());
+        startOffsets[idx].setValue(output.tellp());
 
         // write to file
-        mlod_lods[i].writeODOL(output);
+        mlod_lods[idx].writeODOL(output);
 
         // Write end address
-        endOffsets[i].setValue(output.tellp());
+        endOffsets[idx].setValue(output.tellp());
     }
 
     for (auto& it : startOffsets)
@@ -3732,9 +3899,9 @@ int mlod2odol(const char *source, const char *target, Logger& logger) {
     __itt_task_begin(p3dDomain, __itt_null, __itt_null, handle_mlod2odol);
 
     P3DFile f(logger);
-    f.readMLOD(source);
-    f.writeODOL(target);
-
+    auto success = f.readMLOD(source);
+    if (success == 0)
+       f.writeODOL(target);
 
     __itt_task_end(p3dDomain);
     return 0;

@@ -287,7 +287,7 @@ public:
     float getBoundingSphere(const vector3& center);
 
     void updateColors();
-    bool read(std::istream& source, Logger& logger, std::vector<float> &mass); //#TODO rename load MLOD
+    bool read(std::istream& source, Logger& logger, std::vector<float> &mass, bool noUV, bool noNormals); //#TODO rename load MLOD
 
     void writeODOL(std::ostream& output);
 
@@ -302,12 +302,19 @@ public:
         uint32_t point_index_mlod, const uv_pair& inverseScalingUV);
     void buildSubskeleton(std::unique_ptr<skeleton_>& skeleton,bool neighbour_faces_);
     void applyBoundingCenter(const vector3& vector3_base_);
+    void cleanupBackfaces();
 
 
     uint32_t orHints{ 0 };
     uint32_t andHints{ 0 };
     uint32_t special{ 0 };
-    float faceArea{0};
+
+    constexpr float getNan() {
+        uint32_t x = 0x7f887f88; //Some very special NaN
+        return *(float*)&x;
+    }
+
+    float faceArea { getNan() };
     ColorInt icon_color{ 0xff9d8254 };
     ColorInt selected_color{ 0xff9d8254 };
 
@@ -410,7 +417,7 @@ public:
     operator Type() const noexcept { return val; }
     operator Type&() noexcept { return val; }
     bool isDefined() const noexcept { return val != nullVal; }
-    bool isNull() const noexcept { return val!=nullVal; }
+    bool isNull() const noexcept { return val == nullVal; }
 
     Type val;
 };
@@ -646,14 +653,14 @@ struct model_info {
     float view_density;
     vector3 bbox_min;
     vector3 bbox_max;
-    float lod_density_coef;
-    float draw_importance;
+    float lod_density_coef { 1.f };
+    float draw_importance { 1.f };
     vector3 bbox_visual_min;
     vector3 bbox_visual_max;
     vector3 bounding_center;
     vector3 geometry_center;
     vector3 centre_of_mass;
-    matrix inv_inertia;
+    matrix inv_inertia = empty_matrix;
     bool autocenter;
     bool lock_autocenter;
     bool can_occlude;
@@ -668,11 +675,11 @@ struct model_info {
     MapType map_type { MapType::Hide };
 
 
-    float mass;
-    float mass_reciprocal; //#TODO rename invMass
+    float mass = 0;
+    float mass_reciprocal = 1e10; //#TODO rename invMass
     float armor;
     float inv_armor;
-    float explosionShielding;
+    float explosionShielding { 1.f };
     struct lod_indices special_lod_indices;
     uint32_t min_shadow;
     bool can_blend;
@@ -716,7 +723,8 @@ public:
 
     Logger& logger;
 
-    void finishLOD(mlod_lod& mlodLod_, uint32_t uint32_, float resolution_);
+    void finishLOD(mlod_lod& mlodLod_, uint32_t uint32_, float resolution_, bool noUV = false);
+
     int read_lods(std::istream &f_source, uint32_t num_lods);
     //#TODO return the boxes with a pair
     void getBoundingBox(vector3 &bbox_min, vector3 &bbox_max, bool visual_only, bool geometry_only);
@@ -728,8 +736,9 @@ public:
     void build_model_info();
 
     void write_animations(std::ostream& output);
-
-
+    bool isLodTypePermanent(ComparableFloat<std::milli> res);
+    //noUV,noNormals
+    std::pair<bool, bool> lodFinishExclusions(ComparableFloat<std::milli> res);
 
     ModelConfig modelConfig;
 
