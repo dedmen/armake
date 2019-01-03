@@ -185,13 +185,13 @@ public:
 
     std::string path;
     uint32_t type { MATERIALTYPE }; //This is actually version
-    ColorFloat emissive;
-    ColorFloat ambient;
-    ColorFloat diffuse;
-    ColorFloat forced_diffuse;
-    ColorFloat specular;
-    ColorFloat specular2;
-    float specular_power;
+    ColorFloat emissive{0,0,0,1};
+    ColorFloat ambient{1,1,1,1};
+    ColorFloat diffuse{ 1,1,1,1 };
+    ColorFloat forced_diffuse{ 0,0,0,1 };
+    ColorFloat specular{ 0,0,0,1 };;
+    //ColorFloat specular2;
+    float specular_power { 0 };
     uint32_t pixelshader_id{0};
     uint32_t vertexshader_id{0};
     LightMode mainLight{ LightMode::Sun };

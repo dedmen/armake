@@ -257,7 +257,6 @@ int Material::read() {
     diffuse = default_color;
     forced_diffuse = default_color;
     specular = default_color;
-    specular2 = default_color;
     specular_power = 1.0f;
     pixelshader_id = 0;
     vertexshader_id = 0;
@@ -301,7 +300,7 @@ int Material::read() {
     TRY_READ_ARRAY(ambient, ambient);
     TRY_READ_ARRAY(diffuse, diffuse);
     TRY_READ_ARRAY(forced_diffuse, forcedDiffuse);
-    TRY_READ_ARRAY(specular2 = specular, specular);
+    TRY_READ_ARRAY(specular, specular);
 
     {auto x = cfg->getFloat({ "specularPower" }); if (x) specular_power = *x; }
 
@@ -526,7 +525,10 @@ void Material::writeTo(std::ostream& output) {
     WRITE_CASTED(diffuse, sizeof(ColorFloat));
     WRITE_CASTED(forced_diffuse, sizeof(ColorFloat));
     WRITE_CASTED(specular, sizeof(ColorFloat));
-    WRITE_CASTED(specular2, sizeof(ColorFloat));
+    WRITE_CASTED(specular, sizeof(ColorFloat));//Yes.. This is literally correct. No idea WTF Arma is doing, seems to be a bug.
+    
+    
+    //WRITE_CASTED(specular2, sizeof(ColorFloat));
     WRITE_CASTED(specular_power, sizeof(float));
     WRITE_CASTED(pixelshader_id, sizeof(uint32_t));
     WRITE_CASTED(vertexshader_id, sizeof(uint32_t));
