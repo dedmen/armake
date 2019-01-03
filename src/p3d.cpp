@@ -534,7 +534,7 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
 
 
     // Write remaining vertices
-    if (!loadingFaces.empty()) //#TODO this doesn't conform, but empty GEOM exports single vertex and I don't know where to filter this out
+    //if (!loadingFaces.empty()) //#TODO this doesn't conform, but empty GEOM exports single vertex and I don't know where to filter this out
     for (int i = 0; i < tempPoints.size(); ++i) {
         //#TODO prefill point_to_vertex with ~0's and then check that here
         if (point_to_vertex[i] != NOPOINT) continue; //#TODO wtf? no. Doesn't work
