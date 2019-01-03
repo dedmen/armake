@@ -261,15 +261,36 @@ public:
 
 class ColorInt {
 public:
+
+
+    //https://stackoverflow.com/a/119538
+    //https://stackoverflow.com/questions/78619/what-is-the-fastest-way-to-convert-float-to-int-on-x86
+    /** by Vlad Kaipetsky
+    portable assuming FP24 set to nearest rounding mode
+    efficient on x86 platform
+    */
+    union UFloatInt {
+        int i;
+        float f;
+    };
+    static constexpr float Snapper = 3 << 22;
+    static inline int toInt(float fval)
+    {
+        //Assert(fabs(fval) <= 0x003fffff); // only 23 bit values handled
+        UFloatInt &fi = *(UFloatInt *)&fval;
+        fi.f += Snapper;
+        return ((fi.i) & 0x007fffff) - 0x00400000;
+    }
+
     uint32_t value; //ARGB
     ColorInt() : value(0) {}
     ColorInt(uint32_t v) : value(v) {}
     ColorInt(uint8_t r, uint8_t g, uint8_t b, uint8_t a) : value(a << 24 | r << 16 | g << 8 | b) {}
     ColorInt(ColorFloat f) {
-        uint8_t _r = static_cast<uint8_t>(std::clamp(f.r, 0.f, 1.f) * 255);
-        uint8_t _g = static_cast<uint8_t>(std::clamp(f.g, 0.f, 1.f) * 255);
-        uint8_t _b = static_cast<uint8_t>(std::clamp(f.b, 0.f, 1.f) * 255);
-        uint8_t _a = static_cast<uint8_t>(std::clamp(f.a, 0.f, 1.f) * 255);
+        uint8_t _r = toInt(std::clamp(f.r, 0.f, 1.f) * 255);
+        uint8_t _g = toInt(std::clamp(f.g, 0.f, 1.f) * 255);
+        uint8_t _b = toInt(std::clamp(f.b, 0.f, 1.f) * 255);
+        uint8_t _a = toInt(std::clamp(f.a, 0.f, 1.f) * 255);
         value = (_a << 24 | _r << 16 | _g << 8 | _b);
     }
 
