@@ -537,6 +537,7 @@ int PAAConverter::img2paa(std::istream &source, std::ostream &target, Logger& lo
         case PAAType::AI88:
             logger.error("AI88 support is not implemented.\n");
             return 4;
+        case PAAType::default: break;
         default:
             logger.error("Unrecognized PAA type \"%s\".\n", args.paatype);
             return 4;
@@ -545,7 +546,8 @@ int PAAConverter::img2paa(std::istream &source, std::ostream &target, Logger& lo
     stbi_io_callbacks cbacks = {
     [](void *user, char *data, int size) -> int {//read
         auto& stream = *static_cast<std::istream*>(user);
-        return stream.readsome(data, size);
+        stream.read(data, size);
+        return stream.gcount();
     },
     [](void *user, int n) {//skip
           auto& stream = *static_cast<std::istream*>(user);
@@ -669,8 +671,8 @@ int PAAConverter::img2paa(std::istream &source, std::ostream &target, Logger& lo
         target.write(reinterpret_cast<char*>(&width), sizeof(width));
         if (compressed)
             width -= 32768;
-        target.write(reinterpret_cast<char*>(height), sizeof(height));
-        target.write(reinterpret_cast<char*>(datalen), 3);
+        target.write(reinterpret_cast<char*>(&height), sizeof(height));
+        target.write(reinterpret_cast<char*>(&datalen), 3);
         target.write(reinterpret_cast<char*>(outputdata.data()), datalen);
 
         // Resize image for next MipMap
@@ -731,15 +733,14 @@ int PAAConverter::cmd_img2paa(Logger& logger) {
         return 1;
     }
 
-    std::ifstream input(args.positionals[1], std::ifstream::in | std::ifstream::binary);
-    std::ofstream output(args.positionals[2], std::ifstream::out | std::ifstream::binary);
-
-    auto paatype = typeFromString(args.paatype);
+    auto paatype = typeFromString(args.paatype ? args.paatype : "");
     if (paatype == PAAType::invalid) {
         logger.error("Unrecognized PAA type \"%s\".\n", args.paatype);
         return 4;
     }
-        
+
+    std::ifstream input(args.positionals[1], std::ifstream::in | std::ifstream::binary);
+    std::ofstream output(args.positionals[2], std::ifstream::out | std::ifstream::binary);
 
     return img2paa(input, output, logger);
 }

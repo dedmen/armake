@@ -197,8 +197,9 @@ public:
     LightMode mainLight{ LightMode::Sun };
     FogMode fogMode { FogMode::Fog};
     std::string surface;
-    uint32_t depr_3{0};
-    std::bitset<32> render_flags;
+    static const constexpr int renderFlagCount = 32;
+    std::bitset<renderFlagCount> render_flags;
+    static_assert(renderFlagCount % 32 == 0); //Has to be multiple of 32bit int
     uint32_t num_textures{0};
     uint32_t num_transforms{0};
     std::vector<stage_texture> textures;

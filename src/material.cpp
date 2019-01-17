@@ -251,7 +251,6 @@ int Material::read() {
     const ColorFloat default_color = { 0.0f, 0.0f, 0.0f, 1.0f };
 
     // Write default values
-    depr_3 = 1;
     emissive = default_color;
     ambient = default_color;
     diffuse = default_color;
@@ -537,7 +536,9 @@ void Material::writeTo(std::ostream& output) {
 
 
     output.write(surface.c_str(), surface.length() + 1);
-    WRITE_CASTED(depr_3, sizeof(uint32_t)); //render flags size. number of int's to store render flags
+
+    auto renderFlagsSize = render_flags.size()/32;
+    WRITE_CASTED(renderFlagsSize, sizeof(uint32_t)); //render flags size. number of int's to store render flags
     uint32_t renderFlags = render_flags.to_ulong();
     WRITE_CASTED(renderFlags, sizeof(uint32_t));
 
