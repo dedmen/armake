@@ -284,8 +284,7 @@ int binarize(std::filesystem::path source, std::filesystem::path target, Logger&
     auto fileExtension = source.extension();
 
     if (fileExtension == ".cpp" ||
-        fileExtension == ".rvmat" ||
-        fileExtension == ".ext") //#TODO not ext! only description.ext
+        fileExtension == ".rvmat")
         return Rapifier::rapify_file(source.string().c_str(), target.string().c_str(), logger);
 
     //#TODO rvmat's with >7 stages that are not using texGens are errors!
