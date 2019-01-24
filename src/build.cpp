@@ -194,8 +194,7 @@ int Builder::buildDirectory(std::filesystem::path inputDirectory, std::filesyste
         if (prefixUnclean != found->value)
             logger.warning("Prefix name contains forward slashes: %s\n", prefixUnclean.c_str());
         addonPrefix = found->value;
-    }
-    else {
+    } else if (std::filesystem::exists(prefixPath)) {
         //No prefix supplied via parameters. Read it from file and clean it up.
         std::ifstream prefixFile(prefixPath);
         std::string tmp;
@@ -207,8 +206,11 @@ int Builder::buildDirectory(std::filesystem::path inputDirectory, std::filesyste
         if (prefixUnclean != tmp)
             logger.warning("Prefix name contains forward slashes: %s\n", prefixUnclean.c_str());
 
+        //Write prefix to pboProperties
         addonPrefix = pboProperties.emplace_back("prefix", std::move(tmp)).value;
         //#TODO verbose log that prefix was read from file
+    } else {
+        addonPrefix = targetPbo.filename().string(); //Same fallback as Arma
     }
 
 
