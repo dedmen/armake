@@ -292,12 +292,18 @@ void PboReader::readHeaders() {
 
     //header ignores startoffset and uncompressed size
 
-    PboProperty prop;
-    while (prop.read(input)) {
-        properties.emplace_back(std::move(prop));
+    if (intro.method == PboEntryPackingMethod::none) {//Broken 3den exported pbo
+        input.seekg(0, std::istream::beg); //Seek back to start
+        badHeader = true;
+    } else {   
+        PboProperty prop;
+        while (prop.read(input)) {
+            properties.emplace_back(std::move(prop));
+        }
+        //When prop's last read "failed" we just finished reading the terminator of the properties
+        propertiesEnd = input.tellg();
     }
-    //When prop's last read "failed" we just finished reading the terminator of the properties
-    propertiesEnd = input.tellg();
+
 
     PboEntry entry;
 
@@ -473,6 +479,10 @@ int cmd_inspect(Logger& logger) {
     PboReader reader(input);
 
     reader.readHeaders();
+    if (reader.isBadHeader()) {
+        printf("This PBO has no Header! 3DEN usually exports these pbos\n");
+    }
+
     input.close(); //Don't need it anymore
     printf("Header extensions:\n");
 
@@ -532,7 +542,9 @@ int cmd_unpack(Logger& logger) {
 
     PboReader reader(input);
     reader.readHeaders();
-
+    if (reader.isBadHeader()) {
+        printf("This PBO has no Header! 3DEN usually exports these pbos\n");
+    }
 
     // create folder
     if (!std::filesystem::exists(outputFolder) && !create_folder(outputFolder)) {
@@ -540,17 +552,20 @@ int cmd_unpack(Logger& logger) {
         return 2;
     }
 
-    // create header extensions file
-    if (std::filesystem::exists(outputFolder / "$PBOPREFIX$") && !args.force) {
-        logger.error("File %s already exists and --force was not set.\n", (outputFolder / "$PBOPREFIX$").string().c_str());
-        return 3;
+    if (!reader.getProperties().empty()) {
+        // create header extensions file
+        if (std::filesystem::exists(outputFolder / "$PBOPREFIX$") && !args.force) {
+            logger.error("File %s already exists and --force was not set.\n", (outputFolder / "$PBOPREFIX$").string().c_str());
+            return 3;
+        }
+
+        std::ofstream pboprefix(outputFolder / "$PBOPREFIX$", std::ofstream::binary);
+        for (auto& it : reader.getProperties()) {
+            pboprefix << it.key << "=" << it.value << "\n";
+        }
     }
 
-    std::ofstream pboprefix(outputFolder / "$PBOPREFIX$", std::ofstream::binary);
-    for (auto& it : reader.getProperties()) {
-        pboprefix << it.key << "=" << it.value << "\n";
-    }
-
+ 
     std::vector<std::string_view> excludeFiles;
 
     for (int j = 0; j < args.num_excludefiles; j++) {

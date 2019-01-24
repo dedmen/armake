@@ -103,6 +103,7 @@ class PboReader {
     uint32_t propertiesEnd{0};
     uint32_t headerEnd{0};
     std::istream& input;
+    bool badHeader{false};
 public:
     PboReader(std::istream &input) : input(input) {}
     void readHeaders();
@@ -111,8 +112,8 @@ public:
         return PboEntryBuffer(*this, ent);
     }
     const auto& getProperties() const { return properties; }
-
-
+    //Broken 3DEN exported pbo with no header
+    bool isBadHeader() const{ return badHeader; }
 };
 
 class PboFileToWrite : std::enable_shared_from_this<PboFileToWrite> { //#TODO need a better name
