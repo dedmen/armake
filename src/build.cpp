@@ -183,7 +183,7 @@ int Builder::buildDirectory(std::filesystem::path inputDirectory, std::filesyste
         pboProperties.emplace_back(std::string(key), std::string(val));
     }
 
-    std::string_view addonPrefix;
+    std::string addonPrefix;
 
     if (auto found = std::find_if(pboProperties.begin(), pboProperties.end(), [](const PboProperty& prop) {
         return prop.key == "prefix";
@@ -194,22 +194,37 @@ int Builder::buildDirectory(std::filesystem::path inputDirectory, std::filesyste
         if (prefixUnclean != found->value)
             logger.warning("Prefix name contains forward slashes: %s\n", prefixUnclean.c_str());
         addonPrefix = found->value;
-    } else if (std::filesystem::exists(prefixPath)) {
+    }
+    if (std::filesystem::exists(prefixPath)) {
         //No prefix supplied via parameters. Read it from file and clean it up.
         std::ifstream prefixFile(prefixPath);
+
+        auto cleanPrefix = [&](std::string& tmp) {
+            std::string prefixUnclean(tmp);
+            std::replace(tmp.begin(), tmp.end(), '/', '\\');
+            if (prefixUnclean != tmp)
+                logger.warning("Prefix name contains forward slashes: %s\n", prefixUnclean.c_str()); 
+        };
+
         std::string tmp;
-        std::getline(prefixFile, tmp);
-
-
-        std::string prefixUnclean(tmp);
-        std::replace(tmp.begin(), tmp.end(), '/', '\\');
-        if (prefixUnclean != tmp)
-            logger.warning("Prefix name contains forward slashes: %s\n", prefixUnclean.c_str());
-
-        //Write prefix to pboProperties
-        addonPrefix = pboProperties.emplace_back("prefix", std::move(tmp)).value;
-        //#TODO verbose log that prefix was read from file
-    } else {
+        bool firstLine = true;
+        while (std::getline(prefixFile, tmp)) {
+            if (tmp.empty()) continue;
+            if (tmp.substr(0,2) == "//") continue;
+            if (tmp.find('=')) {
+                firstLine = false;
+                auto key = tmp.substr(0, tmp.find('='));
+                auto value = tmp.substr(tmp.find('=')+1);
+                if (key == "prefix") {
+                    cleanPrefix(value);
+                    addonPrefix = value;//#TODO verbose log that prefix was read from file
+                }
+                pboProperties.emplace_back(std::move(key), std::move(value));
+            }
+        }
+    }
+    
+    if (addonPrefix.empty()) {
         addonPrefix = targetPbo.filename().string(); //Same fallback as Arma
     }
 
