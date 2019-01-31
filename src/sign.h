@@ -19,6 +19,6 @@
 #pragma once
 
 
-int sign_pbo(char *path_pbo, char *path_privatekey, char *path_signature);
+int sign_pbo(std::filesystem::path path_pbo, std::filesystem::path path_privatekey, std::filesystem::path path_signature);
 
 int cmd_sign(Logger& logger);

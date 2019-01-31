@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <sstream>
 #include <filesystem>
+#include <array>
 
 
 struct header {
@@ -103,6 +104,7 @@ class PboReader {
     uint32_t propertiesEnd{0};
     uint32_t headerEnd{0};
     std::istream& input;
+    std::array<unsigned char, 20> hash;
     bool badHeader{false};
 public:
     PboReader(std::istream &input) : input(input) {}
@@ -112,6 +114,7 @@ public:
         return PboEntryBuffer(*this, ent);
     }
     const auto& getProperties() const { return properties; }
+    const auto& getHash() const { return hash; }
     //Broken 3DEN exported pbo with no header
     bool isBadHeader() const{ return badHeader; }
 };

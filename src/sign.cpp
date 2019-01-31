@@ -16,17 +16,9 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <string.h>
 #include <filesystem>
 #include "logger.h"
-
-//#include <unistd.h>
-//#include <openssl/bn.h>
-
+#include "unpack.h"
 extern "C" {
 #include "sha1.h"
 }
@@ -36,8 +28,40 @@ extern "C" {
 #include "keygen.h"
 #include "sign.h"
 
+#include <wolfssl/openssl/bn.h>
 
-void pad_hash(unsigned char *hash, char *buffer, size_t buffsize) {
+//Written by Dedmen for Intercept
+template <class T, auto D>
+class ManagedObject {
+public:
+    T obj = nullptr;
+
+    ManagedObject() = default;
+    ManagedObject(T s) : obj(s) {}
+
+    ~ManagedObject() {
+        if (!obj) return;
+
+        //Special case for CertCloseStore
+        if constexpr (std::is_invocable_v<decltype(D), T, DWORD>)
+            D(obj, 0);
+        else
+            D(obj);
+    }
+
+    T operator->() { return obj; }
+    T* operator&() { return &obj; }
+    T& operator*() { return *obj; }
+    operator T() { return obj; }
+
+    ManagedObject& operator=(T* s) {
+        obj = s;
+        return *this;
+    }
+};
+
+//#define BISIGN_V2
+void pad_hash(const std::array<unsigned char,20>& hash, std::vector<char>& buffer, size_t buffsize) {
     int i;
 
     buffer[0] = 0;
@@ -46,9 +70,11 @@ void pad_hash(unsigned char *hash, char *buffer, size_t buffsize) {
     for (i = 0; i < (buffsize - 38); i++)
         buffer[2 + i] = 255;
 
-    memcpy(buffer + buffsize - 36,
+
+
+    memcpy(buffer.data() + buffsize - 36,
         "\x00\x30\x21\x30\x09\x06\x05\x2b\x0e\x03\x02\x1a\x05\x00\x04\x14", 16);
-    memcpy(buffer + buffsize - 20, hash, 20);
+    memcpy(buffer.data() + buffsize - 20, hash.data(), 20);
 }
 
 int name_hash_sort(const void *av, const void *bv) {
@@ -65,319 +91,251 @@ int name_hash_sort(const void *av, const void *bv) {
 
     return 0;
 }
+
+#define REVERSE_DIGEST_ENDIANNESS(x) for (unsigned int& i : x.Message_Digest) reverse_endianness(&i, sizeof(i));
+
 //#TODO first part of signature is the pbo checksum that the pbowriter already wrote to the end, find a way to reuse that
-int sign_pbo(char *path_pbo, char *path_privatekey, char *path_signature) {
-//    SHA1Context sha;
-//    BN_CTX *bignum_context;
-//    BIGNUM *hash1_padded;
-//    BIGNUM *hash2_padded;
-//    BIGNUM *hash3_padded;
-//    BIGNUM *sig1;
-//    BIGNUM *sig2;
-//    BIGNUM *sig3;
-//    BIGNUM *exp;
-//    BIGNUM *modulus;
-//    bool nothing;
-//    long i;
-//    long fp_header;
-//    long fp_body;
-//    long fp_tmp;
-//    uint32_t temp;
-//    uint32_t keylength;
-//    uint32_t exponent_le;
-//    char **names;
-//    char buffer[4096];
-//    char prefix[512];
-//    char keyname[512];
-//    unsigned char hash1[20];
-//    unsigned char hash2[20];
-//    unsigned char hash3[20];
-//    unsigned char filehash[20];
-//    unsigned char namehash[20];
-//    FILE *f_pbo;
-//    FILE *f_privatekey;
-//    FILE *f_signature;
-//    int j;
-//
-//    f_pbo = fopen(path_pbo, "rb");
-//    if (!f_pbo)
-//        return 1;
-//
-//    // get prefix
-//    if (fgetc(f_pbo) == 0) {
-//        fseek(f_pbo, 20, SEEK_CUR);
-//        do {
-//            fp_tmp = ftell(f_pbo);
-//            fread(buffer, sizeof(buffer), 1, f_pbo);
-//            if (strcmp(buffer, "prefix") == 0)
-//                strncpy(prefix, buffer + strlen(buffer) + 1, sizeof(prefix));
-//            fseek(f_pbo, fp_tmp + strlen(buffer) + 1, SEEK_SET);
-//        } while (strlen(buffer) > 0);
-//    } else {
-//        fseek(f_pbo, 0, SEEK_SET); // no header extensions
-//    }
-//
-//    if (prefix[strlen(prefix) - 1] != '\\')
-//        strcat(prefix, "\\");
-//
-//    fp_header = ftell(f_pbo);
-//
-//    // get all file names for name hash
-//    names = safe_malloc(32 * sizeof(char *));
-//    i = 0;
-//    do {
-//        fp_tmp = ftell(f_pbo);
-//        fread(buffer, sizeof(buffer), 1, f_pbo);
-//        fseek(f_pbo, fp_tmp + strlen(buffer) + 17, SEEK_SET);
-//        fread(&temp, sizeof(temp), 1, f_pbo);
-//        if (temp == 0)
-//            continue;
-//
-//        if (i > 0 && i % 32 == 0)
-//            names = safe_realloc(names, (i + 32) * sizeof(char *));
-//
-//        names[i] = strdup(buffer);
-//        lower_case(names[i]);
-//        i++;
-//    } while (strlen(buffer) > 0);
-//    fp_body = ftell(f_pbo);
-//
-//    // sort file names
-//    qsort(names, i, sizeof(char *), name_hash_sort);
-//
-//    // calculate name hash
-//    SHA1Reset(&sha);
-//    for (j = 0; j < i; j++) {
-//        SHA1Input(&sha, (unsigned char *)names[j], strlen(names[j]));
-//        free(names[j]);
-//    }
-//    free(names);
-//
-//    if (!SHA1Result(&sha)) {
-//        fclose(f_pbo);
-//        return 1;
-//    }
-//
-//    for (i = 0; i < 5; i++)
-//        reverse_endianness(&sha.Message_Digest[i], sizeof(sha.Message_Digest[i]));
-//
-//    memcpy(namehash, &sha.Message_Digest[0], 20);
-//
-//    // calculate file hash
-//    SHA1Reset(&sha);
-//    nothing = true;
-//    while (true) {
-//        fseek(f_pbo, fp_header, SEEK_SET);
-//        fread(buffer, sizeof(buffer), 1, f_pbo);
-//        lower_case(buffer);
-//        fseek(f_pbo, fp_header + strlen(buffer) + 17, SEEK_SET);
-//        fread(&temp, sizeof(temp), 1, f_pbo);
-//
-//        fp_header = ftell(f_pbo);
-//
-//        if (strlen(buffer) == 0)
-//            break;
-//
-//        if (temp == 0)
-//            continue;
-//
-//        if (strchr(buffer, '.') != NULL && (
-//                strcmp(strrchr(buffer, '.'), ".paa") == 0 ||
-//                strcmp(strrchr(buffer, '.'), ".jpg") == 0 ||
-//                strcmp(strrchr(buffer, '.'), ".p3d") == 0 ||
-//                strcmp(strrchr(buffer, '.'), ".tga") == 0 ||
-//                strcmp(strrchr(buffer, '.'), ".rvmat") == 0 ||
-//                strcmp(strrchr(buffer, '.'), ".lip") == 0 ||
-//                strcmp(strrchr(buffer, '.'), ".ogg") == 0 ||
-//                strcmp(strrchr(buffer, '.'), ".wss") == 0 ||
-//                strcmp(strrchr(buffer, '.'), ".png") == 0 ||
-//                strcmp(strrchr(buffer, '.'), ".rtm") == 0 ||
-//                strcmp(strrchr(buffer, '.'), ".pac") == 0 ||
-//                strcmp(strrchr(buffer, '.'), ".fxy") == 0 ||
-//                strcmp(strrchr(buffer, '.'), ".wrp") == 0)) {
-//            fp_body += temp;
-//            continue;
-//        }
-//
-//        nothing = false;
-//
-//        fseek(f_pbo, fp_body, SEEK_SET);
-//
-//        for (i = 0; temp - i >= sizeof(buffer); i += sizeof(buffer)) {
-//            fread(buffer, sizeof(buffer), 1, f_pbo);
-//            SHA1Input(&sha, (unsigned char *)buffer, sizeof(buffer));
-//        }
-//        fread(buffer, temp - i, 1, f_pbo);
-//        SHA1Input(&sha, (unsigned char *)buffer, temp - i);
-//
-//        fp_body += temp;
-//    }
-//
-//    if (nothing)
-//        SHA1Input(&sha, (unsigned char *)"nothing", strlen("nothing"));
-//
-//    fseek(f_pbo, 0, SEEK_END);
-//
-//    if (!SHA1Result(&sha)) {
-//        fclose(f_pbo);
-//        return 1;
-//    }
-//
-//    for (i = 0; i < 5; i++)
-//        reverse_endianness(&sha.Message_Digest[i], sizeof(sha.Message_Digest[i]));
-//
-//    memcpy(filehash, &sha.Message_Digest[0], 20);
-//
-//    // get hash 1
-//    fseek(f_pbo, -20, SEEK_END);
-//    fread(hash1, 20, 1, f_pbo);
-//
-//    // calculate hash 2
-//    SHA1Reset(&sha);
-//    SHA1Input(&sha, hash1, 20);
-//    SHA1Input(&sha, namehash, 20);
-//    if (strlen(prefix) > 1)
-//        SHA1Input(&sha, (unsigned char *)prefix, strlen(prefix));
-//
-//    if (!SHA1Result(&sha)) {
-//        fclose(f_pbo);
-//        return 1;
-//    }
-//
-//    for (i = 0; i < 5; i++)
-//        reverse_endianness(&sha.Message_Digest[i], sizeof(sha.Message_Digest[i]));
-//
-//    memcpy(hash2, &sha.Message_Digest[0], 20);
-//
-//    // calculate hash 3
-//    SHA1Reset(&sha);
-//    SHA1Input(&sha, filehash, 20);
-//    SHA1Input(&sha, namehash, 20);
-//    if (strlen(prefix) > 1)
-//        SHA1Input(&sha, (unsigned char *)prefix, strlen(prefix));
-//
-//    if (!SHA1Result(&sha)) {
-//        fclose(f_pbo);
-//        return 1;
-//    }
-//
-//    for (i = 0; i < 5; i++)
-//        reverse_endianness(&sha.Message_Digest[i], sizeof(sha.Message_Digest[i]));
-//
-//    memcpy(hash3, &sha.Message_Digest[0], 20);
-//
-//    // read private key data
-//    f_privatekey = fopen(path_privatekey, "rb");
-//    if (!f_privatekey) {
-//        fclose(f_pbo);
-//        return 1;
-//    }
-//
-//    fread(keyname, sizeof(keyname), 1, f_privatekey);
-//    fseek(f_privatekey, strlen(keyname) + 1, SEEK_SET);
-//    fseek(f_privatekey, 16, SEEK_CUR);
-//    fread(&keylength, sizeof(keylength), 1, f_privatekey);
-//    fread(&exponent_le, sizeof(exponent_le), 1, f_privatekey);
-//
-//    fread(buffer, keylength / 8, 1, f_privatekey);
-//    reverse_endianness(buffer, keylength / 8);
-//    modulus = BN_new();
-//    BN_bin2bn((unsigned char *)buffer, keylength / 8, modulus);
-//
-//    fseek(f_privatekey, (keylength / 16) * 5, SEEK_CUR);
-//
-//    fread(buffer, keylength / 8, 1, f_privatekey);
-//    reverse_endianness(buffer, keylength / 8);
-//    exp = BN_new();
-//    BN_bin2bn((unsigned char *)buffer, keylength / 8, exp);
-//
-//    // generate signature values
-//    pad_hash(hash1, buffer, keylength / 8);
-//    hash1_padded = BN_new();
-//    BN_bin2bn((unsigned char *)buffer, keylength / 8, hash1_padded);
-//
-//    pad_hash(hash2, buffer, keylength / 8);
-//    hash2_padded = BN_new();
-//    BN_bin2bn((unsigned char *)buffer, keylength / 8, hash2_padded);
-//
-//    pad_hash(hash3, buffer, keylength / 8);
-//    hash3_padded = BN_new();
-//    BN_bin2bn((unsigned char *)buffer, keylength / 8, hash3_padded);
-//
-//    bignum_context = BN_CTX_new();
-//
-//    sig1 = BN_new();
-//    BN_mod_exp(sig1, hash1_padded, exp, modulus, bignum_context);
-//
-//    sig2 = BN_new();
-//    BN_mod_exp(sig2, hash2_padded, exp, modulus, bignum_context);
-//
-//    sig3 = BN_new();
-//    BN_mod_exp(sig3, hash3_padded, exp, modulus, bignum_context);
-//
-//    // write to file
-//    f_signature = fopen(path_signature, "wb");
-//    if (!f_signature) {
-//        fclose(f_privatekey);
-//        fclose(f_pbo);
-//        return 1;
-//    }
-//
-//    fwrite(keyname, strlen(keyname) + 1, 1, f_signature); //max. 512 B
-//    temp = keylength / 8 + 20;
-//    fwrite(&temp, sizeof(temp), 1, f_signature); //4 B
-//    fwrite("\x06\x02\x00\x00\x00\x24\x00\x00", 8, 1, f_signature); //8 B
-//    fwrite("RSA1", 4, 1, f_signature); //4 B
-//    fwrite(&keylength, sizeof(keylength), 1, f_signature); //4 B
-//    fwrite(&exponent_le, sizeof(exponent_le), 1, f_signature); //4 B
-//
-//    custom_bn2lebinpad(modulus, (unsigned char *)buffer, keylength / 8);
-//    fwrite(buffer, keylength / 8, 1, f_signature); //128 B
-//
-//    temp = keylength / 8;
-//    fwrite(&temp, sizeof(temp), 1, f_signature); //4 B
-//
-//    custom_bn2lebinpad(sig1, (unsigned char *)buffer, keylength / 8);
-//    fwrite(buffer, keylength / 8, 1, f_signature); //128 B
-//
-//    temp = 2;
-//    fwrite(&temp, sizeof(temp), 1, f_signature); //4 B
-//
-//    temp = keylength / 8;
-//    fwrite(&temp, sizeof(temp), 1, f_signature); //4 B
-//
-//    custom_bn2lebinpad(sig2, (unsigned char *)buffer, keylength / 8);
-//    fwrite(buffer, keylength / 8, 1, f_signature); //128 B
-//
-//    temp = keylength / 8;
-//    fwrite(&temp, sizeof(temp), 1, f_signature); //4 B
-//
-//    custom_bn2lebinpad(sig3, (unsigned char *)buffer, keylength / 8);
-//    fwrite(buffer, keylength / 8, 1, f_signature); //128 B
-//
-//    // clean up
-//    BN_CTX_free(bignum_context);
-//    BN_free(exp);
-//    BN_free(modulus);
-//    BN_free(hash1_padded);
-//    BN_free(hash2_padded);
-//    BN_free(hash3_padded);
-//    BN_free(sig1);
-//    BN_free(sig2);
-//    BN_free(sig3);
-//    fclose(f_pbo);
-//    fclose(f_privatekey);
-//    fclose(f_signature);
-//
-//    return 0;
-return 1;
+int sign_pbo(std::filesystem::path path_pbo, std::filesystem::path path_privatekey, std::filesystem::path path_signature) {
+    SHA1Context sha;
+    std::string prefix;
+
+    std::ifstream pboInput(path_pbo, std::ifstream::binary);
+    PboReader reader(pboInput);
+    reader.readHeaders();
+
+    auto& pboProperties = reader.getProperties();
+    if (auto found = std::find_if(pboProperties.begin(), pboProperties.end(), [](const PboProperty& prop) {
+        return prop.key == "prefix";
+    }); found != pboProperties.end()) {
+        prefix = found->value+'\\'; //the \ at end is important
+    }
+
+    std::vector<std::string> filenames;
+    for (auto& it : reader.getFiles())
+        filenames.emplace_back(it.name);
+
+    for (auto& it : filenames)
+        std::transform(it.begin(), it.end(), it.begin(), ::tolower);
+    
+    std::sort(filenames.begin(), filenames.end());
+
+    // calculate name hash
+    SHA1Reset(&sha);
+    for (auto& file : filenames)
+        SHA1Input(&sha, reinterpret_cast<const unsigned char*>(file.c_str()), file.length());
+
+    if (!SHA1Result(&sha))
+        return 1;
+
+    for (unsigned int& i : sha.Message_Digest) reverse_endianness(&i, sizeof(i));
+
+    std::array<unsigned char,20> namehash;
+    memcpy(namehash.data(), &sha.Message_Digest[0], 20);
+
+    // calculate file hash
+    SHA1Reset(&sha);
+
+    bool foundFiles = false;
+    for (auto& entry : reader.getFiles()) {
+        auto ext = std::filesystem::path(entry.name).extension().string();
+#ifdef BISIGN_V2
+        //blacklist
+        if (
+            ext == ".paa" ||
+            ext == ".jpg" ||
+            ext == ".p3d" ||
+            ext == ".tga" ||
+            ext == ".rvmat" ||
+            ext == ".lip" ||
+            ext == ".ogg" ||
+            ext == ".wss" ||
+            ext == ".png" ||
+            ext == ".rtm" ||
+            ext == ".pac" ||
+            ext == ".fxy" ||
+            ext == ".wrp")
+            continue;
+#else
+        //whitelist
+        if (
+            ext != ".sqf" &&
+            ext != ".inc" &&
+            ext != ".bikb" &&
+            ext != ".ext" &&
+            ext != ".fsm" &&
+            ext != ".sqm" &&
+            ext != ".hpp" &&
+            ext != ".cfg" &&
+            ext != ".sqs" &&
+            ext != ".h")
+            continue;
+#endif
+        foundFiles = true;
+        auto fileBuf = reader.getFileBuffer(entry);
+        std::istream source(&fileBuf);
+        std::array<char, 4096> buf;
+        do {
+            source.read(buf.data(), buf.size());
+            SHA1Input(&sha, reinterpret_cast<const unsigned char*>(buf.data()), source.gcount());
+        } while (source.gcount() == buf.size()); //if gcount is not full buffer, we reached EOF before filling the buffer till end
+    }
+
+    if (!foundFiles)
+    #ifdef BISIGN_V2
+        SHA1Input(&sha, reinterpret_cast<const unsigned char *>("nothing"), strlen("nothing"));
+    #else
+        SHA1Input(&sha, reinterpret_cast<const unsigned char *>("gnihton"), strlen("gnihton"));
+    #endif
+
+    if (!SHA1Result(&sha))
+        return 1;
+
+    REVERSE_DIGEST_ENDIANNESS(sha)
+
+    std::array<unsigned char,20> filehash;
+    memcpy(filehash.data(), &sha.Message_Digest[0], 20);
+
+    // get hash 1
+    auto& pboHash = reader.getHash();
+  
+    // calculate hash 2
+    SHA1Reset(&sha);
+    SHA1Input(&sha, pboHash.data(), 20);
+    SHA1Input(&sha, namehash.data(), 20);
+    if (!prefix.empty())
+        SHA1Input(&sha, reinterpret_cast<const unsigned char *>(prefix.c_str()), prefix.length());
+
+    if (!SHA1Result(&sha))
+        return 1;
+
+    REVERSE_DIGEST_ENDIANNESS(sha)
+    
+    std::array<unsigned char,20> hash2;
+    memcpy(hash2.data(), &sha.Message_Digest[0], 20);
+
+    // calculate hash 3
+    SHA1Reset(&sha);
+    SHA1Input(&sha, filehash.data(), 20);
+    SHA1Input(&sha, namehash.data(), 20);
+    if (!prefix.empty())
+        SHA1Input(&sha, reinterpret_cast<const unsigned char *>(prefix.c_str()), prefix.length());
+
+    if (!SHA1Result(&sha))
+        return 1;
+
+    REVERSE_DIGEST_ENDIANNESS(sha)
+    
+    std::array<unsigned char,20> hash3;
+    memcpy(hash3.data(), &sha.Message_Digest[0], 20);
+
+    // read private key data
+
+    std::ifstream privateKeyFile(path_privatekey, std::ifstream::binary);
+
+    if (!privateKeyFile.is_open())
+        return 1;
+
+    std::string keyname;
+    std::getline(privateKeyFile, keyname, '\0');
+    privateKeyFile.seekg(16, std::ifstream::cur);
+    uint32_t keylength;
+    uint32_t exponent_le;
+
+    privateKeyFile.read(reinterpret_cast<char*>(&keylength), 4);
+    privateKeyFile.read(reinterpret_cast<char*>(&exponent_le), 4);
+
+    std::vector<char> buffer;
+    buffer.resize(keylength/8);
+    privateKeyFile.read(buffer.data(), keylength/8);
+
+    reverse_endianness(buffer.data(), keylength / 8);
+
+    ManagedObject<BIGNUM*,BN_free> modulus = BN_new();
+    BN_bin2bn(reinterpret_cast<const unsigned char*>(buffer.data()), keylength / 8, modulus);
+
+    privateKeyFile.seekg((keylength / 16) * 5, std::ifstream::cur);
+
+    privateKeyFile.read(buffer.data(), keylength/8);
+    reverse_endianness(buffer.data(), keylength / 8);
+    ManagedObject<BIGNUM*,BN_free> exp = BN_new();
+    BN_bin2bn(reinterpret_cast<const unsigned char*>(buffer.data()), keylength / 8, exp);
+
+    // generate signature values
+    pad_hash(pboHash, buffer, keylength / 8);
+    ManagedObject<BIGNUM*,BN_free> hash1_padded = BN_new();
+    BN_bin2bn(reinterpret_cast<const unsigned char*>(buffer.data()), keylength / 8, hash1_padded);
+
+    pad_hash(hash2, buffer, keylength / 8);
+    ManagedObject<BIGNUM*,BN_free> hash2_padded = BN_new();
+    BN_bin2bn(reinterpret_cast<const unsigned char*>(buffer.data()), keylength / 8, hash2_padded);
+
+    pad_hash(hash3, buffer, keylength / 8);
+    ManagedObject<BIGNUM*,BN_free> hash3_padded = BN_new();
+    BN_bin2bn(reinterpret_cast<const unsigned char*>(buffer.data()), keylength / 8, hash3_padded);
+
+    ManagedObject<BN_CTX*,BN_CTX_free> bignum_context = BN_CTX_new();
+
+    ManagedObject<BIGNUM*,BN_free> sig1 = BN_new();
+    BN_mod_exp(sig1, hash1_padded, exp, modulus, bignum_context);
+
+    ManagedObject<BIGNUM*,BN_free> sig2 = BN_new();
+    BN_mod_exp(sig2, hash2_padded, exp, modulus, bignum_context);
+
+    ManagedObject<BIGNUM*,BN_free> sig3 = BN_new();
+    BN_mod_exp(sig3, hash3_padded, exp, modulus, bignum_context);
+
+    // write to file
+
+    std::ofstream signatureFile(path_signature, std::ofstream::binary);
+
+    if (!signatureFile.is_open()) {
+        return 1;
+    }
+
+    signatureFile.write(keyname.c_str(), keyname.length()+1); //max. 512 B
+
+
+    uint32_t temp = keylength / 8 + 20;
+    signatureFile.write(reinterpret_cast<const char*>(&temp), 4); //4 B
+    signatureFile.write("\x06\x02\x00\x00\x00\x24\x00\x00", 8); //8 B
+    signatureFile.write("RSA1", 4); //4 B
+
+    signatureFile.write(reinterpret_cast<const char*>(&keylength), 4); //4 B
+    signatureFile.write(reinterpret_cast<const char*>(&exponent_le), 4); //4 B
+
+    custom_bn2lebinpad(modulus, reinterpret_cast<unsigned char *>(buffer.data()), keylength / 8);
+    signatureFile.write(buffer.data(), keylength / 8); //128 B
+
+    temp = keylength / 8;
+    signatureFile.write(reinterpret_cast<const char*>(&temp), 4); //4 B
+
+    custom_bn2lebinpad(sig1, reinterpret_cast<unsigned char *>(buffer.data()), keylength / 8);
+    signatureFile.write(buffer.data(), keylength / 8); //128 B
+
+    #ifdef BISIGN_V2
+        temp = 2;
+    #else
+        temp = 3;
+    #endif
+    
+    signatureFile.write(reinterpret_cast<const char*>(&temp), 4); //4 B
+
+    temp = keylength / 8;
+    signatureFile.write(reinterpret_cast<const char*>(&temp), 4); //4 B
+
+    custom_bn2lebinpad(sig2, reinterpret_cast<unsigned char *>(buffer.data()), keylength / 8);
+    signatureFile.write(buffer.data(), keylength / 8); //128 B
+
+    temp = keylength / 8;
+    signatureFile.write(reinterpret_cast<const char*>(&temp), 4); //4 B
+
+    custom_bn2lebinpad(sig3, reinterpret_cast<unsigned char *>(buffer.data()), keylength / 8);
+    signatureFile.write(buffer.data(), keylength / 8); //128 B
+    return 0;
 }
 
 int cmd_sign(Logger& logger) {
     extern struct arguments args;
-    char keyname[512];
-    char path_signature[2048];
-    int success;
 
     if (args.num_positionals != 3)
         return 128;
@@ -387,31 +345,26 @@ int cmd_sign(Logger& logger) {
         return 1;
     }
 
-    if (strchr(args.positionals[1], PATHSEP) == NULL)
-        strcpy(keyname, args.positionals[1]);
-    else
-        strcpy(keyname, strrchr(args.positionals[1], PATHSEP) + 1);
-    *strrchr(keyname, '.') = 0;
+
+    std::filesystem::path keyname(args.positionals[1]);
+
+    std::string path_signature;
 
     if (args.signature) {
-        strcpy(path_signature, args.signature);
-        if (strlen(path_signature) < 7 || strcmp(&path_signature[strlen(path_signature) - 7], ".bisign") != 0)
-            strcat(path_signature, ".bisign");
+        path_signature = args.signature;
     } else {
-        strcpy(path_signature, args.positionals[2]);
-        strcat(path_signature, ".");
-        strcat(path_signature, keyname);
-        strcat(path_signature, ".bisign");
+        path_signature = std::string(args.positionals[2]) + "." + keyname.filename().string();
     }
 
-    // check if target already exists
+    if (std::filesystem::path(path_signature).extension() != ".bisign")
+        path_signature += ".bisign";
+
     if (std::filesystem::exists(path_signature) && !args.force) {
         logger.error("File %s already exists and --force was not set.\n", path_signature);
         return 1;
     }
 
-    //success = sign_pbo(args.positionals[2], args.positionals[1], path_signature);
-    success = 1;
+    int success = sign_pbo(args.positionals[2], args.positionals[1], path_signature);
 
     if (success)
         logger.error("Failed to sign file.\n");

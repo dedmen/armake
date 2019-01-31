@@ -21,7 +21,7 @@
 #include <string_view>
 #include <optional>
 #include <functional>
-#include <ittnotify.h>
+#include "ittnotify.h"
 #include <filesystem>
 
 #ifdef _WIN32

@@ -53,9 +53,87 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}armake")
 
 SOURCE_GROUP("main" FILES ${INTERCEPT_SOURCES})
 
-add_executable(armake ${INTERCEPT_SOURCES})
-include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}\\lib\\)
+#Wolfssl
 
+add_definitions(-DNO_DES3 -DWOLFSSL_KEY_GEN -DNO_DSA
+                -DNO_MD4 -DNO_PSK -DNO_PWDBASED -DNO_RABBIT -DNO_HC128 -DNO_ERROR_STRINGS -DNO_OLD_TLS -DWOLFSSL_USER_IO
+                -DNO_SESSION_CACHE -DOPENSSL_EXTRA
+                -DWOLFSSL_STATIC_RSA #We need atleast 1 cipher suite or it fails to compile, even if we don't need that stuff
+                )
+
+set(wolfssl_DIR ${CMAKE_SOURCE_DIR}/wolfssl)
+
+# Add header directories to include paths
+include_directories(${wolfssl_DIR})
+
+SET(wolfssl_sources
+            ${wolfssl_DIR}/wolfcrypt/src/aes.c
+            ${wolfssl_DIR}/wolfcrypt/src/arc4.c
+            ${wolfssl_DIR}/wolfcrypt/src/asm.c
+            ${wolfssl_DIR}/wolfcrypt/src/asn.c
+            ${wolfssl_DIR}/wolfcrypt/src/blake2b.c
+            ${wolfssl_DIR}/wolfcrypt/src/camellia.c
+            ${wolfssl_DIR}/wolfcrypt/src/chacha.c
+            ${wolfssl_DIR}/wolfcrypt/src/chacha20_poly1305.c
+            ${wolfssl_DIR}/wolfcrypt/src/cmac.c
+            ${wolfssl_DIR}/wolfcrypt/src/coding.c
+            ${wolfssl_DIR}/wolfcrypt/src/compress.c
+            ${wolfssl_DIR}/wolfcrypt/src/cpuid.c
+            ${wolfssl_DIR}/wolfcrypt/src/curve25519.c
+            ${wolfssl_DIR}/wolfcrypt/src/des3.c
+            ${wolfssl_DIR}/wolfcrypt/src/dh.c
+            ${wolfssl_DIR}/wolfcrypt/src/dsa.c
+            ${wolfssl_DIR}/wolfcrypt/src/ecc.c
+            ${wolfssl_DIR}/wolfcrypt/src/ecc_fp.c
+            ${wolfssl_DIR}/wolfcrypt/src/ed25519.c
+            ${wolfssl_DIR}/wolfcrypt/src/error.c
+            ${wolfssl_DIR}/wolfcrypt/src/fe_low_mem.c
+            ${wolfssl_DIR}/wolfcrypt/src/fe_operations.c
+            ${wolfssl_DIR}/wolfcrypt/src/ge_low_mem.c
+            ${wolfssl_DIR}/wolfcrypt/src/ge_operations.c
+            ${wolfssl_DIR}/wolfcrypt/src/hash.c
+            ${wolfssl_DIR}/wolfcrypt/src/hc128.c
+            ${wolfssl_DIR}/wolfcrypt/src/hmac.c
+            ${wolfssl_DIR}/wolfcrypt/src/idea.c
+            ${wolfssl_DIR}/wolfcrypt/src/integer.c
+            ${wolfssl_DIR}/wolfcrypt/src/logging.c
+            ${wolfssl_DIR}/wolfcrypt/src/md2.c
+            ${wolfssl_DIR}/wolfcrypt/src/md4.c
+            ${wolfssl_DIR}/wolfcrypt/src/md5.c
+            ${wolfssl_DIR}/wolfcrypt/src/memory.c
+            ${wolfssl_DIR}/wolfcrypt/src/pkcs12.c
+            ${wolfssl_DIR}/wolfcrypt/src/pkcs7.c
+            ${wolfssl_DIR}/wolfcrypt/src/poly1305.c
+            ${wolfssl_DIR}/wolfcrypt/src/pwdbased.c
+            ${wolfssl_DIR}/wolfcrypt/src/rabbit.c
+            ${wolfssl_DIR}/wolfcrypt/src/random.c
+            ${wolfssl_DIR}/wolfcrypt/src/ripemd.c
+            ${wolfssl_DIR}/wolfcrypt/src/rsa.c
+            ${wolfssl_DIR}/wolfcrypt/src/sha.c
+            ${wolfssl_DIR}/wolfcrypt/src/sha256.c
+            ${wolfssl_DIR}/wolfcrypt/src/sha3.c
+            ${wolfssl_DIR}/wolfcrypt/src/sha512.c
+            ${wolfssl_DIR}/wolfcrypt/src/signature.c
+            ${wolfssl_DIR}/wolfcrypt/src/srp.c
+            ${wolfssl_DIR}/wolfcrypt/src/tfm.c
+            ${wolfssl_DIR}/wolfcrypt/src/wc_encrypt.c
+            ${wolfssl_DIR}/wolfcrypt/src/wc_port.c
+            ${wolfssl_DIR}/wolfcrypt/src/wolfevent.c
+            ${wolfssl_DIR}/wolfcrypt/src/wolfmath.c
+            ${wolfssl_DIR}/src/crl.c
+            ${wolfssl_DIR}/src/internal.c
+            ${wolfssl_DIR}/src/wolfio.c
+            ${wolfssl_DIR}/src/keys.c
+            ${wolfssl_DIR}/src/ocsp.c
+            ${wolfssl_DIR}/src/sniffer.c
+            ${wolfssl_DIR}/src/ssl.c
+            ${wolfssl_DIR}/src/tls.c
+            ${wolfssl_DIR}/src/tls13.c
+           )
+
+add_executable(armake ${INTERCEPT_SOURCES} ${wolfssl_sources})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}\\lib\\)
+target_link_libraries(armake ws2_32)
 set_target_properties(armake PROPERTIES PREFIX "")
 set_target_properties(armake PROPERTIES FOLDER armake)
 

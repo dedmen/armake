@@ -23,11 +23,11 @@
 #define KEY_EXPONENT 65537
 
 
-//#include <openssl/bn.h>
+#include <wolfssl/openssl/bn.h>
 
 
-//int generate_keypair(char *name, char *path_private, char *path_public);
+int generate_keypair(char *name, char *path_private, char *path_public);
 
-//int custom_bn2lebinpad(const BIGNUM *a, unsigned char *to, int tolen);
+int custom_bn2lebinpad(const BIGNUM *a, unsigned char *to, int tolen);
 class Logger;
 int cmd_keygen(Logger& logger);

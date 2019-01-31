@@ -319,7 +319,8 @@ void PboReader::readHeaders() {
         curPos += it.data_size;
     }
     auto fileEnd = curPos;
-    //After end there is checksum 20 bytes. Grab that too. cmd_inspect might want to display that or check it
+    input.seekg(fileEnd+1, std::istream::beg);
+    input.read(reinterpret_cast<char*>(hash.data()), 20); //After end there is checksum 20 bytes.
     __itt_task_end(unpackDomain);
 }
 
