@@ -1354,9 +1354,9 @@ yybackup:
 
   yystate = yyn;
   YY_IGNORE_MAYBE_UNINITIALIZED_BEGIN
-  *++yyvsp = yylval;
+  *++yyvsp = std::move(yylval);
   YY_IGNORE_MAYBE_UNINITIALIZED_END
-  *++yylsp = yylloc;
+  *++yylsp = std::move(yylloc);
   goto yynewstate;
 
 
@@ -1425,37 +1425,37 @@ yyreduce:
 
   case 7:
 
-    { (yyval.class_value) = std::make_shared<ConfigClass>((yyvsp[-6].string_value), (yyvsp[-4].string_value), std::move((yyvsp[-2].definitions_value))); }
+    { (yyval.class_value) = std::make_shared<ConfigClass>(std::move(yyvsp[-6].string_value), std::move(yyvsp[-4].string_value), std::move((yyvsp[-2].definitions_value))); }
 
     break;
 
   case 8:
 
-    { (yyval.class_value) = std::make_shared<ConfigClass>((yyvsp[-1].string_value), ConfigClass::definitionT()); }
+    { (yyval.class_value) = std::make_shared<ConfigClass>(std::move(yyvsp[-1].string_value), ConfigClass::definitionT()); }
 
     break;
 
   case 9:
 
-    { (yyval.class_value) = std::make_shared<ConfigClass>((yyvsp[-3].string_value), (yyvsp[-1].string_value)); }
+    { (yyval.class_value) = std::make_shared<ConfigClass>(std::move(yyvsp[-3].string_value), (yyvsp[-1].string_value)); }
 
     break;
 
   case 10:
 
-    { (yyval.class_value) = std::make_shared<ConfigClass>((yyvsp[-1].string_value), ConfigClass::deleteT()); }
+    { (yyval.class_value) = std::make_shared<ConfigClass>(std::move(yyvsp[-1].string_value), ConfigClass::deleteT()); }
 
     break;
 
   case 11:
 
-    { (yyval.variable_value) = ConfigEntry(rap_type::rap_var, (yyvsp[-3].string_value), (yyvsp[-1].expression_value)); }
+    { (yyval.variable_value) = ConfigEntry(rap_type::rap_var, std::move(yyvsp[-3].string_value), std::move(yyvsp[-1].expression_value)); }
 
     break;
 
   case 12:
 
-    { (yyval.variable_value) = ConfigEntry(rap_type::rap_array, (yyvsp[-5].string_value), (yyvsp[-1].expression_value)); }
+    { (yyval.variable_value) = ConfigEntry(rap_type::rap_array, std::move(yyvsp[-5].string_value), std::move(yyvsp[-1].expression_value)); }
 
     break;
 
@@ -1479,19 +1479,19 @@ yyreduce:
 
   case 16:
 
-    { (yyval.expression_value) = ConfigValue(rap_type::rap_string, (yyvsp[0].string_value)); }
+    { (yyval.expression_value) = ConfigValue(rap_type::rap_string, std::move(yyvsp[0].string_value)); }
 
     break;
 
   case 17:
 
-    { (yyval.expression_value) = ConfigValue(rap_type::rap_array, (yyvsp[-1].expression_value)); }
+    { (yyval.expression_value) = ConfigValue(rap_type::rap_array, std::move(yyvsp[-1].expression_value)); }
 
     break;
 
   case 18:
 
-    { (yyval.expression_value) = ConfigValue(rap_type::rap_array, (yyvsp[-2].expression_value)); }
+    { (yyval.expression_value) = ConfigValue(rap_type::rap_array, std::move(yyvsp[-2].expression_value)); }
 
     break;
 
@@ -1509,7 +1509,7 @@ yyreduce:
 
   case 21:
 
-    { (yyval.expression_value).addArrayElement((yyvsp[0].expression_value)); }
+    { (yyval.expression_value).addArrayElement(std::move(yyvsp[0].expression_value)); }
 
     break;
 

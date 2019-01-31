@@ -177,9 +177,6 @@ int Builder::buildDirectory(std::filesystem::path inputDirectory, std::filesyste
         std::string_view key = ext.substr(0, seperatorOffset);
         std::string_view val = ext.substr(seperatorOffset + 1);
 
-        if (key == "prefix") continue;
-
-
         pboProperties.emplace_back(std::string(key), std::string(val));
     }
 
@@ -211,7 +208,7 @@ int Builder::buildDirectory(std::filesystem::path inputDirectory, std::filesyste
         while (std::getline(prefixFile, tmp)) {
             if (tmp.empty()) continue;
             if (tmp.substr(0,2) == "//") continue;
-            if (tmp.find('=')) {
+            if (tmp.find('=') != std::string::npos) {
                 firstLine = false;
                 auto key = tmp.substr(0, tmp.find('='));
                 auto value = tmp.substr(tmp.find('=')+1);
@@ -219,7 +216,18 @@ int Builder::buildDirectory(std::filesystem::path inputDirectory, std::filesyste
                     cleanPrefix(value);
                     addonPrefix = value;//#TODO verbose log that prefix was read from file
                 }
-                pboProperties.emplace_back(std::move(key), std::move(value));
+                if (auto found = std::find_if(pboProperties.begin(), pboProperties.end(), [&key](const PboProperty& prop) {
+                    return prop.key == key;
+                }); found != pboProperties.end()) {
+                    logger.warning("PBO property \"%s\" is defined in start parameter and $PBOPRFIX$ file. Will ignore the $PBOPREFIX$ one.\n", key.c_str()); 
+                } else {
+                    pboProperties.emplace_back(std::move(key), std::move(value));
+                }
+            } else if (firstLine) {
+                firstLine = false;
+                cleanPrefix(tmp);
+                addonPrefix = tmp;//#TODO verbose log that prefix was read from file
+                pboProperties.emplace_back("prefix", std::move(tmp));
             }
         }
     }
