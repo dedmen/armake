@@ -16,8 +16,6 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-
-#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -253,7 +251,7 @@ std::optional<std::string> Preprocessor::constants_preprocess(const ConstantMapT
             auto& cnst = std::get<constToProcess>(var);
 
             auto substack = constant_stack;
-            auto value = constant_value(constants, cnst.constant, cnst.args.size(), cnst.args, line, substack);
+            auto value = constant_value(constants, cnst.constant, cnst.args.size(), cnst.args, line, substack);//#TODO remove args.size and just get it in func
             if (!value)
                 return static_cast<size_t>(0u); //#TODO exception
             cnst.processed = std::move(*value);
@@ -378,9 +376,7 @@ std::optional<std::string> Preprocessor::constants_preprocess(const ConstantMapT
 
 std::optional<std::string> Preprocessor::constant_value(const ConstantMapType &constants, ConstantMapType::const_iterator constantIter,
         int num_args, std::vector<std::string>& args, int line, constant_stack & constant_stack) {
-    int i;
-    char *tmp;
-
+    //#TODO num_args and line be unsigned
     auto& constant = constantIter->second;
 
 
@@ -391,7 +387,7 @@ std::optional<std::string> Preprocessor::constant_value(const ConstantMapType &c
         return {};
     }
 
-    for (i = 0; i < num_args; i++) {
+    for (uint32_t i = 0; i < num_args; i++) {
         auto ret = constants_preprocess(constants, args[i], line, constant_stack);
         if (!ret)
             return {};
@@ -406,7 +402,7 @@ std::optional<std::string> Preprocessor::constant_value(const ConstantMapType &c
     } else {
         result.reserve(constant.num_occurences * 16);
         const char *ptr = constant.value.data();
-        for (i = 0; i < constant.num_occurences; i++) {
+        for (uint32_t i = 0; i < constant.num_occurences; i++) {
             result += std::string_view(ptr, constant.occurrences[i].second - (ptr - constant.value.data()));
             result += args[constant.occurrences[i].first];
             ptr = constant.value.data() + constant.occurrences[i].second;

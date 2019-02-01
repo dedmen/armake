@@ -18,7 +18,7 @@
 
 
 #pragma once
-
+#include <cmath>
 
 template<typename T>
 class vector3_base {
@@ -83,7 +83,7 @@ public:
     constexpr T distance_squared(const vector3_base& v) const noexcept { vector3_base dist = (*this - v); dist = dist * dist; return (dist.x + dist.y + dist.z); }
     constexpr T distance_2d(const vector3_base& v) const noexcept { vector3_base dist = (*this - v); dist = dist * dist; return std::sqrt(dist.x + dist.y); }
     constexpr T distance_2d_squared(const vector3_base& v) const noexcept { vector3_base dist = (*this - v); dist = dist * dist; return (dist.x + dist.y); }
-    constexpr vector3_base cross(const vector3_base& v) const noexcept { return vector3(y * v.z - z * v.y, z * v.x - x * v.z, x * v.y - y * v.x); }
+    constexpr vector3_base cross(const vector3_base& v) const noexcept { return {y * v.z - z * v.y, z * v.x - x * v.z, x * v.y - y * v.x}; }
 
 
 

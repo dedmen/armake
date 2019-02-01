@@ -65,7 +65,7 @@ struct stage_texture {
     bool useWorldEnvMap { false };
 };
 
-enum class uv_source : uint32_t {
+enum class UV_source : uint32_t {
     None,
     Tex,
     TexWaterAnim,
@@ -77,23 +77,23 @@ enum class uv_source : uint32_t {
     TexShoreAnim
 };
 
-inline constexpr std::array<std::pair<uv_source, std::string_view>, 8> uvSourceToName{
-    std::pair<uv_source, std::string_view>
+inline constexpr std::array<std::pair<UV_source, std::string_view>, 8> uvSourceToName{
+    std::pair<UV_source, std::string_view>
     
-    {uv_source::None, "None"},
-    {uv_source::Tex, "Tex"},
-    {uv_source::TexWaterAnim, "TexWaterAnim"},
-    {uv_source::Pos, "Pos"},
-    {uv_source::Tex1, "Tex1"},
-    {uv_source::WorldPos, "WorldPos"},
-    {uv_source::WorldNorm, "WorldNorm"},
-    {uv_source::TexShoreAnim, "TexShoreAnim"}
+    {UV_source::None, "None"},
+    {UV_source::Tex, "Tex"},
+    {UV_source::TexWaterAnim, "TexWaterAnim"},
+    {UV_source::Pos, "Pos"},
+    {UV_source::Tex1, "Tex1"},
+    {UV_source::WorldPos, "WorldPos"},
+    {UV_source::WorldNorm, "WorldNorm"},
+    {UV_source::TexShoreAnim, "TexShoreAnim"}
 };
 
 
 
 struct stage_transform {
-    uv_source uv_source{ uv_source::Tex };
+    UV_source uv_source{ UV_source::Tex };
     matrix4 transform{ identity_matrix4 };
 
     bool operator==(const stage_transform& o) const {

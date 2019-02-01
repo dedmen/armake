@@ -16,11 +16,6 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-
-#ifndef _WIN32
-#define _GNU_SOURCE
-#endif
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -537,7 +532,7 @@ int PAAConverter::img2paa(std::istream &source, std::ostream &target, Logger& lo
         case PAAType::AI88:
             logger.error("AI88 support is not implemented.\n");
             return 4;
-        case PAAType::default: break;
+        case PAAType::def: break;
         default:
             logger.error("Unrecognized PAA type \"%s\".\n", args.paatype);
             return 4;
@@ -581,7 +576,7 @@ int PAAConverter::img2paa(std::istream &source, std::ostream &target, Logger& lo
     }
 
     // Unless told otherwise, use DXT5 for alpha stuff and DXT1 for everything else
-    if (paatype == PAAType::default) {
+    if (paatype == PAAType::def) {
         paatype = (num_channels == 4) ? PAAType::DXT5 : PAAType::DXT1;
     }
 

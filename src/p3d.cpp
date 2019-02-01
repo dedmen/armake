@@ -16,10 +16,6 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef _WIN32
-#define _GNU_SOURCE
-#endif
-
 #include <algorithm>
 #include "args.h"
 #include "filesystem.h"
@@ -33,6 +29,7 @@
 #include <fstream>
 #include <unordered_set>
 #include "paaconverter.h"
+#include <cstring> //strncmp
 
 
 template <typename Type>
@@ -133,7 +130,7 @@ void mlod_lod::updateColors() {
 
 
 
-    for (int i = 0; i < num_faces; ++i) {
+    for (uint32_t i = 0; i < num_faces; ++i) {
         auto& face = faces[i];
         auto& faceProp = faceInfo[i];
 
@@ -230,7 +227,7 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
         tempPoints[0].point_flags = 0;
     } else {
         tempPoints.resize(numPointsTemp);
-        for (int j = 0; j < numPointsTemp; j++) {
+        for (uint32_t j = 0; j < numPointsTemp; j++) {
             source.read(reinterpret_cast<char*>(&tempPoints[j]), sizeof(struct point));
             //report invalid point flags? not really needed.
 
@@ -262,14 +259,14 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
 #pragma region FacesAndTexturesAndMaterials
 
 
-    std::vector<int> faceToOrig;
+    std::vector<int> faceToOrig; //#TODO unsigned int?
 
 
 
     std::vector<mlod_face> loadingFaces;
 
     loadingFaces.resize(num_faces);
-    for (int j = 0; j < num_faces; j++) {
+    for (uint32_t j = 0; j < num_faces; j++) {
         //4b face type
         //4x pseudovertex
         source.read(reinterpret_cast<char*>(&loadingFaces[j]), 72);
@@ -343,7 +340,7 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
     maxUV = uv_pair{std::numeric_limits<float>::min(),std::numeric_limits<float>::min() };
 
     for (auto& it : loadingFaces) {
-        for (int i = 0; i < it.face_type; ++i) {
+        for (uint32_t i = 0; i < it.face_type; ++i) {
             auto& u = it.table[i].u;
             auto& v = it.table[i].v;
 
@@ -418,7 +415,7 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
             std::swap(face.table[2], face.table[3]);
 
 
-        for (int i = 0; i < face.face_type; ++i) {
+        for (uint32_t i = 0; i < face.face_type; ++i) {
             auto faceP = face.table[i].points_index;
             auto faceN = face.table[i].normals_index;
             auto faceU = face.table[i].u;
@@ -573,14 +570,14 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
     tileU.resize(textures.size()); 
     tileV.resize(textures.size());
 
-    for (int i = 0; i < num_faces; i++) {
+    for (uint32_t i = 0; i < num_faces; i++) {
         if (faceInfo[i].textureIndex == -1)
             continue;
         if (tileU[faceInfo[i].textureIndex] && tileV[faceInfo[i].textureIndex])
             continue;
 
         
-        for (int j = 0; j < faces[i].face_type; j++) { //#TODO move clamplimit here into a constexpr float
+        for (uint32_t j = 0; j < faces[i].face_type; j++) { //#TODO move clamplimit here into a constexpr float
             if (uv_coords[faces[i].points[j]].u < -CLAMPLIMIT || uv_coords[faces[i].points[j]].u > 1 + CLAMPLIMIT)
                 tileU[faceInfo[i].textureIndex] = true;
             if (uv_coords[faces[i].points[j]].v < -CLAMPLIMIT || uv_coords[faces[i].points[j]].v > 1 + CLAMPLIMIT)
@@ -588,7 +585,7 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
         }
     }
 
-    for (int i = 0; i < num_faces; i++) {
+    for (uint32_t i = 0; i < num_faces; i++) {
         if (faceInfo[i].specialFlags & (FLAG_NOCLAMP | FLAG_CLAMPU | FLAG_CLAMPV)) //already clamped
             continue;
         if (faceInfo[i].textureIndex == -1) {
@@ -717,7 +714,7 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
             source.read(reinterpret_cast<char*>(newSelection.faces.data()), num_faces);
 
             std::vector<odol_selection::selectionVertex> temp;
-            for (int i = 0; i < numPointsTemp; ++i) {
+            for (uint32_t i = 0; i < numPointsTemp; ++i) {
                 
                 //#TODO use vertexToPoint
                 auto vertIndex = vertex_to_point[i];
@@ -728,7 +725,7 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
 
             newSel.init(std::move(temp));
 
-            for (int i = 0; i < num_faces; ++i) {
+            for (uint32_t i = 0; i < num_faces; ++i) {
                 if (newSelection.faces[faceToOrig[i]]) newSel.faces.emplace_back(i);
             }
 
@@ -760,10 +757,8 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
 }
 
 void mlod_lod::writeODOL(std::ostream& output) {
-    short u, v;
     long i;
     uint32_t temp;
-    char *ptr;
     num_faces = faces.size(); //#TODO fix dis Probably want a temp faces size thing variable in the readmlod
 
 
@@ -829,20 +824,20 @@ void mlod_lod::writeODOL(std::ostream& output) {
     WRITE_CASTED(face_allocation_size, sizeof(uint32_t));
     output.write("\0\0", sizeof(uint16_t)); //always 0
 
-    for (i = 0; i < num_faces; i++) {
+    for (uint32_t i = 0; i < num_faces; i++) {//#TODO foreach
         WRITE_CASTED(faces[i].face_type, sizeof(uint8_t));
         output.write(reinterpret_cast<char*>(faces[i].points.data()), sizeof(uint32_t) * faces[i].face_type);
     }
 
     uint32_t num_sections = sections.size();
     WRITE_CASTED(num_sections, sizeof(uint32_t));
-    for (i = 0; i < num_sections; i++) {//#TODO foreach
+    for (uint32_t i = 0; i < num_sections; i++) {//#TODO foreach
         sections[i].writeTo(output);
     }
 
     //#TODO may want a array writer for this. It's always number followed by elements
     WRITE_CASTED(num_selections, sizeof(uint32_t));
-    for (i = 0; i < num_selections; i++) {
+    for (uint32_t i = 0; i < num_selections; i++) {//#TODO foreach
         selections[i].writeTo(output);
     }
 
@@ -1155,7 +1150,7 @@ void mlod_lod::buildSections() {
 
                     sectionInfo split;
                     split.info = sec.info;
-                    for (int face = 0; face < sel.num_faces; ++face) {
+                    for (uint32_t face = 0; face < sel.num_faces; ++face) {
                         if (sec.hasFace(face)) {
                             split.addFace(face);
                             sec.removeFace(face);
@@ -1372,7 +1367,7 @@ void mlod_lod::buildSections() {
 
         auto beginOffsetInNewFaces = begOffs;
 
-        for (int i = it.indexBeg; i < it.indexEnd; ++i) {
+        for (auto i = it.indexBeg; i < it.indexEnd; ++i) {
             newFaces.emplace_back(faces[i]);
         }
         auto offsSize = it.end - it.beg;
@@ -1539,7 +1534,7 @@ void mlod_lod::buildSubskeleton(std::unique_ptr<skeleton_>& skeleton, bool neigh
     vertexboneref_is_simple = 1;
     float weight_sum;
     if (!vertexboneref.empty()) {
-        for (int i = 0; i < num_points; i++) {
+        for (uint32_t i = 0; i < num_points; i++) {
             if (vertexboneref[i].num_bones == 0)
                 continue;
 
@@ -1547,11 +1542,11 @@ void mlod_lod::buildSubskeleton(std::unique_ptr<skeleton_>& skeleton, bool neigh
                 vertexboneref_is_simple = 0;
 
             weight_sum = 0;
-            for (int j = 0; j < vertexboneref[i].num_bones; j++) {
+            for (uint32_t j = 0; j < vertexboneref[i].num_bones; j++) {
                 weight_sum += vertexboneref[i].weights[j][1] / 255.0f;
             }
 
-            for (int j = 0; j < vertexboneref[i].num_bones; j++) {
+            for (uint32_t j = 0; j < vertexboneref[i].num_bones; j++) {
                 vertexboneref[i].weights[j][1] *= (1.0 / weight_sum);
             }
         }
@@ -1575,7 +1570,7 @@ void mlod_lod::buildSubskeleton(std::unique_ptr<skeleton_>& skeleton, bool neigh
     subskeleton_to_skeleton.resize(num_bones_skeleton);
     skeleton_to_subskeleton.resize(num_bones_skeleton);
 
-    for (int i = 0; i < skeleton->num_bones; i++) {
+    for (uint32_t i = 0; i < skeleton->num_bones; i++) {
         subskeleton_to_skeleton[i] = i;
         skeleton_to_subskeleton[i].num_links = 1;
         skeleton_to_subskeleton[i].links[0] = i;
@@ -1686,7 +1681,7 @@ void odol_section::writeTo(std::ostream& output) {
 void odol_selection::writeTo(std::ostream& output) {
     output.write(name.c_str(), name.length() + 1);
 
-    WRITE_CASTED(num_faces, sizeof(uint32_t), 1, f_target);
+    WRITE_CASTED(num_faces, sizeof(uint32_t));
     if (num_faces > 0) {
         output.put(0);
         output.write(reinterpret_cast<char*>(faces.data()), sizeof(uint32_t) * num_faces);
@@ -1901,9 +1896,9 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_
      * At the moment, all axis selections are expected to be in the memory LOD.
      */
 
-    int i;
-    int j;
-    int k;
+    uint32_t i;
+    uint32_t j;
+    uint32_t k;
 
     anim->axis_pos = empty_vector;
     anim->axis_dir = empty_vector;
@@ -1969,8 +1964,6 @@ void calculate_axis(struct animation *anim, uint32_t num_lods, std::vector<mlod_
 
 
 std::optional<std::string> MultiLODShape::getPropertyGeo(std::string_view propName) {
-    mlod_lod* ld;
-        
     if (model_info.special_lod_indices.geometry.isDefined()) {
         auto& geomLod = mlod_lods[model_info.special_lod_indices.geometry];
         auto foundProp = geomLod.getProperty(propName); //#TODO properties MUST be lowercase. Else assert
@@ -2157,20 +2150,20 @@ void MultiLODShape::write_animations(std::ostream& output) {
 
     // Write animation classes
     WRITE_CASTED(model_info.skeleton->num_animations, sizeof(uint32_t));
-    for (i = 0; i < model_info.skeleton->num_animations; i++) {
+    for (uint32_t i = 0; i < model_info.skeleton->num_animations; i++) {
         anim = &model_info.skeleton->animations[i];
-        WRITE_CASTED(anim->type, sizeof(uint32_t), 1, f_target);
+        WRITE_CASTED(anim->type, sizeof(uint32_t));
         output.write(anim->name.c_str(), anim->name.length() + 1);
         output.write(anim->source.c_str(), anim->source.length() + 1);
-        WRITE_CASTED(anim->min_value, sizeof(float), 1, f_target);
-        WRITE_CASTED(anim->max_value, sizeof(float), 1, f_target); //#TODO get rid of f_target
-        WRITE_CASTED(anim->min_value, sizeof(float), 1, f_target);
-        WRITE_CASTED(anim->max_value, sizeof(float), 1, f_target);
-        //WRITE_CASTED(anim->min_phase, sizeof(float), 1, f_target);
-        //WRITE_CASTED(anim->max_phase, sizeof(float), 1, f_target);
-        WRITE_CASTED(anim->junk, sizeof(uint32_t), 1, f_target);
-        WRITE_CASTED(anim->always_0, sizeof(uint32_t), 1, f_target);
-        WRITE_CASTED(anim->source_address, sizeof(uint32_t), 1, f_target);
+        WRITE_CASTED(anim->min_value, sizeof(float));
+        WRITE_CASTED(anim->max_value, sizeof(float));
+        WRITE_CASTED(anim->min_value, sizeof(float));
+        WRITE_CASTED(anim->max_value, sizeof(float));
+        //WRITE_CASTED(anim->min_phase, sizeof(float));
+        //WRITE_CASTED(anim->max_phase, sizeof(float));
+        WRITE_CASTED(anim->junk, sizeof(uint32_t));
+        WRITE_CASTED(anim->always_0, sizeof(uint32_t));
+        WRITE_CASTED(anim->source_address, sizeof(uint32_t));
 
         switch (anim->type) {
             case AnimationType::ROTATION:
@@ -2207,11 +2200,11 @@ void MultiLODShape::write_animations(std::ostream& output) {
     WRITE_CASTED(num_lods, sizeof(uint32_t));
 
     // bone2anim
-    for (i = 0; i < num_lods; i++) {
+    for (uint32_t i = 0; i < num_lods; i++) {
         WRITE_CASTED(model_info.skeleton->num_bones, sizeof(uint32_t));
-        for (j = 0; j < model_info.skeleton->num_bones; j++) {
+        for (uint32_t j = 0; j < model_info.skeleton->num_bones; j++) {
             num = 0;
-            for (k = 0; k < model_info.skeleton->num_animations; k++) {
+            for (uint32_t k = 0; k < model_info.skeleton->num_animations; k++) {
                 anim = &model_info.skeleton->animations[k];
                 if (stricmp(anim->selection.c_str(), model_info.skeleton->bones[j].name.c_str()) == 0)
                     num++;
@@ -2219,7 +2212,7 @@ void MultiLODShape::write_animations(std::ostream& output) {
 
             WRITE_CASTED(num, sizeof(uint32_t));
 
-            for (k = 0; k < model_info.skeleton->num_animations; k++) {
+            for (uint32_t k = 0; k < model_info.skeleton->num_animations; k++) {
                 anim = &model_info.skeleton->animations[k];
                 if (stricmp(anim->selection.c_str(), model_info.skeleton->bones[j].name.c_str()) == 0) {
                     num = (uint32_t)k;
@@ -2230,12 +2223,12 @@ void MultiLODShape::write_animations(std::ostream& output) {
     }
 
     // anim2bone
-    for (i = 0; i < num_lods; i++) {
-        for (j = 0; j < model_info.skeleton->num_animations; j++) {
+    for (uint32_t i = 0; i < num_lods; i++) {
+        for (uint32_t j = 0; j < model_info.skeleton->num_animations; j++) {
             anim = &model_info.skeleton->animations[j];
 
             index = -1;
-            for (k = 0; k < model_info.skeleton->num_bones; k++) {
+            for (uint32_t k = 0; k < model_info.skeleton->num_bones; k++) {
                 if (stricmp(anim->selection.c_str(), model_info.skeleton->bones[k].name.c_str()) == 0) {
                     index = (int32_t)k;
                     break;

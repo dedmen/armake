@@ -1,7 +1,9 @@
 #include "logger.h"
 #include <cstdarg>
 #include "utils.h"
-
+#include <iostream>
+#include <fstream>
+#include <cstring> //strlen
 
 #define PRINTF     char buffer[4096];\
 va_list argptr;\

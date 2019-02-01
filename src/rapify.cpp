@@ -38,6 +38,10 @@
 #include <array>
 //#include "rapify.tab.h"
 
+#ifndef __GNUC__
+#include <execution>
+#endif
+
 
 template <typename Type>//Same as in p3d.cpp
 class StreamFixup {
@@ -534,7 +538,7 @@ std::vector<ConfigValue> Rapifier::derapify_array(std::istream &source) {
     std::vector<ConfigValue> output;
     uint32_t num_entries = read_compressed_int(source);
 
-    for (int i = 0; i < num_entries; i++) {
+    for (uint32_t i = 0; i < num_entries; i++) {
         uint8_t type = source.get();
 
         if (type == 0) {
@@ -586,7 +590,7 @@ void Rapifier::derapify_class(std::istream &source, ConfigClass &curClass, int l
 
     std::vector<ConfigClassEntry> entries;
 
-    for (int i = 0; i < num_entries; i++) {
+    for (uint32_t i = 0; i < num_entries; i++) {
         uint8_t type = source.get();
 
         if (type == 0) { //class definition

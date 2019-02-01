@@ -21,7 +21,7 @@
 class Logger;
 
 enum class PAAType : uint16_t {
-    default,
+    def,
     DXT1 = 0xFF01,
     DXT3 = 0xFF03,
     DXT5 = 0xFF05,
@@ -67,7 +67,7 @@ public:
 
     static constexpr PAAType typeFromString(std::string_view str) {
         if (str.empty())
-            return PAAType::default;
+            return PAAType::def;
         else if (str == "DXT1")
             return PAAType::DXT1;
         else if (str == "DXT3")
@@ -84,7 +84,7 @@ public:
             return PAAType::invalid;
     }
 
-    static int img2paa(std::istream &source, std::ostream &target, Logger& logger, PAAType targetType = PAAType::default);
+    static int img2paa(std::istream &source, std::ostream &target, Logger& logger, PAAType targetType = PAAType::def);
     static int paa2img(std::istream &source, std::ostream &target, Logger& logger);
 
     static int cmd_img2paa(Logger& logger);

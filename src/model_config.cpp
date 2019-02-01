@@ -336,7 +336,9 @@ int ModelConfig::load(std::filesystem::path source, Logger& logger) {
 
     Preprocessor p(logger);
     std::stringstream buf;
-    p.preprocess(model_config_path.string(), std::ifstream(model_config_path), buf, Preprocessor::ConstantMapType());
+    std::ifstream modelConfigInput(model_config_path);
+    auto preprocMap = Preprocessor::ConstantMapType();
+    p.preprocess(model_config_path.string(), modelConfigInput, buf, preprocMap);
     buf.seekg(0);
     auto config = Config::fromPreprocessedText(buf, p.getLineref(), logger);
 

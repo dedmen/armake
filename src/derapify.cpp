@@ -27,7 +27,7 @@
 #include "derapify.h"
 #include <filesystem>
 
-int derapify_file(char *source, char *target, Logger& logger) {
+int derapify_file(std::string_view source, std::string_view target, Logger& logger) {
     /*
      * Reads the rapified file in source and writes it as a human-readable
      * config into target. If the source file isn't a rapified file, -1 is
@@ -35,22 +35,13 @@ int derapify_file(char *source, char *target, Logger& logger) {
      */
 
     extern std::string current_target;
-    FILE *f_source;
-    FILE *f_target;
-    char buffer[4096];
-    int bytes;
-    int success;
-#ifdef _WIN32
-    char temp_name[2048];
-#endif
 
-    if (strcmp(source, "-") == 0)
-        current_target = "stdin";
-    else
-        current_target = source;
+    bool fromConsoleInput = source == "-";
+    bool toConsoleOutput = target == "-";
 
-    bool fromConsoleInput = strcmp(source, "-") == 0;
-    bool toConsoleOutput = strcmp(target, "-") == 0;
+    current_target = fromConsoleInput ? "stdin" : source;
+
+
 
     //#TODO check if input is rapified
     //if (strncmp(buffer, "\0raP", 4) != 0) {
@@ -59,17 +50,24 @@ int derapify_file(char *source, char *target, Logger& logger) {
     //        fclose(f_source);
     //    return -3;
     //}
-
+    std::filesystem::path inputPath(source);
+    std::filesystem::path targetPath(source);
     if (fromConsoleInput)
         if (toConsoleOutput)
-         return derapify_file(std::cin, std::cout, logger);
-        else
-            return derapify_file(std::cin, std::ofstream(target), logger);
+            return derapify_file(std::cin, std::cout, logger);
+        else {
+            std::ofstream output(targetPath);
+            return derapify_file(std::cin, output, logger);
+        }    
     else
-        if (toConsoleOutput)
-            return derapify_file(std::ifstream(source, std::ifstream::binary), std::cout, logger);
-        else
-            return derapify_file(std::ifstream(source, std::ifstream::binary), std::ofstream(target), logger);
+        if (toConsoleOutput) {
+            std::ifstream input(inputPath, std::ifstream::binary);
+            return derapify_file(input, std::cout, logger);   
+        } else {
+            std::ifstream input(inputPath, std::ifstream::binary);
+            std::ofstream output(targetPath);
+            return derapify_file(input, output, logger);   
+        }
 }
 int derapify_file(std::istream& source, std::ostream& target, Logger& logger) {
     auto cfg = Config::fromBinarized(source, logger);

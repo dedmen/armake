@@ -34,11 +34,6 @@
 #define TEMPPATH "/tmp/armake/"
 #endif
 
-namespace std::filesystem {
-        class path;
-}
-
-
 bool create_folder(const std::filesystem::path &path);
 
 std::optional<std::filesystem::path> create_temp_folder(std::string_view addonName);

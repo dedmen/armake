@@ -49,7 +49,7 @@ char *strchrnul(char *s, int c) {
 
 #else
 
-int stricmp(char *a, char *b) {
+int stricmp(const char *a, const char *b) {
     int d;
     char a_lower;
     char b_lower;

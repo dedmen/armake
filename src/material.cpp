@@ -287,7 +287,8 @@ int Material::read() {
     } else {
         Preprocessor p(logger);
         std::stringstream buf;
-        p.preprocess(foundFile->string(), rvmatInput, buf, Preprocessor::ConstantMapType());
+        auto map = Preprocessor::ConstantMapType();
+        p.preprocess(foundFile->string(), rvmatInput, buf, map);
         buf.seekg(0);
         cfg = Config::fromPreprocessedText(buf, p.getLineref(), logger);
     }
@@ -445,7 +446,7 @@ int Material::read() {
         auto cfg_uvSourceNumber = transformCfg->getFloat({ "uvSource" });
 
         if (cfg_uvSourceNumber) {
-            stageTrans.uv_source = static_cast<uv_source>(static_cast<uint32_t>(*cfg_uvSourceNumber));
+            stageTrans.uv_source = static_cast<UV_source>(static_cast<uint32_t>(*cfg_uvSourceNumber));
         } else {
             auto cfg_uvSourceString = transformCfg->getString({ "uvSource" });
 

@@ -36,9 +36,6 @@
 
 
 bool is_garbage(PboEntry entry) {
-    int i;
-    char c;
-
     if (entry.method != PboEntryPackingMethod::none)
         return true;
 

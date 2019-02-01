@@ -24,7 +24,7 @@
 #include <vector>
 
 
-int derapify_file(char *source, char *target, Logger& logger);
+int derapify_file(std::string_view source, std::string_view target, Logger& logger);
 int derapify_file(std::istream& source, std::ostream& target, Logger& logger);
 
 int cmd_derapify(Logger& logger);

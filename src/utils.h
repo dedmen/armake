@@ -163,7 +163,7 @@ char *strndup(const char *s, size_t n);
 
 char *strchrnul(char *s, int c);
 #else
-int stricmp(char *a, char *b);
+int stricmp(const char *a, const char *b);
 #endif
 
 void *safe_malloc(size_t size);

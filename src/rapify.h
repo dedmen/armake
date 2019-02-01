@@ -26,11 +26,12 @@
 #include <memory>
 #include <map>
 #include <unordered_set>
-#include <execution>
 #include <utility> //std::hash
 #include "logger.h"
 
-#define MAXCLASSES 4096
+#ifdef __GNUC__
+#define __debugbreak(); 1
+#endif
 
 enum class rap_type {
     rap_class,
@@ -381,9 +382,20 @@ class Rapifier {
     class DerapifyException : public std::exception {
         std::vector<std::string> stack;
         uint8_t type;
+#ifdef __GNUC__
+        std::string message;
+#endif
     public:
+#ifdef __GNUC__
+        DerapifyException(std::string_view msg, uint8_t type = 0) : std::exception(),
+           type(type), message(msg) {}
+        char const* what() const noexcept override {
+            return message.c_str();
+        };
+#else
         DerapifyException(std::string_view msg, uint8_t type = 0) : std::exception(msg.data()),
            type(type) {}
+#endif
         void addToStack(std::string_view a) {
             stack.emplace_back(a);
         }
