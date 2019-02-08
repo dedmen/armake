@@ -440,6 +440,10 @@ int Material::read() {
             transformCfg = cfg_texGenClass;
         }
 
+        auto cfg_worldEnvMap = stageCfg->getInt({ "useWorldEnvMap" });
+        if (cfg_worldEnvMap && *cfg_worldEnvMap) textures[i].useWorldEnvMap = true;
+
+
         stage_transform stageTrans;
 
 
