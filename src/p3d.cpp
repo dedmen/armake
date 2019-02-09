@@ -66,7 +66,7 @@ bool is_alpha(std::string textureName) {
         auto found = find_file(textureName, ""); //#TODO proper origin
         if (!found) {
             //#TODO warning
-
+            texCache[textureName] = PAAFile(); //make sure we don't re-lookup next time
             return false;
         }
         std::ifstream texIn(*found, std::ifstream::binary);
@@ -490,7 +490,6 @@ bool mlod_lod::read(std::istream& source, Logger& logger, std::vector<float> &ma
 
             
             if (is_alpha(textures[face.texture_index])) {
-                __debugbreak();
                 specialFlags |= FLAG_ISALPHA;
             }
                 
@@ -3329,7 +3328,7 @@ void MultiLODShape::finishLOD(mlod_lod& lod, uint32_t lodIndex, float resolution
         auto& selection = lod.selections[i];
         if (std::string_view(selection.name).substr(0, 6) != "proxy:") continue;
 
-        std::string_view selectionNameNoProxy = std::string_view(selection.name).substr(0, 6);
+        std::string_view selectionNameNoProxy = std::string_view(selection.name).substr(6);
 
 
 
@@ -3598,6 +3597,7 @@ std::vector<std::string> P3DFile::retrieveDependencies(std::filesystem::path sou
 
     input.read(reinterpret_cast<char*>(&num_lods), 4);
 
+    //#TODO make minimal version that doesn't do finalize and stuff
     num_lods = read_lods(input, num_lods);
     if (num_lods <= 0) {
         logger.error(sourceFile.string(), 0, "Failed to read LODs.\n");

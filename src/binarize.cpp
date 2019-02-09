@@ -38,7 +38,7 @@ bool warned_bi_not_found = false;
 
 #ifdef _WIN32
 
-char *find_root(char *source) {
+char *find_root(const char *source) {
     char *root = (char *)malloc(2048);
     char *candidate = (char *)malloc(2048);
 
@@ -69,7 +69,7 @@ char *find_root(char *source) {
 }
 
 
-int attempt_bis_binarize(char *source, char *target, Logger& logger) {
+int attempt_bis_binarize(std::filesystem::path source, std::filesystem::path target, Logger& logger) {
     /*
      * Attempts to find and use the BI binarize.exe for binarization. If the
      * exe is not found, a negative integer is returned. 0 is returned on
@@ -95,18 +95,12 @@ int attempt_bis_binarize(char *source, char *target, Logger& logger) {
     FILE *f_source;
     std::vector<mlod_lod> mlod_lods;
 
-    current_target = source;
+    current_target = source.string();
 
     if (getenv("NATIVEBIN"))
         return -1;
 
-    is_rtm = !strcmp(source + strlen(source) - 4, ".rtm");
-
-    for (i = 0; i < strlen(source); i++)
-        source[i] = (source[i] == '/') ? '\\' : source[i];
-
-    for (i = 0; i < strlen(target); i++)
-        target[i] = (target[i] == '/') ? '\\' : target[i];
+    is_rtm = source.extension().string() ==  ".rtm";
 
     // Find binarize.exe
     buffsize = sizeof(command);
@@ -128,10 +122,10 @@ int attempt_bis_binarize(char *source, char *target, Logger& logger) {
     }
 
     // Create a temporary folder to isolate the target file and copy it there
-    if (strchr(source, '\\') != NULL)
-        strcpy(filename, strrchr(source, '\\') + 1);
+    if (strchr(source.string().c_str(), '\\') != NULL)
+        strcpy(filename, strrchr(source.string().c_str(), '\\') + 1);
     else
-        strcpy(filename, source);
+        strcpy(filename, source.string().c_str());
 
     auto tempfolder = create_temp_folder(filename);
 
@@ -156,11 +150,11 @@ int attempt_bis_binarize(char *source, char *target, Logger& logger) {
         target_tempfolder = *newFolder;
     }
 
-    strcpy(temp, (strchr(source, PATHSEP) == NULL) ? source : strrchr(source, PATHSEP) + 1);
+    strcpy(temp, (strchr(source.string().c_str(), PATHSEP) == NULL) ? source.string().c_str() : strrchr(source.string().c_str(), PATHSEP) + 1);
     strcpy(filename, tempfolder->string().c_str());
     strcat(filename, temp);
 
-    GetFullPathName(source, 2048, temp, NULL);
+    GetFullPathName(source.string().c_str(), 2048, temp, NULL);
 
     if (!::copy_file(std::filesystem::path(temp), *tempfolder / temp)) {
         logger.error("Failed to copy %s to temp folder.\n", temp);
@@ -168,7 +162,7 @@ int attempt_bis_binarize(char *source, char *target, Logger& logger) {
     }
 
     // Try to find the required files and copy them there too
-    root = find_root(source);
+    root = find_root(source.string().c_str());
 
     strcpy(temp, root);
     strcat(temp, "config.cpp");
@@ -193,7 +187,7 @@ int attempt_bis_binarize(char *source, char *target, Logger& logger) {
 
             auto fileFound = find_file(it, "");
             if (!fileFound) {
-                logger.warning(std::string_view(source), 0u, "Failed to find file %s.\n", filename);
+                logger.warning(source.string(), 0u, "Failed to find file %s.\n", filename);
                 continue;
             }
 
@@ -216,7 +210,7 @@ int attempt_bis_binarize(char *source, char *target, Logger& logger) {
         strcpy(temp, target_tempfolder.string().c_str());
         *(strrchr(temp, PATHSEP)) = 0;
     } else {
-        GetFullPathName(target, 2048, temp, NULL);
+        GetFullPathName(target.string().c_str(), 2048, temp, NULL);
         *(strrchr(temp, PATHSEP)) = 0;
     }
 
@@ -246,10 +240,10 @@ int attempt_bis_binarize(char *source, char *target, Logger& logger) {
 
     // Copy final file to target
     if (strcmp(args.positionals[0], "binarize") == 0) {
-        strcpy(temp, (strchr(source, PATHSEP) == NULL) ? source : strrchr(source, PATHSEP) + 1);
+        strcpy(temp, (strchr(source.string().c_str(), PATHSEP) == NULL) ? source.string().c_str() : strrchr(source.string().c_str(), PATHSEP) + 1);
         strcpy(filename, target_tempfolder.string().c_str());
         strcat(filename, temp);
-        if (!copy_file(filename, target))
+        if (!::copy_file(filename, target))
             return 4;
 
         if (!remove_folder(target_tempfolder)) {
@@ -296,13 +290,13 @@ int binarize(std::filesystem::path source, std::filesystem::path target, Logger&
 #ifdef _WIN32
         int success;
         extern bool warned_bi_not_found;
-        //success = attempt_bis_binarize(source, target, logger);
-        //if (success >= 0)
-        //    return success;
-        //if (!warned_bi_not_found) {
-        //    lwarningf(source, -1, "Failed to find BI tools, using internal binarizer.\n");
-        //    warned_bi_not_found = true;
-        //}
+        success = attempt_bis_binarize(source, target, logger);
+        if (success >= 0)
+            return success;
+        if (!warned_bi_not_found) {
+            //lwarningf(source, -1, "Failed to find BI tools, using internal binarizer.\n");
+            warned_bi_not_found = true;
+        }
 #endif
         if (fileExtension == ".p3d")
             return mlod2odol(source.string().c_str(), target.string().c_str(), logger);
