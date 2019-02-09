@@ -17,6 +17,7 @@
  */
 
 #include <filesystem>
+#include <algorithm>
 #include "logger.h"
 #include "unpack.h"
 extern "C" {
@@ -353,7 +354,17 @@ int cmd_sign(Logger& logger) {
     if (args.signature) {
         path_signature = args.signature;
     } else {
-        path_signature = std::string(args.positionals[2]) + "." + keyname.filename().string();
+        // remove ".biprivatekey" from the name
+        std::string name = keyname.filename().string();
+        std::string lowerName(name);
+        std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+        
+        int index = lowerName.find(".biprivatekey");
+        if (index != std::npos && index > 0) {
+            name = name.substr(0, index);
+        }
+        
+        path_signature = std::string(args.positionals[2]) + "." + name;
     }
 
     if (std::filesystem::path(path_signature).extension() != ".bisign")
