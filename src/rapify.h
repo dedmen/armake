@@ -61,7 +61,7 @@ public:
         if (t != rap_type::rap_string) __debugbreak();
     }
     ConfigValue(rap_type t, std::vector<ConfigValue> x) : type(t), value(std::move(x)) {
-        if (t != rap_type::rap_array) __debugbreak();
+        if (t != rap_type::rap_array && t != rap_type::rap_array_expansion) __debugbreak();
     }
     ConfigValue(rap_type t, ConfigValue x) : type(t) {
         if (t == rap_type::rap_array && x.type == rap_type::rap_array) {
@@ -118,7 +118,7 @@ public:
         __debugbreak(); //#TODO throw
     }
     const ArrayValueT& getAsArray() const {
-        if (type == rap_type::rap_array) return std::get<ArrayValueT>(value);
+        if (type == rap_type::rap_array || type == rap_type::rap_array_expansion) return std::get<ArrayValueT>(value);
         __debugbreak(); //#TODO throw
     }
 };
