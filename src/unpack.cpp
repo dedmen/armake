@@ -745,6 +745,10 @@ int cmd_cat(Logger& logger) {
     reader.readHeaders();
     auto& files = reader.getFiles();
 
+    if (findFile == "config.cpp") {
+        findFile = "config.bin";
+    }
+
     auto found = std::find_if(files.begin(), files.end(),[&findFile](const PboEntry& entry)
     {
         return iequals(entry.name,findFile);
@@ -759,11 +763,26 @@ int cmd_cat(Logger& logger) {
     auto& fs = reader.getFileBuffer(*found);
     std::istream source(&fs);
 
-    std::array<char, 4096*2> buf;
+
+    if (findFile == "config.bin" && std::string_view(args.positionals[2]) == "config.cpp") {
+
+        auto config = Config::fromBinarized(source, logger, false);
+
+        std::stringstream output;
+        //toPlainText needs to track backwards, which cout doesn't support
+        config.toPlainText(output, logger);
+        std::cout << output.str();
+        std::cout.flush();
+    } else {
+            std::array<char, 4096*2> buf;
     do {
         source.read(buf.data(), buf.size());
         std::cout.write(buf.data(), source.gcount());
     } while (source.gcount() == buf.size()); //if gcount is not full buffer, we reached EOF before filling the buffer till end
+
+    }
+
+
 
     return 0;
 }
