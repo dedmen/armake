@@ -584,7 +584,7 @@ void Rapifier::derapify_class(std::istream &source, ConfigClass &curClass, int l
 
     const uint32_t num_entries = read_compressed_int(source);
 
-    if (!curClass.getName().empty()) {
+    if (!curClass.getName().empty() && !inherited.empty()) {
         curClass.inheritedParent = inherited;
     }
 
