@@ -77,12 +77,10 @@ class PboEntryBuffer : public std::streambuf {
     const PboReader& reader;
     //What position the character after the last character that's currently in our buffer, corresponds to in the pbofile
     //Meaning on next read, the first character read is that pos
-    size_t bufferEndFilePos{0}; 
+    size_t bufferEndFilePos{0};
+    static void lzss_decomp(std::istream& input, std::vector<char>& output, size_t expectedSize);
 public:
-    PboEntryBuffer(const PboReader& rd, const PboEntry& ent, uint32_t bufferSize = 4096u) : buffer(std::min(ent.data_size, bufferSize)), file(ent), reader(rd) {
-        char *start = &buffer.front();
-        setg(start, start, start);
-    }
+    PboEntryBuffer(const PboReader& rd, const PboEntry& ent, uint32_t bufferSize = 4096u);
 
     void setBufferSize(size_t newSize);
     int underflow() override;

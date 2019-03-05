@@ -34,9 +34,8 @@
 #include <iostream>
 #include "rapify.h"
 
-
 bool is_garbage(PboEntry entry) {
-    if (entry.method != PboEntryPackingMethod::none)
+    if (entry.method != PboEntryPackingMethod::none && entry.method != PboEntryPackingMethod::compressed)
         return true;
 
     bool garbageName = std::any_of(entry.name.begin(), entry.name.end(), [](char c) {
@@ -125,7 +124,90 @@ void PboEntry::write(std::ostream& out, bool noDate) const {
     out.write(reinterpret_cast<char*>(&header.datasize), 4);
 }
 
+void PboEntryBuffer::lzss_decomp(std::istream& input, std::vector<char>& output, size_t expectedSize) {
+    //Based on https://github.com/Braini01/bis-file-formats/blob/6eba9b590df03eadd7822c164ba397748190f7a5/BIS.Core/Compression/LZSS.cs#L7
+    const int N = 4096;
+    const int F = 18;
+    const int THRESHOLD = 2;
+    char text_buf[N+F-1];
+
+    auto bytesLeft = expectedSize;
+    int iDst = 0;
+    output.resize(expectedSize);
+
+    int i,j,r,c,csum=0;
+    int flags;
+    for( i=0; i<N-F; i++ ) text_buf[i] = ' ';
+    r=N-F; flags=0;
+    while( bytesLeft>0 ) {
+        if( ((flags>>= 1)&256)==0 ) {
+            c=input.get();
+            flags=c|0xff00;
+        }
+        if( (flags&1) != 0) {
+            c=input.get();
+            csum += (uint8_t)c;
+
+            // save byte
+            output[iDst++]=(int8_t)c;
+            bytesLeft--;
+            // continue decompression
+            text_buf[r]=(char)c;
+            r++;r&=(N-1);
+        } else {
+            i=input.get();
+            j=input.get();
+            i|=(j&0xf0)<<4; j&=0x0f; j+=THRESHOLD;
+
+            int ii = r-i;
+            int jj = j+ii;
+
+            if (j+1>bytesLeft) {
+                throw new std::runtime_error("LZSS overflow");
+            }
+
+            for(; ii<=jj; ii++ ) {
+                c=(uint8_t)text_buf[ii&(N-1)];
+                csum += (uint8_t)c;
+
+                // save byte
+                output[iDst++]=(int8_t)c;
+                bytesLeft--;
+                // continue decompression
+                text_buf[r]=(char)c;
+                r++;r&=(N-1);
+            }
+        }
+    }
+
+    uint32_t checksum = input.get()+(input.get()<<8)+(input.get()<<16)+(input.get()<<24);
+
+    if( checksum!=csum ) {
+        throw new std::runtime_error("Checksum mismatch");
+    }
+}
+
+PboEntryBuffer::
+PboEntryBuffer(const PboReader& rd, const PboEntry& ent, uint32_t bufferSize): buffer(std::min(ent.original_size, bufferSize)), file(ent),
+                                                                               reader(rd) {
+    char* start = &buffer.front();
+    setg(start, start, start);
+
+    if (ent.method == PboEntryPackingMethod::compressed) {
+
+        rd.input.seekg(file.startOffset);
+
+        buffer.resize(ent.original_size);
+
+
+        lzss_decomp(rd.input, buffer, ent.original_size);
+        bufferEndFilePos = ent.original_size;
+        setg(&buffer.front(), &buffer.front(), &buffer.front() + ent.original_size);
+    }
+}
+
 void PboEntryBuffer::setBufferSize(size_t newSize) {
+    if (file.method == PboEntryPackingMethod::compressed) return; //Already max size
     size_t dataLeft = egptr() - gptr();
     auto bufferOffset = gptr() - &buffer.front(); //Where we currently are inside the buffer
     auto bufferStartInFile = bufferEndFilePos - (dataLeft + bufferOffset); //at which offset in the PboEntry file our buffer starts
@@ -141,7 +223,7 @@ int PboEntryBuffer::underflow() {
         return traits_type::to_int_type(*gptr());
 
     reader.input.seekg(file.startOffset + bufferEndFilePos);
-    size_t sizeLeft = file.data_size - bufferEndFilePos;
+    size_t sizeLeft = file.original_size - bufferEndFilePos;
     if (sizeLeft == 0) return std::char_traits<char>::eof();
 
     auto sizeToRead = std::min(sizeLeft, buffer.size());
@@ -161,7 +243,7 @@ int64_t PboEntryBuffer::xsgetn(char* _Ptr, int64_t _Count) {
         size_t dataLeft = egptr() - gptr();
         if (dataLeft == 0) {
             reader.input.seekg(file.startOffset + bufferEndFilePos);
-            size_t sizeLeft = file.data_size - bufferEndFilePos;
+            size_t sizeLeft = file.original_size - bufferEndFilePos;
             if (sizeLeft == 0) break; //EOF
             auto sizeToRead = std::min(sizeLeft, buffer.size());
             reader.input.read(buffer.data(), sizeToRead);
@@ -253,7 +335,7 @@ std::basic_streambuf<char>::pos_type PboEntryBuffer::seekoff(off_type offs, std:
         break;
         case std::ios_base::end:
             //#TODO positive offs is error
-            bufferEndFilePos = file.data_size + offs;
+            bufferEndFilePos = file.original_size + offs;
             setg(&buffer.front(), &buffer.front(), &buffer.front()); //no data available
             return bufferEndFilePos;
         break;
@@ -269,7 +351,7 @@ std::streamsize PboEntryBuffer::showmanyc() {
     //How many characters are left
     size_t dataLeft = egptr() - gptr();
     
-    return (file.data_size - bufferEndFilePos) + dataLeft;
+    return (file.original_size - bufferEndFilePos) + dataLeft;
 }
 
 
@@ -509,7 +591,6 @@ int cmd_inspect(Logger& logger) {
     return 0;
 }
 
-
 __itt_string_handle* handle_cmd_unpack = __itt_string_handle_create("cmd_unpack");
 __itt_string_handle* handle_cmd_unpackF = __itt_string_handle_create("cmd_unpack_F");
 int cmd_unpack(Logger& logger) {
@@ -609,7 +690,7 @@ int cmd_unpack(Logger& logger) {
         std::istream source(&fs);
 
         if (file.name == "config.bin") {
-            fs.setBufferSize(std::min(file.data_size, 1024*1024u));//increase buffer size to max 1MB. So that seeking around is fast while parsing the config
+            fs.setBufferSize(std::min(file.original_size, 1024*1024u));//increase buffer size to max 1MB. So that seeking around is fast while parsing the config
 
             std::ofstream target(outputPath.parent_path() / "config.cpp", std::ofstream::binary);
 
