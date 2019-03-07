@@ -572,6 +572,52 @@ int cmd_inspect(Logger& logger) {
 
     auto& files = reader.getFiles();
 
+
+
+
+    std::ifstream hashInput(args.positionals[1], std::ifstream::binary);
+    hashInput.seekg(0, std::ifstream::beg);
+
+    auto endPtr = std::filesystem::file_size(args.positionals[1]) -21;
+
+    SHA1Context sha;
+    SHA1Reset(&sha);
+    std::array<char, 4096> buf;
+    uint64_t dataToRead;
+    do {
+        auto lengthLeft = static_cast<uint64_t>(endPtr - hashInput.tellg());
+        dataToRead = std::min(buf.size(), lengthLeft);
+
+        hashInput.read(buf.data(), dataToRead);
+        SHA1Input(&sha, reinterpret_cast<const unsigned char*>(buf.data()), hashInput.gcount());
+    } while (hashInput.gcount() == buf.size() && dataToRead == buf.size()); 
+
+
+    if (!SHA1Result(&sha)) {
+        printf("# Hash: Hashing Failed!\n");
+    } else {
+        for (int i = 0; i < 5; i++) {
+            unsigned temp = sha.Message_Digest[i];
+            sha.Message_Digest[i] = ((temp >> 24) & 0xff) |
+                ((temp << 8) & 0xff0000) | ((temp >> 8) & 0xff00) | ((temp << 24) & 0xff000000);
+        }
+        std::array<unsigned char, 20> res;
+
+        memcpy(res.data(), sha.Message_Digest, 20);
+
+        printf("# Hash: Expected hash: ");
+        for (auto& it : reader.getHash()) {
+            printf("%x", it);
+        }
+
+        printf("\n# Hash: Actual hash:   ");
+        for (auto& it : res) {
+            printf("%x", it);
+        }
+        printf("\n");
+    }
+
+
     printf("# Files: %llu\n\n", files.size());
 
     printf("Path                                                Method   Original    Packed\n");
