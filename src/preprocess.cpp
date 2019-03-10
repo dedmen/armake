@@ -492,7 +492,7 @@ std::optional<std::filesystem::path> find_file_helper(std::string_view includepa
         return subf;
 
     const std::filesystem::path ignoreGit(".git");
-    const std::filesystem::path ignoreSvn(".git");
+    const std::filesystem::path ignoreSvn(".svn");
 
     //recrusively search in directory
     for (auto i = std::filesystem::recursive_directory_iterator(includefolder, std::filesystem::directory_options::follow_directory_symlink);
