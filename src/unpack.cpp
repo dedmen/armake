@@ -91,8 +91,10 @@ void PboEntry::read(std::istream& in) {
     }
 
     data_size = header.datasize;
-    original_size = header.originalsize;
-
+    if (method == PboEntryPackingMethod::compressed)
+        original_size = header.originalsize;
+    else
+        original_size = header.datasize;
 }
 
 void PboEntry::write(std::ostream& out, bool noDate) const {
